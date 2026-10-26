@@ -1,0 +1,22 @@
+{
+  "name": "lente",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Real-time meeting copilot for people working in their second language, built on Meta's models.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "ping": "node --env-file-if-exists=.env src/ping.ts",
+    "bench:llm": "node --env-file-if-exists=.env scripts/bench-llm.ts",
+    "bench:asr": "node --env-file-if-exists=.env scripts/bench-asr.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.0"
+  }
+}

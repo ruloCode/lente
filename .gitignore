@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+# Meeting audio and transcripts never go to the repo
+recordings/
+*.wav
+*.pcm
+results/
