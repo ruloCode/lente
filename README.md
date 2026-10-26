@@ -75,6 +75,7 @@ pnpm test
 | Date | Built |
 |---|---|
 | 2026-10-26 | Repo, Meta Model API smoke test, streaming client, LLM and realtime-ASR benchmarks, tests |
+| 2026-10-26 | Hardware: parametric clip-on pod for any glasses (`hardware/`), printable STL, renders, parts list |
 
 **Prior work, declared:** the author previously prototyped a meeting copilot inside his personal assistant project, [hermes-os](https://github.com/ruloCode/hermes-os), on non-Meta models. No code, prompts or assets from it are in this repository; it informed only the problem statement and the latency targets.
 

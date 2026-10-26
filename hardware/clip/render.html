@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; background: #e9ebef; overflow: hidden; }
+  #label { position: fixed; left: 28px; bottom: 22px; font: 500 15px/1.4 -apple-system, system-ui, sans-serif; color: #3a3f4a; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="label"></div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(2);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#e9ebef");
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const sun = new THREE.DirectionalLight("#ffffff", 1.6);
+sun.position.set(80, 120, 160);
+scene.add(sun, new THREE.HemisphereLight("#ffffff", "#c8ccd4", 0.6));
+
+const std = (color, rough = 0.5, metal = 0, extra = {}) =>
+  new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
+const MATS = {
+  shell_base: std("#3b3f47", 0.55, 0.15),
+  shell_lid: std("#454a53", 0.5, 0.15),
+  board: std("#1d4d3a", 0.45, 0.1),
+  module: std("#cfd3d9", 0.28, 0.9),
+  usb_c: std("#b9bec6", 0.25, 0.95),
+  chips: std("#15161a", 0.55),
+  camera: std("#16181c", 0.4),
+  lens: new THREE.MeshPhysicalMaterial({ color: "#0b1020", roughness: 0.05, metalness: 0.2, clearcoat: 1 }),
+  fpc: std("#d0892c", 0.5),
+  battery: std("#c9ccd2", 0.25, 0.85),
+  mic: std("#2747a8", 0.45),
+  motor: std("#a3a8b0", 0.3, 0.9),
+  switch: std("#1a1b1f", 0.5),
+  switch_lever: std("#f2f2f2", 0.5),
+  temple_right: std("#121214", 0.3, 0, { clearcoat: 1 }),
+  temple_left: std("#121214", 0.3),
+  hinge: std("#8a8f99", 0.3, 0.9),
+  frame: std("#121214", 0.3),
+  lens_right: new THREE.MeshPhysicalMaterial({ color: "#dfe8f0", roughness: 0.02, transmission: 0.9, transparent: true, opacity: 0.35 }),
+  lens_left: new THREE.MeshPhysicalMaterial({ color: "#dfe8f0", roughness: 0.02, transmission: 0.9, transparent: true, opacity: 0.35 }),
+};
+const GLASSES = ["temple_right", "temple_left", "hinge", "frame", "lens_right", "lens_left"];
+const INSIDE = ["board", "camera", "lens", "fpc", "battery", "mic", "motor", "switch", "switch_lever"];
+
+// Model is Z-up in mm; three.js is Y-up.
+const root = new THREE.Group();
+root.rotation.x = -Math.PI / 2;
+scene.add(root);
+const nodes = {};
+
+const glb = Uint8Array.from(atob(window.GLB_B64), (c) => c.charCodeAt(0)).buffer;
+new GLTFLoader().parse(glb, "", (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const name = o.name || o.parent?.name;
+    o.material = (MATS[name] ?? std("#888")).clone();
+    o.geometry.computeVertexNormals();
+    nodes[name] = o;
+  });
+  root.add(gltf.scene);
+  window.READY = true;
+});
+
+function frame(names, dir, fov = 28, pad = 1.25) {
+  const box = new THREE.Box3();
+  root.updateMatrixWorld(true);
+  for (const n of names) if (nodes[n]?.visible) box.expandByObject(nodes[n]);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).length();
+  const cam = new THREE.PerspectiveCamera(fov, innerWidth / innerHeight, 1, 5000);
+  const dist = (size / 2 / Math.tan(THREE.MathUtils.degToRad(fov / 2))) * pad;
+  cam.position.copy(center).add(new THREE.Vector3(...dir).normalize().multiplyScalar(dist));
+  cam.lookAt(center);
+  return cam;
+}
+
+function reset() {
+  for (const [name, o] of Object.entries(nodes)) {
+    o.visible = true;
+    o.position.set(0, 0, 0);
+    setOpacity(o, MATS[name]?.opacity ?? 1);
+  }
+}
+
+function setOpacity(o, opacity) {
+  o.material.transparent = opacity < 1;
+  o.material.opacity = opacity;
+  o.material.depthWrite = opacity >= 1;
+  o.material.needsUpdate = true;
+}
+
+// Directions are in three.js space: +x forward, +y up, -z outward from the head.
+const VIEWS = {
+  gafas() {
+    reset();
+    const all = Object.keys(nodes);
+    return { cam: frame(["shell_base", "shell_lid", "hinge", "frame", "lens_right", "lens_left"], [1.0, 0.5, -1.0], 30, 1.0), label: "Lente clip v0 en unas gafas cualquiera · 63 × 32 × 18 mm, a escala" };
+  },
+  frente() {
+    reset();
+    return { cam: frame(["shell_base", "shell_lid", "frame"], [1, 0.12, -0.25], 26, 1.0), label: "De frente: la cámara queda a la altura de la patilla, junto a tu ojo" };
+  },
+  capsula() {
+    reset();
+    for (const n of GLASSES) nodes[n].visible = n === "temple_right";
+    return { cam: frame(["shell_base", "shell_lid"], [1.3, 0.6, -1.0], 26, 1.15), label: "Cápsula: cámara al frente, a la altura de la patilla" };
+  },
+  rayosx() {
+    reset();
+    for (const n of GLASSES) nodes[n].visible = n === "temple_right";
+    setOpacity(nodes.shell_lid, 0.08);
+    setOpacity(nodes.shell_base, 0.22);
+    return { cam: frame(["shell_base"], [0.45, 0.35, -1.3], 26, 1.1), label: "Por dentro (tapa transparente): ESP32-S3-CAM con la OV2640 al frente · detrás, batería 502540, INMP441 y vibrador" };
+  },
+  despiece() {
+    reset();
+    for (const n of GLASSES) nodes[n].visible = false;
+    const offsets = { battery: 16, mic: 16, motor: 16, board: 34, module: 34, usb_c: 34, chips: 34, camera: 34, lens: 34, fpc: 34, switch: 34, switch_lever: 34, shell_lid: 56 };
+    for (const [n, dy] of Object.entries(offsets)) nodes[n].position.y = dy; // local Y = outward in model axes
+    return { cam: frame(Object.keys(nodes).filter((n) => !GLASSES.includes(n)), [0.9, 0.75, -1.4], 30, 1.0), label: "Despiece: carcasa · batería 502540 + INMP441 + vibrador · ESP32-S3-CAM + OV2640 + interruptor · tapa" };
+  },
+};
+
+window.setView = (name) => {
+  const { cam, label } = VIEWS[name]();
+  document.getElementById("label").textContent = label;
+  renderer.render(scene, cam);
+};
+</script>
+</body>
+</html>
