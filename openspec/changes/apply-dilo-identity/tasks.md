@@ -2,9 +2,9 @@
 
 ## 1. Identity
 
-- [ ] 1.1 Calibre tokens, fonts and the lens-and-line logo in the phone page; verify at 390 px with a screenshot and no horizontal overflow
-- [ ] 1.2 Card label "DILO", cyan only on the reply and amber only on numbers; verify on a live cue
-- [ ] 1.3 Clear listening vs paused indicator; verify both states on the phone
+- [x] 1.1 Calibre tokens, fonts and the lens-and-line logo in the phone page; verify at 390 px with a screenshot and no horizontal overflow
+- [x] 1.2 Card label "DILO", cyan only on the reply and amber only on numbers; verify on a live cue
+- [x] 1.3 Clear listening vs paused indicator; verify both states on the phone
 
 ## 2. Installable
 

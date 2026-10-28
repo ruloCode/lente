@@ -18,6 +18,7 @@ import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { streamChat, type ChatMessage } from "./chat.ts";
 import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
+import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { chatTargets } from "./providers.ts";
 
@@ -129,7 +130,7 @@ async function sayThis(turn: AsrTurn): Promise<void> {
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply);
     if (!text) return;
-    record({ at: Date.now(), kind: "cue", label: "SAY THIS", text, ms });
+    record({ at: Date.now(), kind: "cue", label: "DILO", text, ms });
     device?.write("B");
     console.log(`[cue] ${ms} ms · ${text}`);
   } catch (error) {
@@ -451,9 +452,23 @@ const ACTIONS: Record<string, () => void> = {
   "/summary": () => void summarize(true),
 };
 
+// What makes the phone page installable: manifest and icons, drawn in src/brand.ts.
+const ICON_SIZES: Record<string, number> = { "/icon-192.png": 192, "/icon-512.png": 512, "/apple-touch-icon.png": 180 };
+const iconCache = new Map<string, Buffer>();
+
 const web = createHttpServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/") {
+    if (req.method === "GET" && req.url === "/manifest.webmanifest") {
+      res.writeHead(200, { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" });
+      res.end(webManifest());
+    } else if (req.method === "GET" && req.url === "/icon.svg") {
+      res.writeHead(200, { "Content-Type": "image/svg+xml", "Cache-Control": "no-cache" });
+      res.end(logoSvg());
+    } else if (req.method === "GET" && req.url && ICON_SIZES[req.url]) {
+      if (!iconCache.has(req.url)) iconCache.set(req.url, iconPng(ICON_SIZES[req.url]));
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-cache" });
+      res.end(iconCache.get(req.url));
+    } else if (req.method === "GET" && req.url === "/") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       res.end(PILOT_PAGE);
     } else if (req.method === "GET" && req.url === "/events") {

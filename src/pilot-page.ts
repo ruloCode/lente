@@ -2,56 +2,76 @@
 // clip sees, and the day as a timeline. It can read everything out loud. Served by
 // src/pilot.ts and fed by Server-Sent Events from /events.
 
+import { logoSvg } from "./brand.ts";
+
 export const PILOT_PAGE = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1013">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lente">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <title>Lente</title>
 <style>
   :root {
     --bg: #0b1013; --panel: #121a1f; --raised: #18222a; --ink: #e6edef; --muted: #8c9aa1; --line: #253139;
-    --accent: #4fd0d8; --amber: #e8a052; --live: #ff6262; --ok: #3ccf7a; color-scheme: dark;
-    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --cyan: #4fd0d8; --amber: #e8a052; --live: #ff6262; --ok: #3ccf7a; color-scheme: dark;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --body: "Atkinson Hyperlegible", -apple-system, system-ui, sans-serif;
   }
   [hidden] { display: none !important; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.45 -apple-system, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.45 var(--body); -webkit-tap-highlight-color: transparent; }
   body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); height: 100dvh; }
   .wrap { width: 100%; max-width: 560px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
   button { font: inherit; color: inherit; }
   button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .label { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 
-  header { border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
+  header { border-bottom: 1px solid var(--line); border-top: 6px solid var(--line); padding-top: env(safe-area-inset-top); }
+  body[data-state="listening"] header { border-top-color: var(--live); }
   header .row { display: flex; align-items: center; gap: 10px; padding-block: 10px; min-width: 0; }
-  .brand { font-weight: 750; font-size: 18px; letter-spacing: .02em; }
+  .brand { display: flex; align-items: center; gap: 8px; font: 700 24px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
+  .brand svg { width: 26px; height: 26px; flex: none; }
   .clip { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin-left: auto; white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
   .dot.on { background: var(--ok); }
   .bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; flex: none; }
   .bars i { width: 3px; border-radius: 2px; background: var(--line); height: 25%; transition: height .12s; }
-  .listen { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-  .listen .rec { width: 8px; height: 8px; border-radius: 50%; background: var(--live); }
-  .listen[aria-pressed="false"] .rec { background: var(--muted); }
+  .listen { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 7px 12px; font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+  .listen .rec { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
+  body[data-state="listening"] .listen { background: var(--live); border-color: var(--live); color: #1c0606; }
+  body[data-state="listening"] .listen .rec { background: #1c0606; border-color: #1c0606; animation: pulse 1.6s ease-in-out infinite; }
+  body[data-state="paused"] .listen { border-style: dashed; color: var(--muted); }
+  body[data-state="idle"] .listen { color: var(--ink); }
+  @keyframes pulse { 50% { opacity: .35; } }
   .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
   .modes button { border: 0; background: var(--panel); padding: 10px 6px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; font-weight: 600; color: var(--muted); }
   .modes button + button { border-left: 1px solid var(--line); }
-  .modes button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+  .modes button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
   .modes svg { width: 17px; height: 17px; }
-  .note { font-size: 13px; color: var(--amber); padding-bottom: 8px; overflow-wrap: anywhere; }
+  .note { font-size: 14px; color: var(--ink); background: var(--raised); border-left: 3px solid var(--muted); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; overflow-wrap: anywhere; }
 
   main { overflow-y: auto; -webkit-overflow-scrolling: touch; }
   main .wrap { display: grid; gap: 12px; padding-block: 12px 20px; }
 
-  .cue { border: 2px solid var(--accent); border-radius: 16px; padding: 14px 16px; display: grid; gap: 6px; background: var(--raised); }
-  .cue .label { color: var(--accent); }
-  .cue .text { font-size: 26px; line-height: 1.15; font-weight: 700; text-wrap: balance; }
+  .cue { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 6px; background: var(--raised); }
+  .cue .label { color: var(--muted); font-size: 12px; letter-spacing: .2em; }
+  .cue .text { font: 700 34px/1.05 var(--display); color: var(--cyan); text-wrap: balance; }
   .meta { font: 12px var(--mono); color: var(--amber); }
 
   .now { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 6px; background: var(--panel); }
-  .now .label { color: var(--amber); display: flex; justify-content: space-between; gap: 8px; }
+  .now .label { color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
   .now p { margin: 0; font-size: 18px; line-height: 1.35; }
   .now p.idle { font-size: 15px; color: var(--muted); }
 
@@ -59,7 +79,7 @@ export const PILOT_PAGE = `<!doctype html>
   .frame { position: relative; background: #000; display: grid; place-items: center; }
   .frame canvas { display: block; width: 100%; height: auto; max-height: 48dvh; object-fit: contain; }
   .rotate { position: absolute; right: 10px; top: 10px; width: 38px; height: 38px; border-radius: 50%; border: 0; background: rgba(11,16,19,.75); display: grid; place-items: center; }
-  .badge { position: absolute; left: 10px; top: 10px; padding: 7px 9px; border-radius: 999px; background: rgba(11,16,19,.75); color: var(--accent); }
+  .badge { position: absolute; left: 10px; top: 10px; padding: 7px 9px; border-radius: 999px; background: rgba(11,16,19,.75); color: var(--ink); }
   .badge.live { color: var(--live); }
   .caption { padding: 12px 16px 14px; display: grid; gap: 4px; }
   .caption p { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
@@ -69,16 +89,16 @@ export const PILOT_PAGE = `<!doctype html>
   .tl-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); margin-top: 4px; }
   .timeline { display: grid; gap: 10px; }
   .item { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; }
-  .chip { width: 28px; height: 28px; border-radius: 50%; background: var(--raised); display: grid; place-items: center; font: 700 12px var(--mono); color: var(--accent); }
+  .chip { width: 28px; height: 28px; border-radius: 50%; background: var(--raised); display: grid; place-items: center; font: 700 12px var(--mono); color: var(--ink); }
   .item .body { min-width: 0; }
   .item p { margin: 0; overflow-wrap: anywhere; }
   .item time { font: 11px var(--mono); color: var(--muted); }
   .item.q p { font-weight: 650; }
-  .item.k-summary .chip { color: var(--amber); }
+  .item.k-summary .chip { color: var(--ink); }
   .item.k-summary p { color: var(--ink); font-style: italic; }
   .item.k-cue .chip, .item.k-live .chip { font-size: 11px; }
   .item.k-live p { color: var(--muted); font-size: 14px; }
-  .item.k-cue p { color: var(--accent); font-weight: 600; }
+  .item.k-cue p { color: var(--cyan); font-weight: 700; }
   .partial { color: var(--muted); font-style: italic; padding-left: 38px; overflow-wrap: anywhere; }
   .hint { color: var(--muted); font-size: 15px; margin: 0; }
 
@@ -86,18 +106,18 @@ export const PILOT_PAGE = `<!doctype html>
   footer .wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-block: 10px 0; }
   .act { display: grid; justify-items: center; gap: 4px; padding: 10px 4px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; font-weight: 600; }
   .act svg { width: 22px; height: 22px; }
-  .act.primary { background: var(--accent); border-color: var(--accent); color: #062024; }
-  .act[aria-pressed="true"] { background: var(--raised); border-color: var(--accent); color: var(--accent); }
+  .act.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .act[aria-pressed="true"] { background: var(--raised); border-color: var(--ink); color: var(--ink); }
   #live-btn[aria-pressed="true"] { border-color: var(--live); color: var(--live); }
   .act:disabled { opacity: .4; }
-  @media (prefers-reduced-motion: reduce) { .bars i { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .bars i { transition: none; } .listen .rec { animation: none !important; } }
 </style>
 </head>
-<body>
+<body data-state="idle">
   <header>
     <div class="wrap">
       <div class="row">
-        <span class="brand">Lente</span>
+        <span class="brand">${logoSvg(false)}Lente</span>
         <button class="listen" id="listen" aria-pressed="true"><span class="rec"></span><span id="listen-text">Listening</span></button>
         <span class="clip"><span class="dot" id="dot"></span><span id="clip">Offline</span>
           <span class="bars" aria-hidden="true" id="bars"><i></i><i></i><i></i><i></i><i></i></span></span>
@@ -117,7 +137,7 @@ export const PILOT_PAGE = `<!doctype html>
   <main>
     <div class="wrap">
       <section class="cue" id="cue" aria-live="assertive" hidden>
-        <span class="label" id="cue-label">SAY THIS</span>
+        <span class="label" id="cue-label">DILO</span>
         <div class="text" id="cue-text"></div>
         <span class="meta" id="cue-meta"></span>
       </section>
@@ -176,6 +196,7 @@ export const PILOT_PAGE = `<!doctype html>
   const post = (path) => fetch(path, { method: "POST" }).catch(() => {});
   const fmt = (at) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   let status = {};
+  const isDilo = (label) => label === "DILO" || label === "SAY THIS"; // older day records say SAY THIS
 
   // --- Voice: the phone reads cues and summaries out loud (ElevenLabs through the hub, or its own voice)
   let voiceOn = store.get("lente-voice") === "on";
@@ -267,7 +288,7 @@ export const PILOT_PAGE = `<!doctype html>
     const kind = e.kind;
     row.className = "item k-" + kind + (e.question ? " q" : "");
     const chip = kind === "turn" ? (e.speaker || "·") : kind === "summary" ? "✳" : kind === "cue" ? "→" : "◉";
-    const text = kind === "cue" ? (e.label === "SAY THIS" ? "Say this: " : "") + e.text : e.text;
+    const text = kind === "cue" ? (isDilo(e.label) ? "Dilo: " : "") + e.text : e.text;
     row.innerHTML = '<span class="chip"></span><div class="body"><p></p><time></time></div>';
     row.querySelector(".chip").textContent = chip;
     row.querySelector("p").textContent = text;
@@ -292,7 +313,7 @@ export const PILOT_PAGE = `<!doctype html>
     for (let i = 0; i < bars.length; i++) {
       const on = level > i / bars.length;
       bars[i].style.height = on ? 30 + i * 17 + "%" : "25%";
-      bars[i].style.background = on ? "var(--accent)" : "var(--line)";
+      bars[i].style.background = on ? "var(--ink)" : "var(--line)";
     }
   }
 
@@ -301,7 +322,9 @@ export const PILOT_PAGE = `<!doctype html>
     $("dot").classList.toggle("on", m.clip);
     $("clip").textContent = m.clip ? "Clip" : "Offline";
     $("listen").setAttribute("aria-pressed", String(m.listening));
-    $("listen-text").textContent = m.listening ? "Listening" : "Paused";
+    const state = !m.listening ? "paused" : m.clip ? "listening" : "idle";
+    document.body.dataset.state = state;
+    $("listen-text").textContent = { listening: "Listening", paused: "Paused", idle: "Waiting" }[state];
     for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === m.mode));
     $("camoff").hidden = m.mode === "camera";
     $("look").disabled = !m.clip;
@@ -340,7 +363,7 @@ export const PILOT_PAGE = `<!doctype html>
         if (m.label === "ON SCREEN") { addItem(m); say(m.text, "normal"); }
       } else {
         $("cue").hidden = false;
-        $("cue-label").textContent = m.label;
+        $("cue-label").textContent = isDilo(m.label) ? "DILO" : m.label;
         $("cue-text").textContent = m.text;
         $("cue-meta").textContent = m.ms != null ? "in " + m.ms + " ms" : "";
         addItem(m);
