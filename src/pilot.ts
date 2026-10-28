@@ -20,6 +20,7 @@ import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuest
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
+import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
@@ -30,6 +31,8 @@ const LANGUAGE = process.env.PILOT_LANG ?? "Spanish";
 const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_GAP_MS = 400;
+// Until the phone setting lands, the enrollment phrase uses these names (comma-separated).
+const WEARER_NAMES = (process.env.PILOT_WEARER_NAMES ?? "").split(",").map((n) => n.trim()).filter(Boolean);
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
@@ -65,6 +68,8 @@ let status = {
   voice: elevenKey ? "elevenlabs" : "device",
   audioLost: 0,
   audioLate: 0,
+  /** Speaker label of the wearer in this transcription session, once known. */
+  wearer: "",
   /** Why the last clip was refused (old firmware, bad hello); cleared by the next good hello. */
   clipError: "",
   asr: key ? "waiting for the clip…" : "no MODEL_API_KEY: audio level only",
@@ -290,6 +295,17 @@ let conditioner = new AudioConditioner(MIC_GAIN);
 let timeline = new AudioTimeline(FRAME_BYTES);
 /** Wall-clock time of the first audio frame of this connection: session audio 0 ms. */
 let audioOrigin = 0;
+let loudness = new LoudnessRing(FRAME_MS);
+const wearerTracker = new WearerTracker();
+
+/** Announce the wearer's label to the phone whenever it changes. */
+function syncWearer(): void {
+  const label = wearerTracker.wearer() ?? "";
+  if (label !== status.wearer) {
+    setStatus({ wearer: label });
+    console.log(`[wearer] ${label ? `speaker ${label} is the wearer` : "not identified"}`);
+  }
+}
 
 function startAsr(): void {
   if (!key || !device || !status.listening || asr) return;
@@ -297,8 +313,20 @@ function startAsr(): void {
   const session = new AsrSession(key, {
     onStatus: (s) => setStatus({ asr: s }),
     onPartial: (text) => broadcast({ kind: "partial", text }),
-    onSpeaker: (turnId, speaker) => broadcast({ kind: "speaker", turnId, speaker }),
+    onSessionStart: () => {
+      wearerTracker.reset();
+      syncWearer();
+    },
+    onSpeaker: (turnId, speaker) => {
+      broadcast({ kind: "speaker", turnId, speaker });
+      wearerTracker.noteSpeaker(turnId, speaker);
+      syncWearer();
+    },
     onTurn: (turn) => {
+      if (turn.startMs !== undefined && turn.endMs !== undefined) wearerTracker.noteLoudness(turn.turnId, loudness.medianBetween(turn.startMs, turn.endMs));
+      if (isEnrollment(turn.text, WEARER_NAMES)) wearerTracker.noteEnrollment(turn.turnId);
+      if (turn.speaker !== undefined) wearerTracker.noteSpeaker(turn.turnId, turn.speaker);
+      syncWearer();
       const question = isQuestion(turn.text);
       const anchor =
         turn.startMs === undefined || turn.endMs === undefined || !audioOrigin
@@ -335,6 +363,7 @@ const tcp = createTcpServer((socket) => {
   jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
   timeline = new AudioTimeline(FRAME_BYTES);
   audioOrigin = 0;
+  loudness = new LoudnessRing(FRAME_MS);
   let helloSeen = false;
   let lastLevel = 0;
   console.log(`[clip] connected from ${socket.remoteAddress}`);
@@ -385,6 +414,7 @@ const tcp = createTcpServer((socket) => {
         if (lost || timeline.late > lateBefore) setStatus({ audioLost: timeline.lost, audioLate: timeline.late });
         const clean = conditioner.process(aligned);
         jitter.push(clean);
+        loudness.push(rms(clean));
         const now = Date.now();
         if (now - lastLevel > 200) {
           lastLevel = now;

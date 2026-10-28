@@ -2,10 +2,10 @@
 
 ## 1. Wearer identification
 
-- [ ] 1.1 Pure module with a per-frame RMS ring and per-label median loudness; unit tests cover two speakers, the 2× margin and an unknown result (`pnpm test`)
-- [ ] 1.2 Map completed turns to their audio span using `audioProcessedMs`; test with synthetic timings
-- [ ] 1.3 Enrollment phrase in English and Spanish assigns the wearer label; unit test
-- [ ] 1.4 Phone shows "You" for the wearer's label; verify with the simulated clip playing two voices at different levels
+- [x] 1.1 Pure module with a per-frame RMS ring and per-label median loudness; unit tests cover two speakers, the 2× margin and an unknown result (`pnpm test`)
+- [x] 1.2 Map completed turns to their audio span using `audioProcessedMs`; test with synthetic timings
+- [x] 1.3 Enrollment phrase in English and Spanish assigns the wearer label; unit test
+- [x] 1.4 Phone shows "You" for the wearer's label; verify with the simulated clip playing two voices at different levels
 
 ## 2. Addressing rules
 

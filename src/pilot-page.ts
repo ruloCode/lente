@@ -282,15 +282,21 @@ export const PILOT_PAGE = `<!doctype html>
   const timeline = $("timeline"), partial = $("partial");
   const rows = new Map();
   let count = 0;
+  // Speaker labels (A, B…) belong to one transcription session; the hub says which one is the wearer.
+  const speakerChip = (label) => (label && status && status.wearer === label ? "You" : label || "·");
+  function relabelSpeakers() {
+    for (const row of timeline.querySelectorAll(".item.k-turn")) row.querySelector(".chip").textContent = speakerChip(row.dataset.speaker);
+  }
   function addItem(e) {
     $("tl-hint").hidden = true;
     const row = document.createElement("div");
     const kind = e.kind;
     row.className = "item k-" + kind + (e.question ? " q" : "");
-    const chip = kind === "turn" ? (e.speaker || "·") : kind === "summary" ? "✳" : kind === "cue" ? "→" : "◉";
+    const chip = kind === "turn" ? speakerChip(e.speaker) : kind === "summary" ? "✳" : kind === "cue" ? "→" : "◉";
     const text = kind === "cue" ? (isDilo(e.label) ? "Dilo: " : "") + e.text : e.text;
     row.innerHTML = '<span class="chip"></span><div class="body"><p></p><time></time></div>';
     row.querySelector(".chip").textContent = chip;
+    if (kind === "turn") row.dataset.speaker = e.speaker || "";
     row.querySelector("p").textContent = text;
     row.querySelector("time").textContent = fmt(e.at || Date.now());
     timeline.insertBefore(row, partial);
@@ -318,7 +324,9 @@ export const PILOT_PAGE = `<!doctype html>
   }
 
   function applyStatus(m) {
+    const wearerChanged = !status || status.wearer !== m.wearer;
     status = m;
+    if (wearerChanged) relabelSpeakers();
     $("dot").classList.toggle("on", m.clip);
     $("clip").textContent = m.clip ? "Clip" : "Offline";
     $("listen").setAttribute("aria-pressed", String(m.listening));
@@ -352,7 +360,7 @@ export const PILOT_PAGE = `<!doctype html>
     } else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "partial") { $("tl-hint").hidden = true; partial.textContent = m.text; }
     else if (m.kind === "turn") addItem(m);
-    else if (m.kind === "speaker") { const r = rows.get(String(m.turnId)); if (r) r.querySelector(".chip").textContent = m.speaker; }
+    else if (m.kind === "speaker") { const r = rows.get(String(m.turnId)); if (r) { r.dataset.speaker = m.speaker; r.querySelector(".chip").textContent = speakerChip(m.speaker); } }
     else if (m.kind === "summary") { addItem(m); showSummary(m); say(m.text, "normal"); }
     else if (m.kind === "live") {
       showView("LIVE", m.text, m.ms, m.photo);

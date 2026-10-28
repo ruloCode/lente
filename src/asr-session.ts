@@ -21,6 +21,8 @@ export interface AsrHandlers {
   onSpeaker(turnId: string, speaker: string): void;
   onPartial(text: string): void;
   onStatus(status: string): void;
+  /** Labels are reassigned whenever a session (re)starts. */
+  onSessionStart?(): void;
 }
 
 interface ServerMessage {
@@ -67,6 +69,8 @@ export class AsrSession {
     this.streamMap = new StreamMap(FRAME_MS);
     this.startedAt.clear();
     this.lastProcessedMs = undefined;
+    this.speakerOf.clear();
+    this.handlers.onSessionStart?.();
     const ws = new WebSocket(META_REALTIME_URL);
     this.ws = ws;
     ws.addEventListener("open", () => {
