@@ -23,6 +23,8 @@ Verified against the docs on 2026-10-26. Items marked **unverified** need a real
 
 Spark supports function calling, structured output, prompt caching and web-search grounding. Reasoning effort ranges `minimal` → `xhigh`; over Chat Completions the field is `reasoning_effort` (verified 2026-10-28: accepted, and it cut reasoning tokens from 1,381 to 214 on a one-line reply). Reasoning tokens count as output tokens and show in `usage.completion_tokens_details.reasoning_tokens`.
 
+Structured output over Chat Completions (verified 2026-10-28): `response_format: { type: "json_schema", json_schema: { name, strict: true, schema } }` is accepted and the reply content is the JSON string. Schema `enum`s are honored for ids, but free-text fields may still carry extra text (a cited id came back as `t1 'quote'`), so validate server-side.
+
 Images over Chat Completions use the OpenAI shape, `{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,…" } }` (verified 2026-10-28 with a 640×480 JPEG from the clip).
 
 ### Responses API shape

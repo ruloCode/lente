@@ -21,6 +21,8 @@ import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseYesNo } from "./addressing.ts";
+import { MeetingStore } from "./meeting-store.ts";
+import { type Meeting, addTurn, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
 import { ProfileStore } from "./profile.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
@@ -33,6 +35,8 @@ const LANGUAGE = process.env.PILOT_LANG ?? "Spanish";
 const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_GAP_MS = 400;
+const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
+const meetings = new MeetingStore(fileURLToPath(new URL("../data/meetings/", import.meta.url)));
 const profile = new ProfileStore(fileURLToPath(new URL("../data/profile.json", import.meta.url)));
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
@@ -69,6 +73,8 @@ let status = {
   voice: elevenKey ? "elevenlabs" : "device",
   audioLost: 0,
   audioLate: 0,
+  /** The meeting in progress, if any. */
+  meeting: null as null | { id: string; title: string; startedAt: number; turns: number },
   /** Name and aliases other people use for the wearer (set on the phone). */
   names: profile.names,
   /** Testing: cue on every question, not only those aimed at the wearer. */
@@ -104,11 +110,11 @@ function setStatus(patch: Partial<typeof status>): void {
 
 let sparkTargets = chatTargets().filter((t) => t.id.startsWith("spark-1.3"));
 
-async function askSpark(messages: ChatMessage[]): Promise<string> {
+async function askSpark(messages: ChatMessage[], opts: { extra?: Record<string, unknown>; maxTokens?: number } = {}): Promise<string> {
   let lastError: unknown;
   for (const target of sparkTargets) {
     try {
-      const { text } = await streamChat(target, messages, 400);
+      const { text } = await streamChat(opts.extra ? { ...target, extra: { ...target.extra, ...opts.extra } } : target, messages, opts.maxTokens ?? 400);
       sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
       return text;
     } catch (error) {
@@ -219,6 +225,94 @@ async function onScreen(jpeg: Buffer): Promise<void> {
     console.error(`[look] failed: ${(error as Error).message.slice(0, 200)}`);
   }
 }
+
+// --- Meetings: start and end from the phone, notes extracted at the end ----------------------------
+
+let current: Meeting | undefined;
+/** Deleted while their notes were still being written: the late result must not bring them back. */
+const deletedMeetings = new Set<string>();
+let lastSpeechAt = 0;
+
+const meetingSummary = (m: Meeting) => ({
+  id: m.id,
+  title: m.title,
+  startedAt: m.startedAt,
+  endedAt: m.endedAt,
+  status: m.status,
+  turns: m.turns.length,
+  notes: m.notes,
+  dropped: m.droppedItems,
+});
+
+function broadcastMeetings(): void {
+  broadcast({ kind: "meetings", items: meetings.list().reverse().map(meetingSummary) });
+}
+
+function syncMeeting(): void {
+  const m = current;
+  setStatus({ meeting: m ? { id: m.id, title: m.title, startedAt: m.startedAt, turns: m.turns.length } : null });
+}
+
+function startMeeting(title: string): void {
+  if (current) return;
+  const draft = newMeeting(title, Date.now());
+  current = { ...draft, id: meetings.uniqueId(draft.id) };
+  lastSpeechAt = Date.now();
+  meetings.save(current);
+  syncMeeting();
+  broadcastMeetings();
+  console.log(`[meeting] started ${current.id}${current.title ? ` "${current.title}"` : ""}`);
+}
+
+async function endMeeting(reason: "manual" | "silence" | "restart"): Promise<void> {
+  const m = current;
+  if (!m) return;
+  current = undefined;
+  m.endedAt = Date.now();
+  m.endReason = reason;
+  m.status = isTooShort(m) ? "too-short" : "extracting";
+  meetings.save(m);
+  syncMeeting();
+  broadcastMeetings();
+  console.log(`[meeting] ended ${m.id} (${reason}) · ${m.turns.length} turns${m.status === "too-short" ? " · too short for notes" : ""}`);
+  if (m.status === "extracting") await extractNotes(m);
+}
+
+async function extractNotes(m: Meeting): Promise<void> {
+  const started = performance.now();
+  try {
+    const turnIds = m.turns.map((t) => t.id);
+    const text = await askSpark(extractionMessages(m), {
+      extra: { response_format: { type: "json_schema", json_schema: { name: "meeting_notes", strict: true, schema: notesSchema(turnIds) } } },
+      maxTokens: 3000,
+    });
+    const { notes, dropped } = validateNotes(JSON.parse(text), turnIds);
+    m.notes = notes;
+    m.droppedItems = dropped;
+    m.status = "done";
+    console.log(
+      `[meeting] notes for ${m.id} in ${Math.round(performance.now() - started)} ms · ${notes.decisions.length} decisions, ${notes.commitments.length} commitments, ${notes.openQuestions.length} open · ${dropped} dropped`,
+    );
+  } catch (error) {
+    m.status = "failed";
+    m.error = (error as Error).message.slice(0, 200);
+    console.error(`[meeting] notes for ${m.id} failed: ${m.error}`);
+  }
+  if (deletedMeetings.has(m.id)) return;
+  meetings.save(m);
+  broadcastMeetings();
+}
+
+/** A hub that stopped mid-meeting finishes it on the next start. */
+for (const m of meetings.list().filter((x) => x.status === "running" || x.status === "extracting")) {
+  current = m;
+  m.status = "running";
+  void endMeeting("restart");
+}
+
+setInterval(() => {
+  if (current && silenceExpired(lastSpeechAt, Date.now(), MEETING_SILENCE_MS)) void endMeeting("silence");
+}, 5000);
 
 // --- What is happening: periodic and on-demand summaries ---------------------------------------
 
@@ -394,6 +488,12 @@ function startAsr(): void {
         turn.startMs === undefined || turn.endMs === undefined || !audioOrigin
           ? {}
           : { audioStartMs: Math.round(turn.startMs), audioEndMs: Math.round(turn.endMs), spokeAt: audioOrigin + Math.round(turn.startMs) };
+      if (current) {
+        addTurn(current, { at: Date.now(), speaker: turn.speaker, wearer: turn.speaker !== undefined && turn.speaker === wearerTracker.wearer(), text: turn.text });
+        lastSpeechAt = Date.now();
+        meetings.save(current);
+        syncMeeting();
+      }
       record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question, ...anchor }, { turnId: turn.turnId });
       const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
       console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
@@ -569,8 +669,33 @@ const web = createHttpServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
       res.write(`data: ${JSON.stringify(status)}\n\n`);
       res.write(`data: ${JSON.stringify({ kind: "history", items: day.entries.slice(-80) })}\n\n`);
+      res.write(`data: ${JSON.stringify({ kind: "meetings", items: meetings.list().reverse().map(meetingSummary) })}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
+    } else if (req.method === "POST" && req.url === "/meeting/start") {
+      const { title } = JSON.parse((await readBody(req)) || "{}") as { title?: string };
+      startMeeting(typeof title === "string" ? title : "");
+      res.writeHead(204).end();
+    } else if (req.method === "POST" && req.url === "/meeting/end") {
+      void endMeeting("manual");
+      res.writeHead(204).end();
+    } else if (req.method === "POST" && req.url === "/meetings/delete") {
+      const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
+      const removed = typeof id === "string" && id !== current?.id && meetings.delete(id);
+      if (removed) {
+        deletedMeetings.add(id as string);
+        broadcastMeetings();
+      }
+      res.writeHead(removed ? 204 : 404).end();
+    } else if (req.method === "POST" && req.url === "/meetings/delete-all") {
+      for (const m of [...meetings.list(), ...(current ? [current] : [])]) deletedMeetings.add(m.id);
+      if (current) {
+        current = undefined; // discarded, not summarized
+        syncMeeting();
+      }
+      console.log(`[meeting] deleted ${meetings.deleteAll()} meeting(s)`);
+      broadcastMeetings();
+      res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/profile") {
       const { names } = JSON.parse((await readBody(req)) || "{}") as { names?: string };
       setStatus({ names: profile.setNames(typeof names === "string" ? names : "") });

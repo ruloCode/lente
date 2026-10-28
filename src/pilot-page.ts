@@ -103,6 +103,19 @@ export const PILOT_PAGE = `<!doctype html>
   .me form { display: flex; gap: 8px; padding-top: 6px; }
   .me input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
   .me button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 14px; font-weight: 600; }
+  .meet { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .meet input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
+  .meet button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
+  .meet[data-running="true"] button { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .meet .live-title { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .past { margin-bottom: 10px; }
+  .past summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
+  .past .m { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 4px; font-size: 14px; }
+  .past .m h3 { margin: 0; font: 700 16px/1.2 var(--body); }
+  .past .m .when { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  .past .m ul { margin: 0; padding-left: 18px; }
+  .past .m .sec { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .past .m button, .past .wipe { justify-self: start; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
   .me label.sw { display: flex; align-items: center; gap: 8px; font-size: 14px; padding-top: 8px; }
   .me label.sw input { flex: none; width: 18px; height: 18px; padding: 0; accent-color: var(--ink); }
   .me p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
@@ -147,6 +160,16 @@ export const PILOT_PAGE = `<!doctype html>
         </form>
         <label class="sw"><input type="checkbox" id="me-all"> Contestar todas las preguntas (pruebas)</label>
         <p>Lente answers when someone says one of these names. Say “Lente, soy Rulo” to tell it which voice is yours.</p>
+      </details>
+      <div class="meet" id="meet" data-running="false">
+        <input id="meet-title" autocomplete="off" placeholder="Título de la reunión (opcional)" aria-label="Título de la reunión">
+        <span class="live-title" id="meet-live" hidden></span>
+        <button id="meet-btn" type="button">Iniciar</button>
+      </div>
+      <details class="past" id="past" hidden>
+        <summary>Reuniones anteriores (<span id="past-count">0</span>)</summary>
+        <div id="past-list"></div>
+        <button class="wipe" id="wipe" type="button">Borrar toda la memoria</button>
       </details>
       <div class="note" id="note" hidden></div>
     </div>
@@ -355,11 +378,70 @@ export const PILOT_PAGE = `<!doctype html>
     $("me").open = false;
   });
 
+  // --- Meetings: start and end, notes of past ones, delete
+  const MEETING_STATE = { running: "en curso", extracting: "sacando notas…", done: "", "too-short": "muy corta, sin notas", failed: "no se pudieron sacar notas" };
+  const sendJson = (path, body) => fetch(path, { method: "POST", body: JSON.stringify(body || {}) }).catch(() => {});
+  $("meet-btn").addEventListener("click", () => {
+    if (status.meeting) sendJson("/meeting/end");
+    else { sendJson("/meeting/start", { title: $("meet-title").value }); $("meet-title").value = ""; }
+  });
+  let wipeTimer = 0;
+  $("wipe").addEventListener("click", () => {
+    if (!wipeTimer) {
+      $("wipe").textContent = "Toca de nuevo para borrar todo";
+      wipeTimer = setTimeout(() => { wipeTimer = 0; $("wipe").textContent = "Borrar toda la memoria"; }, 4000);
+      return;
+    }
+    clearTimeout(wipeTimer); wipeTimer = 0; $("wipe").textContent = "Borrar toda la memoria";
+    sendJson("/meetings/delete-all");
+  });
+  function showMeeting(m) {
+    const on = !!m;
+    $("meet").dataset.running = String(on);
+    $("meet-title").hidden = on;
+    $("meet-live").hidden = !on;
+    $("meet-live").textContent = on ? "En reunión" + (m.title ? ": " + m.title : "") + " · " + m.turns + " turnos" : "";
+    $("meet-btn").textContent = on ? "Terminar" : "Iniciar";
+  }
+  function list(parent, label, items, line) {
+    if (!items || !items.length) return;
+    const h = document.createElement("div"); h.className = "sec"; h.textContent = label; parent.append(h);
+    const ul = document.createElement("ul");
+    for (const it of items) { const li = document.createElement("li"); li.textContent = line(it); ul.append(li); }
+    parent.append(ul);
+  }
+  function showPast(items) {
+    $("past").hidden = !items.length;
+    $("past-count").textContent = items.length;
+    const box = $("past-list");
+    box.textContent = "";
+    for (const m of items) {
+      const el = document.createElement("div"); el.className = "m";
+      const h = document.createElement("h3"); h.textContent = m.title || "Reunión sin título"; el.append(h);
+      const when = document.createElement("div"); when.className = "when";
+      when.textContent = [new Date(m.startedAt).toLocaleDateString([], { day: "numeric", month: "short" }) + " " + fmt(m.startedAt), m.turns + " turnos", MEETING_STATE[m.status]].filter(Boolean).join(" · ");
+      el.append(when);
+      if (m.notes) {
+        if (m.notes.summary) { const p = document.createElement("p"); p.style.margin = "4px 0 0"; p.textContent = m.notes.summary; el.append(p); }
+        list(el, "Decisiones", m.notes.decisions, (d) => d.text);
+        list(el, "Compromisos", m.notes.commitments, (c) => (c.owner === "you" ? "Tú" : c.owner) + ": " + c.what + (c.due ? " (" + c.due + ")" : ""));
+        list(el, "Pendientes", m.notes.openQuestions, (q) => q.text);
+      }
+      if (m.status !== "running") {
+        const del = document.createElement("button"); del.type = "button"; del.textContent = "Borrar";
+        del.addEventListener("click", () => sendJson("/meetings/delete", { id: m.id }));
+        el.append(del);
+      }
+      box.append(el);
+    }
+  }
+
   function applyStatus(m) {
     const wearerChanged = !status || status.wearer !== m.wearer;
     status = m;
     if (wearerChanged) relabelSpeakers();
     showNames(m.names);
+    showMeeting(m.meeting);
     $("me-all").checked = !!m.everyQuestion;
     $("dot").classList.toggle("on", m.clip);
     $("clip").textContent = m.clip ? "Clip" : "Offline";
@@ -391,7 +473,8 @@ export const PILOT_PAGE = `<!doctype html>
         addItem(e);
         if (e.kind === "summary") showSummary(e);
       }
-    } else if (m.kind === "level") setLevel(m.rms);
+    } else if (m.kind === "meetings") showPast(m.items);
+    else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "partial") { $("tl-hint").hidden = true; partial.textContent = m.text; }
     else if (m.kind === "turn") addItem(m);
     else if (m.kind === "speaker") { const r = rows.get(String(m.turnId)); if (r) { r.dataset.speaker = m.speaker; r.querySelector(".chip").textContent = speakerChip(m.speaker); } }
