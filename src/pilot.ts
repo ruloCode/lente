@@ -13,9 +13,10 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createTcpServer, type Socket } from "node:net";
 import { networkInterfaces } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
-import { streamChat, type ChatMessage } from "./chat.ts";
+import { type ChatMessage, completeChat } from "./chat.ts";
 import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
@@ -39,9 +40,11 @@ const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_GAP_MS = 400;
 const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
-const meetings = new MeetingStore(fileURLToPath(new URL("../data/meetings/", import.meta.url)));
-const language = new LanguageStore(fileURLToPath(new URL("../data/language.json", import.meta.url)));
-const profile = new ProfileStore(fileURLToPath(new URL("../data/profile.json", import.meta.url)));
+/** Where the day, meetings and profile are kept; the eval runner points it at a scratch folder. */
+const DATA_DIR = process.env.PILOT_DATA_DIR ?? fileURLToPath(new URL("../data/", import.meta.url));
+const meetings = new MeetingStore(join(DATA_DIR, "meetings"));
+const language = new LanguageStore(join(DATA_DIR, "language.json"));
+const profile = new ProfileStore(join(DATA_DIR, "profile.json"));
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
@@ -87,7 +90,7 @@ let status = {
 };
 
 const clients = new Set<ServerResponse>();
-const day = new DayLog(fileURLToPath(new URL("../data/days/", import.meta.url)));
+const day = new DayLog(join(DATA_DIR, "days"));
 
 function broadcast(event: object): void {
   const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -110,13 +113,18 @@ function setStatus(patch: Partial<typeof status>): void {
 
 let sparkTargets = chatTargets().filter((t) => t.id.startsWith("spark-1.3"));
 
-async function askSpark(messages: ChatMessage[], opts: { extra?: Record<string, unknown>; maxTokens?: number } = {}): Promise<string> {
+/**
+ * One Spark call. Not streamed: every caller waits for the whole answer anyway, and only a
+ * complete response reports `usage`, which the phone/eval see as a `usage` event per call.
+ */
+async function askSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number }): Promise<string> {
   let lastError: unknown;
   for (const target of sparkTargets) {
     try {
-      const { text } = await streamChat(opts.extra ? { ...target, extra: { ...target.extra, ...opts.extra } } : target, messages, opts.maxTokens ?? 400);
+      const done = await completeChat(target, messages, { maxTokens: opts.maxTokens ?? 400, extra: opts.extra });
       sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
-      return text;
+      broadcast({ kind: "usage", label: opts.label, model: target.id, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
+      return done.text;
     } catch (error) {
       lastError = error;
       console.error(`[spark] ${target.id} failed: ${(error as Error).message.slice(0, 200)}`);
@@ -138,12 +146,12 @@ async function sayThis(turn: AsrTurn, asker: string | undefined, why: string): P
   const seq = ++cueSeq;
   const started = performance.now();
   try {
-    const reply = await askSpark(replyMessages(memoryText(), recentTurns(), turn.text));
+    const reply = await askSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue" });
     if (seq !== cueSeq) return; // a newer question already took the card
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply);
     if (!text) return;
-    record({ at: Date.now(), kind: "cue", label: "DILO", text, ms, asker, why });
+    record({ at: Date.now(), kind: "cue", label: "DILO", text, ms, asker, why }, { turnId: turn.turnId });
     device?.write("B");
     console.log(`[cue] ${ms} ms · ${text}`);
   } catch (error) {
@@ -176,10 +184,12 @@ async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: nu
   const asked: AddressTurn = { speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
   if (profile.everyQuestion) {
     console.log("[address] addressed · testing (every question)");
+    broadcast({ kind: "address", turnId: turn.turnId, verdict: "addressed", rule: "testing" });
     return void sayThis(turn, speaker, "testing");
   }
   const d = await decideAddressed(asked, earlier);
   console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`);
+  broadcast({ kind: "address", turnId: turn.turnId, verdict: d.verdict, rule: d.rule, ms: d.ms });
   if (d.verdict === "addressed") {
     const kept = meetingTurns.get(turn.turnId);
     if (kept && current?.turns.includes(kept)) {
@@ -197,7 +207,7 @@ async function decideAddressed(turn: AddressTurn, history: AddressTurn[]): Promi
   if (decision.verdict !== "ask") return decision;
   const started = performance.now();
   try {
-    const answer = parseYesNo(await askSpark(addressMessages(turn, history, wearer, profile.names)));
+    const answer = parseYesNo(await askSpark(addressMessages(turn, history, wearer, profile.names), { label: "address" }));
     const ms = Math.round(performance.now() - started);
     // An unreadable answer counts as "not aimed at the wearer": a missed cue beats a false buzz.
     return { verdict: answer ? "addressed" : "not-addressed", rule: "model", ms };
@@ -218,7 +228,7 @@ async function onScreen(jpeg: Buffer): Promise<void> {
     const reply = await askSpark([
       { role: "system", content: ON_SCREEN_PROMPT },
       { role: "user", content: [{ type: "text", text: "What am I looking at?" }, { type: "image_url", image_url: { url: photo } }] },
-    ]);
+    ], { label: "look" });
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply, 110);
     record({ at: Date.now(), kind: "cue", label: "ON SCREEN", text, ms }, { photo });
@@ -312,6 +322,7 @@ async function extractNotes(m: Meeting): Promise<void> {
   try {
     const turnIds = m.turns.map((t) => t.id);
     const text = await askSpark(extractionMessages(m), {
+      label: "notes",
       extra: { response_format: { type: "json_schema", json_schema: { name: "meeting_notes", strict: true, schema: notesSchema(turnIds) } } },
       maxTokens: 3000,
     });
@@ -343,6 +354,7 @@ async function makeBriefing(title: string, names: string[]): Promise<Briefing> {
   const all = meetings.list().filter((m) => m.id !== current?.id);
   const ids = rememberedMeetings(all).map((m) => m.id);
   const text = await askSpark(briefingMessages(memoryText(), title, names), {
+    label: "briefing",
     extra: { response_format: { type: "json_schema", json_schema: { name: "briefing", strict: true, schema: briefingSchema(ids) } } },
     maxTokens: 1500,
   });
@@ -384,7 +396,7 @@ async function summarize(asked: boolean): Promise<void> {
     const reply = await askSpark([
       { role: "system", content: SUMMARY_PROMPT },
       { role: "user", content: lines.join("\n") },
-    ]);
+    ], { label: "summary" });
     lastSummaryAt = Date.now();
     const text = reply.trim().replace(/\s+/g, " ").slice(0, 400);
     record({ at: Date.now(), kind: "summary", text }, { ms: Math.round(performance.now() - started) });
@@ -435,7 +447,7 @@ async function describeLive(jpeg: Buffer): Promise<void> {
           { type: "image_url", image_url: { url: photo } },
         ],
       },
-    ]);
+    ], { label: "live" });
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply, 120);
     if (text && text !== lastLive) {

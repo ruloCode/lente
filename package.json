@@ -12,6 +12,7 @@
     "ping": "node --env-file-if-exists=.env src/ping.ts",
     "bench:llm": "node --env-file-if-exists=.env scripts/bench-llm.ts",
     "bench:asr": "node --env-file-if-exists=.env scripts/bench-asr.ts",
+    "eval": "node --env-file-if-exists=.env scripts/eval/run.ts",
     "eval:render": "node scripts/eval/render.ts",
     "bench:cache": "node --env-file-if-exists=.env scripts/bench-cache.ts",
     "test": "node --test test/*.test.ts",

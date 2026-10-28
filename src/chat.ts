@@ -61,6 +61,7 @@ export interface Completion {
   /** Prompt tokens, and how many of them were served from the prompt cache. */
   promptTokens: number | undefined;
   cachedTokens: number | undefined;
+  completionTokens: number | undefined;
 }
 
 /**
@@ -78,7 +79,7 @@ export async function completeChat(target: ChatTarget, messages: ChatMessage[], 
   if (!res.ok) throw new Error(`${target.id}: HTTP ${res.status} ${await res.text().catch(() => "")}`);
   const json = (await res.json()) as {
     choices?: { message?: { content?: unknown } }[];
-    usage?: { prompt_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+    usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
   };
   const content = json.choices?.[0]?.message?.content;
   return {
@@ -86,5 +87,6 @@ export async function completeChat(target: ChatTarget, messages: ChatMessage[], 
     totalMs: performance.now() - started,
     promptTokens: json.usage?.prompt_tokens,
     cachedTokens: json.usage?.prompt_tokens_details?.cached_tokens,
+    completionTokens: json.usage?.completion_tokens,
   };
 }

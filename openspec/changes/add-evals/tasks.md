@@ -7,9 +7,9 @@
 
 ## 2. Runner and metrics
 
-- [ ] 2.1 Replay through the hub path at real-time pace (reuse the simulated clip); verify one dialogue end to end
-- [ ] 2.2 Metric functions (percentiles, precision/recall, false cue rate) as pure code with tests
-- [ ] 2.3 `pnpm eval` writes raw events to `results/` and a dated summary; verify on the full set and paste the table into docs/benchmarks.md
+- [x] 2.1 Replay through the hub path at real-time pace (reuse the simulated clip); verify one dialogue end to end
+- [x] 2.2 Metric functions (percentiles, precision/recall, false cue rate) as pure code with tests
+- [x] 2.3 `pnpm eval` writes raw events to `results/` and a dated summary; verify on the full set and paste the table into docs/benchmarks.md
 
 ## 3. Stage telemetry
 

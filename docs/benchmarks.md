@@ -60,3 +60,30 @@ Recordings and results stay local (`recordings/`, `results/` and `*.wav` are git
 | 2 (`12 14`) | 2–14 | 6,084 / 21,167 | 28.7% |
 
 When the cache hits, 1,521 of about 1,620 tokens are served from it (93.8%); the rest is the changing tail. Hits are not steady: in run 2 calls 1, 5, 7, 8 and 9 hit and the others missed, in no pattern tied to the gap between calls (1.5 s). The briefing call never hit in either run. So the cache is a discount that sometimes applies, not something a latency budget can rely on. A real week of meetings will give a longer prefix; the number above is for the synthetic one.
+
+## Eval on the synthetic set — 2026-10-28
+
+Set: 10 synthetic dialogues, 68 lines, 28 questions (16 aimed at the wearer). Replayed at real time through the hub with the clip emulator.
+Models: spark-1.3-minimal (reasoning effort minimal); transcription `muse-voice-transcribe-1.0` in DIARIZATION mode; wearer name "Rulo"; cues only when addressed.
+
+| Metric | p50 / p95 or value | Detail |
+|---|---|---|
+| Transcription finalize (line end → turn) | 1.66 s / 1.94 s | n=68 |
+| Cue (question end → card on the phone) | 3.02 s / 4.75 s | n=17 |
+| Reply model time | 1.29 s / 1.86 s | n=17 |
+| Addressing precision | 76% | 13 right of 17 cues |
+| Addressing recall | 81% | 13 of 16 questions for the wearer |
+| False cue rate | 33% | on questions for someone else; 0 cue(s) on statements |
+| Questions heard | 28 of 28 | 6 turn(s) merged two lines |
+| Vision (Look → card) | 1.26 s / 1.51 s | 5 of 5; model 1.25 s / 1.50 s |
+| Tokens per meeting | 299 in (0 cached) / 564 out | 2 model calls |
+
+How to read it: one run (`pnpm eval`, under ten minutes), synthetic macOS voices, the clip emulator over the real protocol, real Meta models. Times are counted from the end of each scripted line (the clip's audio clock); the clip's connection time is the zero, so they carry a few tens of milliseconds of error. A turn that the transcription merged from two lines is timed from its last line. Raw events and per-line results stay local in `results/eval-2026-10-28/`.
+
+What the run showed (4 false cues, 3 missed, from 16 questions aimed at the wearer and 12 aimed elsewhere):
+
+- Three of the four false cues came from the `reply` rule: someone speaks right after the wearer and asks a question that names another person ("Luis, did the deploy go through…", "Ana, could you update the slide?"). The rule does not look at a name for someone else. The fourth is a group question after the wearer spoke.
+- Of the three misses, two were one-to-one questions without the wearer's name that the model judged as not aimed at them (d07), and one was a named question ("Rulo, how did the testing go…") that the transcription attached to the previous sentence.
+- The transcription joined two lines into one turn 6 times with a 0.9 s pause between them; a real meeting has fewer clean pauses than this set.
+- Hub calls are no longer streamed so each one reports `usage`; the cue path waited for the whole answer before, so only first-token timing is lost.
+- Cached tokens were 0 in this run: the prompts here carry no memory, so they are below what the cache keeps (see the cache section above).
