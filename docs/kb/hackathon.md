@@ -81,10 +81,10 @@ Startups (USD 550k): 1st 250k · 2nd 150k · 3rd 75k · 4th 50k · 5th 25k.
 
 | Provider | Amount | How | Notes |
 |---|---|---|---|
-| Meta Model API | USD 150 | Google form in the guide (section 5); claim by Nov 4, 9 PM ET | Each person claims their own. Needs a credit card on file (temporary pre-authorization). Set a Spend Limit in Billing. Credits arrive in batches |
+| Meta Model API | USD 150 | Google form in the guide (section 5); claim by Nov 4, 9 PM ET | Each person claims their own. API calls fail until a credit card is on file (temporary pre-authorization). Set a Spend Limit in Billing. Credits arrive in batches. Billing warns that content sent while on free credits "may be used for product improvement" |
 | Baseten | USD 100 + 2M TPM | Request form; up to 2,000 participants, reviewed by use case, email if selected | Use model `meta-models/muse-spark-open-1026` (not the docs' `muse-spark-open`) |
-| Modal | USD 100 | Request form; first 1,000 participants | For open-weight models via Endpoints, GPUs, sandboxes |
-| Fireworks | USD 25 | Shortlist of teams; email if selected | Workshop Fri Oct 30 |
+| Modal | USD 100 per team | Request form; up to 1,000 selected teams (the form says it is not first come, first served); needs a Modal workspace first | For open-weight models via Endpoints, GPUs, sandboxes |
+| Fireworks | USD 100 per team | Request form; shortlist of teams reviewed with Fireworks; email if selected | Workshop Fri Oct 30 (the guide raised this from USD 25) |
 
 ## Community
 

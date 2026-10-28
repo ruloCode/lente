@@ -29,3 +29,35 @@ Node 22.18+ runs `.ts` directly and ships `fetch` and `WebSocket`. Fewer moving 
 ### 2026-10-26 · Recordings never enter the repo
 
 `*.wav`, `recordings/` and `results/` are git-ignored. Demo meetings are recorded only with everyone's consent.
+
+### 2026-10-27 · XIAO ESP32-S3 Sense instead of ESP32-S3-CAM + INMP441
+
+The XIAO carries the camera, a PDM microphone, 8 MB PSRAM and LiPo charging on a 21 × 17.8 mm board, and was in stock in Bogotá. Fewer parts to wire, a smaller clip (49.8 × 21.6 × 26.2 mm modelled), and charging through its USB-C without opening the case.
+
+### 2026-10-28 · Free Meta credits: own voice and public media only
+
+Billing states that content sent on free credits may be used for product improvement. That conflicts with "nothing said in a meeting trains models", so tests use the author's voice and public media, and the demo meeting is recorded with informed consent (or on paid usage). The README claim is scoped accordingly.
+
+### 2026-10-28 · Spec-driven with OpenSpec
+
+Behavior lives in `openspec/specs/` (baseline of the pilot, 8 capabilities) and each new piece of work is an OpenSpec change with proposal, specs, design and verifiable tasks. Judges can read what Lente does without reading code, and every task names how it was verified.
+
+### 2026-10-28 · One protocol, two transports
+
+Every audio source (the clip, the desktop page, the emulator) speaks the same versioned frames; TCP on the LAN, WebSocket where TLS and proxies matter. Learned from open glasses projects that keep their wire protocol as a tested, versioned module. Opus is reserved, not used: PCM16 at 256 kbps fits Wi-Fi and decoding Opus in Node would need a dependency.
+
+### 2026-10-28 · Memory as files and long context, not RAG
+
+Meetings, profile and traces are JSON/JSONL in `data/`. The memory prefix only grows at the end, so prompt caching keeps it cheap. Embeddings and a vector store would add a dependency and land on the hackathon's "basic RAG" list.
+
+### 2026-10-28 · MCP is the extension surface
+
+The glasses and memory are exposed as MCP tools with a bearer key, and Lente's agent uses external MCP servers the wearer configures. No plugin store. Consent rules live in the tool handlers.
+
+### 2026-10-28 · ElevenLabs for spoken output only
+
+Meta's API has no text-to-speech. Speech out uses the phone's own voice by default and ElevenLabs when configured; all understanding, replies and decisions stay on Meta's models.
+
+### 2026-10-28 · Brand "Calibre", card "Dilo"
+
+Every competitor site measured (Even Realities, Cluely, Omi, Brilliant Labs, Mentra) is light, gadget or fashion styled, and Cluely sells being undetectable. Lente takes the opposite ground: a dark, calm instrument where cyan marks only the line to say and amber only measured numbers, with a visible listening state. The product keeps the name Lente; its one action is "Dilo".
