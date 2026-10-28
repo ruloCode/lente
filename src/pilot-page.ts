@@ -5,7 +5,7 @@
 import { logoSvg } from "./brand.ts";
 
 export const PILOT_PAGE = `<!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -22,135 +22,155 @@ export const PILOT_PAGE = `<!doctype html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <title>Lente</title>
 <style>
+  /* Layout system measured in docs/kb/ui-reference.md: filled surfaces instead of borders,
+     24 px cards, pill controls, 48 px targets, 56 px rows, 20 px gutter. */
   :root {
-    --bg: #0b1013; --panel: #121a1f; --raised: #18222a; --ink: #e6edef; --muted: #8c9aa1; --line: #253139;
+    --bg: #0b1013; --surface: #1a2429; --raised: #26323a; --line: #33414a; --ink: #e6edef; --muted: #8c9aa1;
     --cyan: #4fd0d8; --amber: #e8a052; --live: #ff6262; --ok: #3ccf7a; color-scheme: dark;
     --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
     --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
     --body: "Atkinson Hyperlegible", -apple-system, system-ui, sans-serif;
+    --card: 24px; --tile: 14px; --tap: 48px; --row: 56px; --gutter: 20px;
   }
   [hidden] { display: none !important; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.45 var(--body); -webkit-tap-highlight-color: transparent; }
   body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); height: 100dvh; }
-  .wrap { width: 100%; max-width: 560px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
-  button { font: inherit; color: inherit; }
-  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .wrap { width: 100%; max-width: 560px; margin: 0 auto; padding-left: max(var(--gutter), env(safe-area-inset-left)); padding-right: max(var(--gutter), env(safe-area-inset-right)); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .label { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .cap { font-size: 15px; font-weight: 700; color: var(--muted); }
 
-  header { border-bottom: 1px solid var(--line); border-top: 6px solid var(--line); padding-top: env(safe-area-inset-top); }
+  /* Header: brand, clip state, listening pill; a red strip across the top while listening. */
+  header { border-top: 4px solid transparent; padding-top: env(safe-area-inset-top); }
   body[data-state="listening"] header { border-top-color: var(--live); }
-  header .row { display: flex; align-items: center; gap: 10px; padding-block: 10px; min-width: 0; }
+  header .row { display: flex; align-items: center; gap: 12px; min-height: 64px; min-width: 0; }
   .brand { display: flex; align-items: center; gap: 8px; font: 700 24px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
-  .brand svg { width: 26px; height: 26px; flex: none; }
+  .brand svg { width: 28px; height: 28px; flex: none; }
   .clip { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); margin-left: auto; white-space: nowrap; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  /* Narrow phones: the dot and bars carry the clip state, the words stay for screen readers. */
+  @media (max-width: 400px) { #clip { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
   .dot.on { background: var(--ok); }
   .bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; flex: none; }
   .bars i { width: 3px; border-radius: 2px; background: var(--line); height: 25%; transition: height .12s; }
-  .listen { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 7px 12px; font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+  .listen { display: flex; align-items: center; gap: 8px; min-height: var(--tap); border: 2px solid transparent; background: var(--surface); border-radius: 999px; padding: 0 16px; font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
   .listen .rec { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
-  body[data-state="listening"] .listen { background: var(--live); border-color: var(--live); color: #1c0606; }
+  body[data-state="listening"] .listen { background: var(--live); color: #1c0606; }
   body[data-state="listening"] .listen .rec { background: #1c0606; border-color: #1c0606; animation: pulse 1.6s ease-in-out infinite; }
-  body[data-state="paused"] .listen { border-style: dashed; color: var(--muted); }
+  body[data-state="paused"] .listen { background: transparent; border: 2px dashed var(--line); color: var(--muted); }
   body[data-state="idle"] .listen { color: var(--ink); }
   @keyframes pulse { 50% { opacity: .35; } }
-  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
-  .modes button { border: 0; background: var(--panel); padding: 10px 6px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14px; font-weight: 600; color: var(--muted); }
-  .modes button + button { border-left: 1px solid var(--line); }
-  .modes button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
-  .modes svg { width: 17px; height: 17px; }
-  .note { font-size: 14px; color: var(--ink); background: var(--raised); border-left: 3px solid var(--muted); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--surface); border-radius: 999px; margin-bottom: 12px; }
+  .modes button { border: 0; background: transparent; border-radius: 999px; min-height: var(--tap); padding: 0 8px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--muted); }
+  .modes button[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
+  .modes svg { width: 18px; height: 18px; flex: none; }
 
   main { overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  main .wrap { display: grid; gap: 12px; padding-block: 12px 20px; }
+  main .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding-block: 4px 24px; }
+  .note { display: flex; gap: 10px; align-items: baseline; font-size: 14px; background: var(--surface); border-radius: 16px; padding: 12px 16px; overflow-wrap: anywhere; }
+  .note::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; transform: translateY(-1px); }
 
-  .cue { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 6px; background: var(--raised); }
+  /* The one card that matters. */
+  .cue { border-radius: var(--card); padding: 18px 20px 20px; display: grid; gap: 8px; background: var(--raised); }
   .cue .label { color: var(--muted); font-size: 12px; letter-spacing: .2em; }
   .cue .text { font: 700 34px/1.05 var(--display); color: var(--cyan); text-wrap: balance; }
   .meta { font: 12px var(--mono); color: var(--amber); }
 
-  .now { border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 6px; background: var(--panel); }
-  .now .label { color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  /* Start or end a meeting: a pill field and a pill button, like an ask bar. */
+  .meet { display: flex; gap: 8px; align-items: center; }
+  .meet input, .group input:not([type="checkbox"]) { flex: 1; min-width: 0; min-height: var(--tap); border: 0; border-radius: 999px; background: var(--surface); color: var(--ink); padding: 0 20px; font: inherit; font-size: 16px; }
+  .group input:not([type="checkbox"]) { background: var(--bg); }
+  .meet input::placeholder, .group input::placeholder { color: var(--muted); }
+  .meet button, .group button { flex: none; min-height: var(--tap); border: 0; border-radius: 999px; background: var(--raised); padding: 0 20px; font-weight: 700; white-space: nowrap; }
+  .meet button:disabled, .group button:disabled { opacity: .5; }
+  .meet .live-title { position: relative; flex: 1; min-width: 0; line-height: var(--tap); padding: 0 20px 0 40px; border-radius: 999px; background: var(--surface); font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meet .live-title::before { content: ""; position: absolute; left: 20px; top: 19px; width: 10px; height: 10px; border-radius: 50%; background: var(--live); animation: pulse 1.6s ease-in-out infinite; }
+
+  .now { border-radius: var(--card); padding: 16px 20px 18px; display: grid; gap: 6px; background: var(--surface); }
+  .now .cap { display: flex; justify-content: space-between; gap: 8px; }
+  .now .cap span + span { font: 500 12px var(--mono); }
   .now p { margin: 0; font-size: 18px; line-height: 1.35; }
   .now p.idle { font-size: 15px; color: var(--muted); }
 
-  .view { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .view { background: var(--surface); border-radius: var(--card); overflow: hidden; }
   .frame { position: relative; background: #000; display: grid; place-items: center; }
   .frame canvas { display: block; width: 100%; height: auto; max-height: 48dvh; object-fit: contain; }
-  .rotate { position: absolute; right: 10px; top: 10px; width: 38px; height: 38px; border-radius: 50%; border: 0; background: rgba(11,16,19,.75); display: grid; place-items: center; }
-  .badge { position: absolute; left: 10px; top: 10px; padding: 7px 9px; border-radius: 999px; background: rgba(11,16,19,.75); color: var(--ink); }
+  .rotate { position: absolute; right: 12px; top: 12px; width: var(--tap); height: var(--tap); border-radius: 50%; border: 0; background: rgba(11,16,19,.72); display: grid; place-items: center; }
+  .badge { position: absolute; left: 12px; top: 12px; padding: 8px 12px; border-radius: 999px; background: rgba(11,16,19,.72); color: var(--ink); }
   .badge.live { color: var(--live); }
-  .caption { padding: 12px 16px 14px; display: grid; gap: 4px; }
-  .caption p { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 600; }
-  .camoff { display: flex; align-items: center; gap: 10px; padding: 12px 16px; color: var(--muted); font-size: 14px; }
-  .camoff svg { width: 18px; height: 18px; flex: none; }
+  .caption { padding: 14px 20px 16px; display: grid; gap: 4px; }
+  .caption p { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 700; }
+  .camoff { display: flex; align-items: center; gap: 12px; min-height: var(--row); padding: 12px 20px; color: var(--muted); font-size: 14px; }
+  .camoff svg { width: 20px; height: 20px; flex: none; }
 
-  .tl-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); margin-top: 4px; }
-  .timeline { display: grid; gap: 10px; }
-  .item { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; }
-  .chip { width: 28px; height: 28px; border-radius: 50%; background: var(--raised); display: grid; place-items: center; font: 700 12px var(--mono); color: var(--ink); }
-  .item .body { min-width: 0; }
+  /* Grouped rows: caption outside, rows inside one surface, dividers inset 16 px. */
+  .section { display: grid; gap: 8px; margin-top: 12px; }
+  .section > .cap { padding-left: 16px; }
+  .group { background: var(--surface); border-radius: var(--card); overflow: hidden; }
+  .group > :not([hidden]) ~ :not([hidden]) > summary { background: linear-gradient(var(--line), var(--line)) 16px 0 / calc(100% - 32px) 1px no-repeat; }
+  .group summary { list-style: none; display: flex; align-items: center; gap: 16px; min-height: var(--row); padding: 0 16px; cursor: pointer; }
+  .group summary::-webkit-details-marker { display: none; }
+  .group summary > svg { width: 22px; height: 22px; flex: none; color: var(--muted); }
+  .group summary .rl { flex: 1; min-width: 0; font-weight: 700; }
+  .group summary .rv { color: var(--muted); font-size: 14px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group summary .chev { width: 18px; height: 18px; transition: transform .15s; }
+  .group details[open] > summary .chev { transform: rotate(90deg); }
+  .group details > :not(summary) { margin-left: 16px; margin-right: 16px; }
+  .group details[open] > :last-child { margin-bottom: 16px; }
+  .group .row, .group form { display: flex; gap: 8px; margin-top: 8px; margin-bottom: 0; }
+  .group .row:first-of-type { margin-top: 0; }
+  .group p { margin: 8px 0 0; font-size: 14px; color: var(--muted); }
+  .group ul { margin: 4px 0 0; padding-left: 20px; }
+  .group li { margin-top: 2px; }
+  .sec { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 12px; }
+  .brief .card { padding-top: 4px; display: grid; gap: 2px; font-size: 15px; }
+  .brief li small { display: block; color: var(--muted); font: 12px var(--mono); }
+  .brief .none { color: var(--muted); margin: 8px 0 0; }
+  .lang .stats { margin-top: 0; margin-bottom: 4px; font-size: 15px; color: var(--ink); }
+  .lang .stats b { font: 600 15px var(--mono); }
+  .lang .t { border-top: 1px solid var(--line); padding: 12px 0; display: grid; gap: 2px; font-size: 15px; }
+  .lang .t strong { font: 600 15px var(--mono); }
+  .lang .t .n { color: var(--muted); font: 500 12px var(--mono); margin-left: 6px; }
+  .lang .t em { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .past .m { border-top: 1px solid var(--line); padding: 12px 0; display: grid; gap: 4px; font-size: 15px; }
+  .past .m:first-child { border-top: 0; padding-top: 0; }
+  .past .m h3 { margin: 0; font: 700 16px/1.25 var(--body); }
+  .past .m .when { color: var(--muted); font: 12px var(--mono); }
+  .past .m p { color: var(--ink); }
+  .past .m button, .past .wipe { justify-self: start; padding: 0 16px; font-size: 14px; margin-top: 4px; }
+  .past .wipe { color: var(--live); }
+  .me label.sw { display: flex; align-items: center; gap: 12px; min-height: var(--tap); font-size: 15px; }
+  .me label.sw input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--ink); }
+
+  /* The day, newest at the bottom. */
+  .tl-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; padding-left: 16px; }
+  .tl-head span + span { font: 500 12px var(--mono); color: var(--muted); }
+  .timeline { display: grid; gap: 12px; }
+  .item { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .chip { width: 32px; height: 32px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font: 700 12px var(--mono); color: var(--ink); }
+  .item .body { min-width: 0; padding-top: 4px; }
   .item p { margin: 0; overflow-wrap: anywhere; }
   .item time { font: 11px var(--mono); color: var(--muted); }
-  .item.q p { font-weight: 650; }
-  .item.k-summary .chip { color: var(--ink); }
-  .item.k-summary p { color: var(--ink); font-style: italic; }
+  .item.q p { font-weight: 700; }
+  .item.k-summary p { font-style: italic; }
   .item.k-cue .chip, .item.k-live .chip { font-size: 11px; }
-  .me { margin-bottom: 10px; }
-  .me summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
-  .me summary b { color: var(--ink); font-weight: 700; }
-  .me form { display: flex; gap: 8px; padding-top: 6px; }
-  .me input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
-  .me button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 14px; font-weight: 600; }
-  .meet { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
-  .meet input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
-  .meet button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
-  .meet[data-running="true"] button { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-  .meet .live-title { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .brief { margin-bottom: 10px; }
-  .brief summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
-  .brief .row { display: flex; gap: 8px; margin: 6px 0; }
-  .brief input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
-  .brief button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
-  .brief .card { border-top: 1px solid var(--line); padding: 8px 0; display: grid; gap: 4px; font-size: 14px; }
-  .brief .sec { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
-  .brief ul { margin: 0; padding-left: 18px; }
-  .brief li small { display: block; color: var(--muted); font: 12px var(--mono); }
-  .brief .none { color: var(--muted); margin: 0; }
-  .past { margin-bottom: 10px; }
-  .past summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
-  .lang { margin-bottom: 10px; }
-  .lang summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
-  .lang .stats { margin: 4px 0 8px; font-size: 14px; }
-  .lang .stats b { font: 600 14px var(--mono); }
-  .lang .t { border-top: 1px solid var(--line); padding: 8px 0; display: grid; gap: 2px; font-size: 14px; }
-  .lang .t strong { font: 600 14px var(--mono); }
-  .lang .t .n { color: var(--muted); font: 500 12px var(--mono); margin-left: 6px; }
-  .lang .t em { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-  .past .m { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 4px; font-size: 14px; }
-  .past .m h3 { margin: 0; font: 700 16px/1.2 var(--body); }
-  .past .m .when { color: var(--muted); font-size: 12px; font-family: var(--mono); }
-  .past .m ul { margin: 0; padding-left: 18px; }
-  .past .m .sec { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
-  .past .m button, .past .wipe { justify-self: start; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
-  .me label.sw { display: flex; align-items: center; gap: 8px; font-size: 14px; padding-top: 8px; }
-  .me label.sw input { flex: none; width: 18px; height: 18px; padding: 0; accent-color: var(--ink); }
-  .me p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
   .item.k-live p { color: var(--muted); font-size: 14px; }
   .item.k-cue p { color: var(--cyan); font-weight: 700; }
-  .partial { color: var(--muted); font-style: italic; padding-left: 38px; overflow-wrap: anywhere; }
-  .hint { color: var(--muted); font-size: 15px; margin: 0; }
+  .partial { color: var(--muted); font-style: italic; padding-left: 44px; overflow-wrap: anywhere; }
+  .hint { color: var(--muted); font-size: 15px; margin: 0; padding: 0 16px; }
 
-  footer { border-top: 1px solid var(--line); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-  footer .wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-block: 10px 0; }
-  .act { display: grid; justify-items: center; gap: 4px; padding: 10px 4px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); font-size: 12px; font-weight: 600; }
+  /* Actions within thumb reach; Look is the one filled button. */
+  footer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  footer .wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding-block: 8px 0; }
+  .act { display: grid; justify-items: center; align-content: center; gap: 4px; min-height: 64px; padding: 8px 4px; border-radius: 20px; border: 0; background: var(--surface); font-size: 13px; font-weight: 700; }
   .act svg { width: 22px; height: 22px; }
-  .act.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
-  .act[aria-pressed="true"] { background: var(--raised); border-color: var(--ink); color: var(--ink); }
-  #live-btn[aria-pressed="true"] { border-color: var(--live); color: var(--live); }
-  .act:disabled { opacity: .4; }
-  @media (prefers-reduced-motion: reduce) { .bars i { transition: none; } .listen .rec { animation: none !important; } }
+  .act.primary { background: var(--ink); color: var(--bg); }
+  .act[aria-pressed="true"] { background: var(--raised); box-shadow: inset 0 0 0 2px var(--ink); }
+  #live-btn[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--live); color: var(--live); }
+  .act:disabled { opacity: .4; cursor: default; }
+  @media (prefers-reduced-motion: reduce) { .bars i, .group summary .chev { transition: none; } .listen .rec, .meet .live-title::before { animation: none !important; } }
 </style>
 </head>
 <body data-state="idle">
@@ -158,76 +178,48 @@ export const PILOT_PAGE = `<!doctype html>
     <div class="wrap">
       <div class="row">
         <span class="brand">${logoSvg(false)}Lente</span>
-        <button class="listen" id="listen" aria-pressed="true"><span class="rec"></span><span id="listen-text">Listening</span></button>
-        <span class="clip"><span class="dot" id="dot"></span><span id="clip">Offline</span>
+        <span class="clip"><span class="dot" id="dot"></span><span id="clip">Sin clip</span>
           <span class="bars" aria-hidden="true" id="bars"><i></i><i></i><i></i><i></i><i></i></span></span>
+        <button class="listen" id="listen" aria-pressed="true"><span class="rec"></span><span id="listen-text">Escuchando</span></button>
       </div>
-      <div class="modes" role="group" aria-label="Clip mode">
+      <div class="modes" role="group" aria-label="Modo del clip">
         <button data-mode="mic" aria-pressed="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Mic only
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Solo audio
         </button>
         <button data-mode="camera" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Camera + mic
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Audio y cámara
         </button>
       </div>
-      <details class="me" id="me">
-        <summary>Name people call you: <b id="me-names">not set</b></summary>
-        <form id="me-form">
-          <input id="me-input" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Rulo, Raúl" aria-label="Your name and nicknames, separated by commas">
-          <button type="submit">Save</button>
-        </form>
-        <label class="sw"><input type="checkbox" id="me-all"> Contestar todas las preguntas (pruebas)</label>
-        <p>Lente answers when someone says one of these names. Say “Lente, soy Rulo” to tell it which voice is yours.</p>
-      </details>
-      <div class="meet" id="meet" data-running="false">
-        <input id="meet-title" autocomplete="off" placeholder="Título de la reunión (opcional)" aria-label="Título de la reunión">
-        <span class="live-title" id="meet-live" hidden></span>
-        <button id="meet-btn" type="button">Iniciar</button>
-      </div>
-      <details class="brief" id="brief">
-        <summary>Antes de la reunión</summary>
-        <div class="row">
-          <input id="brief-title" autocomplete="off" placeholder="Reunión (ej. Sprint review)" aria-label="Reunión">
-        </div>
-        <div class="row">
-          <input id="brief-names" autocomplete="off" placeholder="Con quién (opcional)" aria-label="Con quién">
-          <button id="brief-btn" type="button">Preparar</button>
-        </div>
-        <div id="brief-out"></div>
-      </details>
-      <details class="past" id="past" hidden>
-        <summary>Reuniones anteriores (<span id="past-count">0</span>)</summary>
-        <div id="past-list"></div>
-        <button class="wipe" id="wipe" type="button">Borrar toda la memoria</button>
-      </details>
-      <details class="lang" id="lang" hidden>
-        <summary>Mi vocabulario (<span id="lang-count">0</span>)</summary>
-        <p class="stats" id="lang-stats"></p>
-        <div id="lang-list"></div>
-      </details>
-      <div class="note" id="note" hidden></div>
     </div>
   </header>
 
   <main>
     <div class="wrap">
+      <div class="note" id="note" hidden></div>
+
       <section class="cue" id="cue" aria-live="assertive" hidden>
         <span class="label" id="cue-label">DILO</span>
         <div class="text" id="cue-text"></div>
         <span class="meta" id="cue-meta"></span>
       </section>
 
+      <div class="meet" id="meet" data-running="false">
+        <input id="meet-title" autocomplete="off" placeholder="Título (opcional)" aria-label="Título de la reunión">
+        <span class="live-title" id="meet-live" hidden></span>
+        <button id="meet-btn" type="button">Iniciar</button>
+      </div>
+
       <section class="now" aria-live="polite">
-        <span class="label"><span>What's happening</span><span id="now-time"></span></span>
-        <p id="now-text" class="idle">A short summary appears here every few minutes of conversation, or when you tap Summary.</p>
+        <span class="cap"><span>Qué está pasando</span><span id="now-time"></span></span>
+        <p id="now-text" class="idle">Aquí aparece un resumen corto cada pocos minutos de conversación, o cuando tocas Resumen.</p>
       </section>
 
       <section class="view">
         <div class="frame" id="frame-box" hidden>
           <canvas id="frame"></canvas>
-          <span class="badge label" id="badge">LOOK</span>
-          <button class="rotate" id="rotate" aria-label="Rotate image">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
+          <span class="badge label" id="badge">FOTO</span>
+          <button class="rotate" id="rotate" aria-label="Girar imagen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
           </button>
         </div>
         <div class="caption" id="caption" hidden>
@@ -236,13 +228,74 @@ export const PILOT_PAGE = `<!doctype html>
         </div>
         <div class="camoff" id="camoff">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l18 18M9 5h6l2 3h3v9M4 8v11h13"/></svg>
-          <span id="camoff-text">Camera off to save battery. Look still takes a single photo.</span>
+          <span id="camoff-text">Cámara apagada para ahorrar batería. Mirar toma una sola foto cuando la necesites.</span>
         </div>
       </section>
 
-      <div class="tl-head"><span class="label">Today</span><span class="label" id="tl-count"></span></div>
+      <section class="section">
+        <span class="cap">Reuniones</span>
+        <div class="group">
+          <details class="brief" id="brief">
+            <summary>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>
+              <span class="rl">Antes de la reunión</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </summary>
+            <div class="row">
+              <input id="brief-title" autocomplete="off" placeholder="Reunión (ej. Sprint review)" aria-label="Reunión">
+            </div>
+            <div class="row">
+              <input id="brief-names" autocomplete="off" placeholder="Con quién" aria-label="Con quién">
+              <button id="brief-btn" type="button">Preparar</button>
+            </div>
+            <div id="brief-out"></div>
+          </details>
+          <details class="past" id="past" hidden>
+            <summary>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+              <span class="rl">Reuniones anteriores</span>
+              <span class="rv" id="past-count">0</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </summary>
+            <div id="past-list"></div>
+            <button class="wipe" id="wipe" type="button">Borrar toda la memoria</button>
+          </details>
+        </div>
+      </section>
+
+      <section class="section">
+        <span class="cap">Tú</span>
+        <div class="group">
+          <details class="me" id="me">
+            <summary>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+              <span class="rl">Tu nombre</span>
+              <span class="rv" id="me-names">sin definir</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </summary>
+            <form id="me-form">
+              <input id="me-input" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Rulo, Raúl" aria-label="Tu nombre y apodos, separados por comas">
+              <button type="submit">Guardar</button>
+            </form>
+            <label class="sw"><input type="checkbox" id="me-all"> Contestar todas las preguntas (pruebas)</label>
+            <p>Lente te avisa cuando alguien dice uno de estos nombres. Di “Lente, soy Rulo” para que reconozca tu voz.</p>
+          </details>
+          <details class="lang" id="lang" hidden>
+            <summary>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21a2 2 0 0 1 2-2h13v2M9 8h6"/></svg>
+              <span class="rl">Mi vocabulario</span>
+              <span class="rv" id="lang-count">0</span>
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </summary>
+            <p class="stats" id="lang-stats"></p>
+            <div id="lang-list"></div>
+          </details>
+        </div>
+      </section>
+
+      <div class="tl-head"><span class="cap">Hoy</span><span id="tl-count"></span></div>
       <div class="timeline" id="timeline">
-        <p class="hint" id="tl-hint">What is said around you shows up here, with a letter per speaker. It is kept as text only.</p>
+        <p class="hint" id="tl-hint">Aquí aparece lo que se dice a tu alrededor, con una letra por persona. Solo se guarda como texto.</p>
         <div class="partial" id="partial"></div>
       </div>
     </div>
@@ -251,16 +304,16 @@ export const PILOT_PAGE = `<!doctype html>
   <footer>
     <div class="wrap">
       <button class="act primary" id="look" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Look
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Mirar
       </button>
       <button class="act" id="live-btn" aria-pressed="false" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4"/></svg>Live
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4"/></svg>En vivo
       </button>
       <button class="act" id="voice" aria-pressed="false">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>Voice
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>Voz
       </button>
       <button class="act" id="summary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M18 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/></svg>Summary
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M18 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/></svg>Resumen
       </button>
     </div>
   </footer>
@@ -345,12 +398,13 @@ export const PILOT_PAGE = `<!doctype html>
     img.src = src;
   }
 
+  const BADGE = { LIVE: "EN VIVO", LOOK: "EN PANTALLA", PHOTO: "FOTO" };
   function showView(label, text, ms, photo) {
     if (photo) drawFrame(photo);
-    $("badge").textContent = label;
+    $("badge").textContent = BADGE[label] || label;
     $("badge").classList.toggle("live", label === "LIVE");
     if (text) { $("view-text").textContent = text; $("caption").hidden = false; }
-    $("view-meta").textContent = ms != null ? "described in " + ms + " ms" : "";
+    $("view-meta").textContent = ms != null ? "descrito en " + ms + " ms" : "";
   }
 
   // --- Timeline of the day
@@ -358,7 +412,7 @@ export const PILOT_PAGE = `<!doctype html>
   const rows = new Map();
   let count = 0;
   // Speaker labels (A, B…) belong to one transcription session; the hub says which one is the wearer.
-  const speakerChip = (label) => (label && status && status.wearer === label ? "You" : label || "·");
+  const speakerChip = (label) => (label && status && status.wearer === label ? "Tú" : label || "·");
   function relabelSpeakers() {
     for (const row of timeline.querySelectorAll(".item.k-turn")) row.querySelector(".chip").textContent = speakerChip(row.dataset.speaker);
   }
@@ -378,7 +432,7 @@ export const PILOT_PAGE = `<!doctype html>
     row.querySelector("time").textContent = [fmt(e.at || Date.now()), kind === "cue" ? whyLine(e) : ""].filter(Boolean).join(" · ");
     timeline.insertBefore(row, partial);
     if (e.turnId != null) rows.set(String(e.turnId), row);
-    if (kind === "turn") $("tl-count").textContent = ++count + " turns";
+    if (kind === "turn") $("tl-count").textContent = ++count + " turnos";
     const items = timeline.querySelectorAll(".item");
     if (items.length > 120) items[0].remove();
     partial.textContent = "";
@@ -402,7 +456,7 @@ export const PILOT_PAGE = `<!doctype html>
 
   $("me-all").addEventListener("change", () => post($("me-all").checked ? "/cues/all" : "/cues/addressed"));
   function showNames(names) {
-    $("me-names").textContent = names && names.length ? names.join(", ") : "not set";
+    $("me-names").textContent = names && names.length ? names.join(", ") : "sin definir";
     if (document.activeElement !== $("me-input")) $("me-input").value = names ? names.join(", ") : "";
   }
   $("me-form").addEventListener("submit", (ev) => {
@@ -544,6 +598,27 @@ export const PILOT_PAGE = `<!doctype html>
     }
   }
 
+  function asrNote(asr) {
+    if (/^connecting/.test(asr)) return "Conectando la transcripción…";
+    if (/^transcription closed/.test(asr)) return "Se cortó la transcripción. Reconectando…";
+    if (/^transcription connection error/.test(asr)) return "No se pudo conectar la transcripción. Reintentando…";
+    if (/^transcription error/.test(asr)) return "Error de transcripción: " + asr.replace(/^transcription error:\s*/, "");
+    return asr;
+  }
+
+  // --- Keep the screen on while Lente listens, so a DILO card is never behind a lock screen.
+  // Browsers only allow it over HTTPS or localhost; elsewhere the phone's own setting applies.
+  let wakeLock = null, wakePending = false;
+  async function keepAwake(on) {
+    if (!("wakeLock" in navigator)) return;
+    if (on && !wakeLock && !wakePending && document.visibilityState === "visible") {
+      wakePending = true;
+      try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } catch {}
+      wakePending = false;
+    } else if (!on && wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  document.addEventListener("visibilitychange", () => keepAwake(document.body.dataset.state === "listening"));
+
   function applyStatus(m) {
     const wearerChanged = !status || status.wearer !== m.wearer;
     status = m;
@@ -552,21 +627,22 @@ export const PILOT_PAGE = `<!doctype html>
     showMeeting(m.meeting);
     $("me-all").checked = !!m.everyQuestion;
     $("dot").classList.toggle("on", m.clip);
-    $("clip").textContent = m.clip ? "Clip" : "Offline";
+    $("clip").textContent = m.clip ? "Clip" : "Sin clip";
     $("listen").setAttribute("aria-pressed", String(m.listening));
     const state = !m.listening ? "paused" : m.clip ? "listening" : "idle";
     document.body.dataset.state = state;
-    $("listen-text").textContent = { listening: "Listening", paused: "Paused", idle: "Waiting" }[state];
+    keepAwake(state === "listening");
+    $("listen-text").textContent = { listening: "Escuchando", paused: "En pausa", idle: "Esperando" }[state];
     for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === m.mode));
     $("camoff").hidden = m.mode === "camera";
     $("look").disabled = !m.clip;
     $("live-btn").disabled = !m.clip;
     $("live-btn").setAttribute("aria-pressed", String(!!m.live));
     let note = "";
-    if (m.clipError && !m.clip) note = "The clip was refused: " + m.clipError + ".";
-    else if (/MODEL_API_KEY/.test(m.asr)) note = "No Meta key yet: camera and microphone only.";
-    else if (!m.clip) note = "Waiting for the clip. Check that it has power and is on the same Wi-Fi.";
-    else if (m.listening && m.asr !== "listening") note = m.asr;
+    if (m.clipError && !m.clip) note = "El hub rechazó el clip: " + m.clipError + ".";
+    else if (/MODEL_API_KEY/.test(m.asr)) note = "Falta la clave de Meta: solo se ven la cámara y el nivel de audio.";
+    else if (!m.clip) note = "Esperando el clip. Revisa que tenga batería y esté en la misma red Wi-Fi.";
+    else if (m.listening && m.asr !== "listening") note = asrNote(m.asr);
     $("note").textContent = note;
     $("note").hidden = !note;
     if (!m.clip) setLevel(0);
@@ -598,14 +674,14 @@ export const PILOT_PAGE = `<!doctype html>
         $("cue").hidden = false;
         $("cue-label").textContent = isDilo(m.label) ? "DILO" : m.label;
         $("cue-text").textContent = m.text;
-        $("cue-meta").textContent = [whyLine(m), m.ms != null ? "in " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
+        $("cue-meta").textContent = [whyLine(m), m.ms != null ? "en " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
         addItem(m);
         if (navigator.vibrate) navigator.vibrate(120);
         say(m.text, "high");
       }
     }
   };
-  es.onerror = () => { $("note").textContent = "Reconnecting to the laptop…"; $("note").hidden = false; };
+  es.onerror = () => { $("note").textContent = "Reconectando con la computadora…"; $("note").hidden = false; };
 
   $("listen").addEventListener("click", () => post(status.listening ? "/listen/off" : "/listen/on"));
   for (const b of document.querySelectorAll("[data-mode]")) b.addEventListener("click", () => post("/mode/" + b.dataset.mode));

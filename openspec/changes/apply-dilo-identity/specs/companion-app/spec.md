@@ -13,6 +13,17 @@ The page SHALL show at most one reply cue at a time, large, labelled "DILO", wit
 - **WHEN** the page shows a cue and its latency
 - **THEN** the reply text is the only cyan text and the latency is amber
 
+### Requirement: Controls
+The page SHALL let the wearer switch between mic-only and camera modes, pause and resume listening, take one photo (Mirar), turn live descriptions on and off (En vivo), turn voice on and off (Voz), and ask for a summary (Resumen). All phone copy SHALL be in Spanish; the DILO card keeps the line in the meeting's language.
+
+#### Scenario: Controls without a clip
+- **WHEN** the clip is offline
+- **THEN** Mirar and En vivo are disabled and the other controls still work
+
+#### Scenario: Screen stays on while listening
+- **WHEN** Lente is listening with the clip connected and the browser allows a wake lock
+- **THEN** the phone screen does not lock while the page is open
+
 ### Requirement: Live status at a glance
 The page SHALL show whether the clip is connected, whether Lente is listening or paused with a state that is obvious from across a table, the microphone level, and a plain-language note when something needs attention (no key, clip offline, transcription reconnecting).
 
@@ -25,6 +36,17 @@ The page SHALL show whether the clip is connected, whether Lente is listening or
 - **THEN** the page shows a distinct listening indicator, and paused looks clearly different
 
 ## ADDED Requirements
+
+### Requirement: Calm layout
+The page SHALL fit a 360 px wide phone without horizontal scrolling, give every control a touch target at least 48 px tall, keep the main actions at the bottom within thumb reach, and group setup and memory into rows below the live content.
+
+#### Scenario: Narrow phone
+- **WHEN** the page is opened 360 px wide
+- **THEN** nothing scrolls sideways and every button, input and row is at least 48 px tall
+
+#### Scenario: Live content first
+- **WHEN** a cue arrives while the wearer is on the page
+- **THEN** the DILO card is the first thing below the header, above the meeting controls, the summary, the camera view and the grouped rows
 
 ### Requirement: Installable app
 The phone page SHALL be installable to the home screen with the Lente name and icon and open full screen without browser chrome.
