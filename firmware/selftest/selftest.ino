@@ -11,6 +11,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <string.h>
 
 // Camera pins for the XIAO ESP32-S3 Sense (from the core's CameraWebServer example).
 #define XCLK_GPIO_NUM 10
@@ -202,11 +203,66 @@ static void testWifi() {
   WiFi.mode(WIFI_OFF);
 }
 
+// Protocol-v2 golden frames shared with test/fixtures/frames.json (fixtures.h is generated
+// from it by `pnpm gen:fixtures`): the self-test encodes the frames the way the clip
+// firmware does and compares every byte, so a change that alters the wire format fails
+// here as well as in the hub tests.
+#include "fixtures.h"
+
+static size_t encodeFrame(char type, const uint8_t *data, size_t len, uint8_t *out) {
+  out[0] = (uint8_t)type;
+  out[1] = (uint8_t)len;
+  out[2] = (uint8_t)(len >> 8);
+  out[3] = (uint8_t)(len >> 16);
+  out[4] = (uint8_t)(len >> 24);
+  memcpy(out + 5, data, len);
+  return 5 + len;
+}
+
+// Same hello text as ensureConnected() in firmware/lente-clip, with the fixture's rssi and camera.
+static size_t encodeHello(uint8_t *out, size_t cap) {
+  char hello[160];
+  int n = snprintf(hello, sizeof(hello),
+                   "{\"proto\":\"2.0\",\"device\":\"lente-clip\",\"fw\":\"pilot-2\","
+                   "\"codec\":\"pcm16\",\"rate\":16000,\"rssi\":%d,\"camera\":%s}",
+                   -55, "false");
+  if (n < 0 || (size_t)n + 5 > cap) return 0;
+  return encodeFrame('H', (const uint8_t *)hello, n, out);
+}
+
+// Same layout as audioTask() in firmware/lente-clip: u32 sequence, u32 capture ms, PCM16.
+static size_t encodeAudio(uint32_t seq, uint32_t ms, const int16_t *samples, size_t count, uint8_t *out) {
+  uint8_t payload[8 + 2 * 8];
+  memcpy(payload, &seq, 4);
+  memcpy(payload + 4, &ms, 4);
+  memcpy(payload + 8, samples, 2 * count);
+  return encodeFrame('A', payload, 8 + 2 * count, out);
+}
+
+static bool frameMatches(const char *name, const uint8_t *got, size_t gotLen, const uint8_t *want, size_t wantLen) {
+  bool ok = gotLen == wantLen && memcmp(got, want, wantLen) == 0;
+  if (!ok) Serial.printf("[frames] FAIL %s: encoded %u bytes, fixture has %u\n", name, (unsigned)gotLen, (unsigned)wantLen);
+  return ok;
+}
+
+static void testFrames() {
+  uint8_t wire[5 + 160];
+  int failures = 0;
+  size_t n = encodeHello(wire, sizeof(wire));
+  failures += !frameMatches("hello-v2", wire, n, FIXTURE_HELLO_V2, sizeof(FIXTURE_HELLO_V2));
+  n = encodeAudio(FIXTURE_AUDIO_SEQ7_SEQ, FIXTURE_AUDIO_SEQ7_MS, FIXTURE_AUDIO_SEQ7_SAMPLES, 8, wire);
+  failures += !frameMatches("audio-seq7", wire, n, FIXTURE_AUDIO_SEQ7, sizeof(FIXTURE_AUDIO_SEQ7));
+  n = encodeAudio(FIXTURE_AUDIO_SEQ8_SEQ, FIXTURE_AUDIO_SEQ8_MS, FIXTURE_AUDIO_SEQ8_SAMPLES, 8, wire);
+  failures += !frameMatches("audio-seq8", wire, n, FIXTURE_AUDIO_SEQ8, sizeof(FIXTURE_AUDIO_SEQ8));
+  Serial.printf("[frames] %s\n", failures ? "FAIL fixture bytes differ" : "ok hello v2 + audio headers match the fixtures");
+}
+
 static void runAll() {
   Serial.println("=== Lente self-test ===");
   testMemory();
   testWifi();
   testSd();
+  testFrames();
   testMic();
   testCamera();
   Serial.println("=== done ===");

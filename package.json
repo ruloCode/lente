@@ -13,6 +13,7 @@
     "bench:llm": "node --env-file-if-exists=.env scripts/bench-llm.ts",
     "bench:asr": "node --env-file-if-exists=.env scripts/bench-asr.ts",
     "test": "node --test test/*.test.ts",
+    "gen:fixtures": "node scripts/gen-fixtures-header.ts",
     "typecheck": "tsc --noEmit",
     "pilot": "node --env-file-if-exists=.env src/pilot.ts"
   },

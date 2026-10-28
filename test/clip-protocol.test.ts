@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { turnIdOf } from "../src/asr-session.ts";
 import { readFileSync } from "node:fs";
+import { HEADER, loadFixtures, renderFixturesHeader } from "../scripts/gen-fixtures-header.ts";
 import { AsrSession } from "../src/asr-session.ts";
 import {
   AudioConditioner,
@@ -209,4 +210,8 @@ test("turns carry offsets in the session audio, anchored to speech rather than t
   session["onMessage"](JSON.stringify({ type: "transcript", final: true, transcript: "hola", audioProcessedMs: 2400 }));
   session["onMessage"](JSON.stringify({ type: "speechComplete", turnId: 0, transcript: "hola" }));
   assert.deepEqual(turns, [{ turnId: "0", text: "hola", speaker: undefined, startMs: 6000, endMs: 7400 }]);
+});
+
+test("the firmware self-test header is generated from the shared fixtures (run pnpm gen:fixtures)", () => {
+  assert.equal(readFileSync(HEADER, "utf8"), renderFixturesHeader(loadFixtures()));
 });
