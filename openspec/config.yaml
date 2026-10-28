@@ -35,6 +35,15 @@ context: |
   - Code and docs in English; user-facing copy may be bilingual (Spanish first for the
     wearer, English for meeting content).
 
+  Reference pages (private Claude artifacts by the author, for teammates; design
+  intent only, the specs and docs/ in this repo are the source of truth):
+  - Master plan: https://claude.ai/artifact/B1WHDiJmWevmv6c4w5apgC
+  - Brand and ecosystem: https://claude.ai/artifact/UyToAgWL3CwPe3KKZk5hwp
+  - Wireframes: https://claude.ai/artifact/SAbs91SmuHZ18VrSx2anPW
+  - Clip v1: https://claude.ai/artifact/KjsDD2LpCVd3TqathHh25J
+  - Assembly guide: https://claude.ai/artifact/8VMtfzE4hZmRrAy9zCyA5S
+  - Ecosystem: https://claude.ai/artifact/7yJJxsu7Z13WghiJMip6Wb
+
 rules:
   proposal:
     - State what is out of scope for the hackathon (before 2026-11-04) explicitly.
