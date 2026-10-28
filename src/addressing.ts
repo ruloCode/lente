@@ -17,7 +17,8 @@ export interface AddressTurn {
   endMs: number;
 }
 
-export type AddressRule = "name" | "reply" | "wearer" | "model" | "none";
+/** `testing` is the "reply to every question" switch, not a judgement. */
+export type AddressRule = "name" | "reply" | "wearer" | "model" | "testing" | "none";
 
 /** `ask` means the rules cannot decide and a model should be asked. */
 export interface AddressDecision {

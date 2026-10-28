@@ -103,6 +103,8 @@ export const PILOT_PAGE = `<!doctype html>
   .me form { display: flex; gap: 8px; padding-top: 6px; }
   .me input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
   .me button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 14px; font-weight: 600; }
+  .me label.sw { display: flex; align-items: center; gap: 8px; font-size: 14px; padding-top: 8px; }
+  .me label.sw input { flex: none; width: 18px; height: 18px; padding: 0; accent-color: var(--ink); }
   .me p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
   .item.k-live p { color: var(--muted); font-size: 14px; }
   .item.k-cue p { color: var(--cyan); font-weight: 700; }
@@ -143,6 +145,7 @@ export const PILOT_PAGE = `<!doctype html>
           <input id="me-input" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Rulo, Raúl" aria-label="Your name and nicknames, separated by commas">
           <button type="submit">Save</button>
         </form>
+        <label class="sw"><input type="checkbox" id="me-all"> Contestar todas las preguntas (pruebas)</label>
         <p>Lente answers when someone says one of these names. Say “Lente, soy Rulo” to tell it which voice is yours.</p>
       </details>
       <div class="note" id="note" hidden></div>
@@ -302,6 +305,8 @@ export const PILOT_PAGE = `<!doctype html>
   function relabelSpeakers() {
     for (const row of timeline.querySelectorAll(".item.k-turn")) row.querySelector(".chip").textContent = speakerChip(row.dataset.speaker);
   }
+  const WHY = { name: "dijeron tu nombre", reply: "te respondían a ti", model: "parece dirigida a ti", testing: "modo todas las preguntas" };
+  const whyLine = (e) => (e.why ? [e.asker ? "pregunta " + speakerChip(e.asker) : "", WHY[e.why] || e.why].filter(Boolean).join(" · ") : "");
   function addItem(e) {
     $("tl-hint").hidden = true;
     const row = document.createElement("div");
@@ -313,7 +318,7 @@ export const PILOT_PAGE = `<!doctype html>
     row.querySelector(".chip").textContent = chip;
     if (kind === "turn") row.dataset.speaker = e.speaker || "";
     row.querySelector("p").textContent = text;
-    row.querySelector("time").textContent = fmt(e.at || Date.now());
+    row.querySelector("time").textContent = [fmt(e.at || Date.now()), kind === "cue" ? whyLine(e) : ""].filter(Boolean).join(" · ");
     timeline.insertBefore(row, partial);
     if (e.turnId != null) rows.set(String(e.turnId), row);
     if (kind === "turn") $("tl-count").textContent = ++count + " turns";
@@ -338,6 +343,7 @@ export const PILOT_PAGE = `<!doctype html>
     }
   }
 
+  $("me-all").addEventListener("change", () => post($("me-all").checked ? "/cues/all" : "/cues/addressed"));
   function showNames(names) {
     $("me-names").textContent = names && names.length ? names.join(", ") : "not set";
     if (document.activeElement !== $("me-input")) $("me-input").value = names ? names.join(", ") : "";
@@ -354,6 +360,7 @@ export const PILOT_PAGE = `<!doctype html>
     status = m;
     if (wearerChanged) relabelSpeakers();
     showNames(m.names);
+    $("me-all").checked = !!m.everyQuestion;
     $("dot").classList.toggle("on", m.clip);
     $("clip").textContent = m.clip ? "Clip" : "Offline";
     $("listen").setAttribute("aria-pressed", String(m.listening));
@@ -400,7 +407,7 @@ export const PILOT_PAGE = `<!doctype html>
         $("cue").hidden = false;
         $("cue-label").textContent = isDilo(m.label) ? "DILO" : m.label;
         $("cue-text").textContent = m.text;
-        $("cue-meta").textContent = m.ms != null ? "in " + m.ms + " ms" : "";
+        $("cue-meta").textContent = [whyLine(m), m.ms != null ? "in " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
         addItem(m);
         if (navigator.vibrate) navigator.vibrate(120);
         say(m.text, "high");

@@ -88,4 +88,9 @@ test("profile names survive a restart", () => {
   assert.deepEqual(new ProfileStore(file).names, []);
   new ProfileStore(file).setNames("Rulo, Raúl");
   assert.deepEqual(new ProfileStore(file).names, ["Rulo", "Raúl"]);
+  assert.equal(new ProfileStore(file).everyQuestion, false);
+  new ProfileStore(file).setEveryQuestion(true);
+  const again = new ProfileStore(file);
+  assert.equal(again.everyQuestion, true);
+  assert.deepEqual(again.names, ["Rulo", "Raúl"], "the switch does not drop the names");
 });

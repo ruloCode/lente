@@ -16,7 +16,7 @@ export type DayEntry =
       audioEndMs?: number;
       spokeAt?: number;
     }
-  | { at: number; kind: "cue"; label: string; text: string; ms?: number }
+  | { at: number; kind: "cue"; label: string; text: string; ms?: number; /** Speaker label of who asked and the addressing rule that let the cue through. */ asker?: string; why?: string }
   | { at: number; kind: "live"; text: string }
   | { at: number; kind: "summary"; text: string };
 

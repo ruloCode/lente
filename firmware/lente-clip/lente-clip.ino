@@ -35,6 +35,8 @@
 #define MIC_CLK_PIN 42
 #define MIC_DATA_PIN 41
 #define LED_PIN 21     // user LED, active low
+#define MOTOR_PIN D0   // vibration motor through an S8050 transistor (high = on); nothing happens if it is not fitted yet
+#define MOTOR_PULSE_MS 300
 #define BUTTON_PIN 0   // BOOT button, free to use once running
 
 static const size_t AUDIO_FRAME_SAMPLES = 1280;  // 80 ms at 16 kHz
@@ -47,6 +49,7 @@ static volatile bool micOn = true;    // "M" / "m" from the hub: pause listening
 static bool cameraOn = false;         // sensor actually running
 static bool cameraWanted = false;     // "C" / "c" from the hub; off saves battery in mic-only mode
 static uint32_t blinkUntil = 0;
+static uint32_t motorUntil = 0;
 
 static bool sendFrame(char type, const uint8_t *data, size_t len) {
   if (!hub.connected()) return false;
@@ -156,6 +159,8 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
+  pinMode(MOTOR_PIN, OUTPUT);
+  digitalWrite(MOTOR_PIN, LOW);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   sendLock = xSemaphoreCreateMutex();
 
@@ -206,7 +211,10 @@ void loop() {
   while (hub.connected() && hub.available()) {
     int cmd = hub.read();
     if (cmd == 'P') photoRequested = true;
-    if (cmd == 'B') blinkUntil = millis() + 900;
+    if (cmd == 'B') {
+      blinkUntil = millis() + 900;
+      motorUntil = millis() + MOTOR_PULSE_MS;
+    }
     if (cmd == 'C' || cmd == 'c') {
       cameraWanted = cmd == 'C';
       setCamera(cameraWanted);
@@ -226,5 +234,6 @@ void loop() {
   // Three quick blinks for a cue; otherwise the LED stays dark to save battery and attention.
   bool blinking = millis() < blinkUntil && ((blinkUntil - millis()) / 150) % 2 == 0;
   digitalWrite(LED_PIN, blinking ? LOW : HIGH);
+  digitalWrite(MOTOR_PIN, millis() < motorUntil ? HIGH : LOW);
   delay(10);
 }

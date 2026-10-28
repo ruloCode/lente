@@ -71,6 +71,8 @@ let status = {
   audioLate: 0,
   /** Name and aliases other people use for the wearer (set on the phone). */
   names: profile.names,
+  /** Testing: cue on every question, not only those aimed at the wearer. */
+  everyQuestion: profile.everyQuestion,
   /** Speaker label of the wearer in this transcription session, once known. */
   wearer: "",
   /** Why the last clip was refused (old firmware, bad hello); cleared by the next good hello. */
@@ -126,7 +128,7 @@ const recentTurns = () =>
 
 let cueSeq = 0;
 
-async function sayThis(turn: AsrTurn): Promise<void> {
+async function sayThis(turn: AsrTurn, asker: string | undefined, why: string): Promise<void> {
   const seq = ++cueSeq;
   const started = performance.now();
   try {
@@ -138,7 +140,7 @@ async function sayThis(turn: AsrTurn): Promise<void> {
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply);
     if (!text) return;
-    record({ at: Date.now(), kind: "cue", label: "DILO", text, ms });
+    record({ at: Date.now(), kind: "cue", label: "DILO", text, ms, asker, why });
     device?.write("B");
     console.log(`[cue] ${ms} ms · ${text}`);
   } catch (error) {
@@ -152,6 +154,30 @@ const ADDRESS_HISTORY_TURNS = 8;
 function toAddressTurn(e: Extract<DayEntry, { kind: "turn" }>): AddressTurn {
   const startMs = e.spokeAt ?? e.at;
   return { speaker: e.speaker, text: e.text, startMs, endMs: startMs + ((e.audioEndMs ?? 0) - (e.audioStartMs ?? 0)) };
+}
+
+const speakerOfTurn = new Map<string, string>();
+const SPEAKER_WAIT_MS = 1500;
+
+/** The speaker label can arrive after the turn; the addressing rules need it. */
+async function labelOf(turn: AsrTurn): Promise<string | undefined> {
+  const deadline = Date.now() + SPEAKER_WAIT_MS;
+  while (turn.speaker === undefined && !speakerOfTurn.has(turn.turnId) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+  return turn.speaker ?? speakerOfTurn.get(turn.turnId);
+}
+
+/** The cue is for the wearer only when the question was aimed at them (or the testing switch is on). */
+async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: number | undefined): Promise<void> {
+  const speaker = await labelOf(turn);
+  const now = spokeAt ?? Date.now();
+  const asked: AddressTurn = { speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
+  if (profile.everyQuestion) {
+    console.log("[address] addressed · testing (every question)");
+    return void sayThis(turn, speaker, "testing");
+  }
+  const d = await decideAddressed(asked, earlier);
+  console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`);
+  if (d.verdict === "addressed") void sayThis(turn, speaker, d.rule);
 }
 
 /** Rules first; a model only for the ambiguous slice. `history` excludes the turn itself. */
@@ -303,6 +329,11 @@ function setLive(on: boolean): void {
   if (on) requestLiveFrame();
 }
 
+function setEveryQuestion(on: boolean): void {
+  profile.setEveryQuestion(on);
+  setStatus({ everyQuestion: on });
+}
+
 function setListening(on: boolean): void {
   setStatus({ listening: on });
   device?.write(on ? "M" : "m");
@@ -342,10 +373,12 @@ function startAsr(): void {
     onStatus: (s) => setStatus({ asr: s }),
     onPartial: (text) => broadcast({ kind: "partial", text }),
     onSessionStart: () => {
+      speakerOfTurn.clear();
       wearerTracker.reset();
       syncWearer();
     },
     onSpeaker: (turnId, speaker) => {
+      speakerOfTurn.set(turnId, speaker);
       broadcast({ kind: "speaker", turnId, speaker });
       wearerTracker.noteSpeaker(turnId, speaker);
       syncWearer();
@@ -364,12 +397,7 @@ function startAsr(): void {
       record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question, ...anchor }, { turnId: turn.turnId });
       const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
       console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
-      if (question && key) {
-        const now = anchor.spokeAt ?? Date.now();
-        const asked: AddressTurn = { speaker: turn.speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
-        void decideAddressed(asked, earlier).then((d) => console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`));
-      }
-      if (question) void sayThis(turn);
+      if (question && key) void cueIfAddressed(turn, earlier, anchor.spokeAt);
     },
   });
   asr = session;
@@ -514,6 +542,8 @@ const ACTIONS: Record<string, () => void> = {
   "/listen/on": () => setListening(true),
   "/listen/off": () => setListening(false),
   "/summary": () => void summarize(true),
+  "/cues/all": () => setEveryQuestion(true),
+  "/cues/addressed": () => setEveryQuestion(false),
 };
 
 // What makes the phone page installable: manifest and icons, drawn in src/brand.ts.
