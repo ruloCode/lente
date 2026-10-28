@@ -8,7 +8,7 @@
 
 ## 2. Firmware
 
-- [ ] 2.1 Firmware sends hello v2 and the eight-byte audio header; verify against the hub log and a deliberate frame drop
+- [x] 2.1 Firmware sends hello v2 and the eight-byte audio header; verify against the hub log and a deliberate frame drop
 - [ ] 2.2 Self-test encodes the fixture frames and compares bytes; verify over serial
 
 ## 3. Emulator and docs

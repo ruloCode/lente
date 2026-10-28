@@ -3,7 +3,9 @@
 // Streams the microphone (PCM16 mono 16 kHz, 80 ms frames) to the hub over TCP and
 // sends a JPEG when the BOOT button is pressed or the hub asks for one. Blinks the
 // user LED when the hub sends a cue. The hub can switch the camera off (mic-only mode,
-// saves battery) and pause the microphone. Wire format: see src/clip-protocol.ts.
+// saves battery) and pause the microphone. Wire format: protocol v2, see
+// src/clip-protocol.ts: the hello declares proto/fw/codec/rate and every audio
+// frame starts with an eight-byte header (u32 sequence, u32 capture ms).
 //
 // Setup: copy secrets.example.h to secrets.h and fill in your 2.4 GHz Wi-Fi.
 // Build: arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p <port> firmware/lente-clip
@@ -11,6 +13,7 @@
 #include "esp_camera.h"
 #include <ESP_I2S.h>
 #include <WiFi.h>
+#include <string.h>
 #include "secrets.h"
 
 // Camera pins for the XIAO ESP32-S3 Sense (from the core's CameraWebServer example).
@@ -55,11 +58,22 @@ static bool sendFrame(char type, const uint8_t *data, size_t len) {
 }
 
 // Runs on its own so the microphone is drained continuously, even while a photo goes out.
+// Every audio frame carries an eight-byte header: u32 little-endian sequence number
+// followed by u32 little-endian capture time in ms since boot, then the PCM16 samples.
+// The hub uses the sequence to count lost frames and the time to place audio precisely.
 static void audioTask(void *) {
   static int16_t frame[AUDIO_FRAME_SAMPLES];
+  static uint8_t packet[8 + sizeof(frame)];
+  static uint32_t seq = 0;
   for (;;) {
     size_t got = i2s.readBytes((char *)frame, sizeof(frame));  // keep draining even when paused
-    if (got == sizeof(frame) && micOn) sendFrame('A', (const uint8_t *)frame, got);
+    if (got == sizeof(frame) && micOn) {
+      uint32_t now = millis();
+      memcpy(packet, &seq, 4);
+      memcpy(packet + 4, &now, 4);
+      memcpy(packet + 8, frame, sizeof(frame));
+      if (sendFrame('A', packet, sizeof(packet))) seq++;
+    }
   }
 }
 
@@ -126,9 +140,14 @@ static void ensureConnected() {
     return;
   }
   hub.setNoDelay(true);
-  char hello[96];
-  int n = snprintf(hello, sizeof(hello), "{\"device\":\"lente-clip\",\"fw\":\"pilot-2\",\"rssi\":%d,\"camera\":%s}", WiFi.RSSI(),
-                   cameraOn ? "true" : "false");
+  // Protocol v2 hello: the hub checks the major version and refuses old clips
+  // with a plain-language "update the firmware" message. rssi/camera stay as
+  // extras for the log; the hub reads proto, fw, codec and rate.
+  char hello[160];
+  int n = snprintf(hello, sizeof(hello),
+                   "{\"proto\":\"2.0\",\"device\":\"lente-clip\",\"fw\":\"pilot-2\","
+                   "\"codec\":\"pcm16\",\"rate\":16000,\"rssi\":%d,\"camera\":%s}",
+                   WiFi.RSSI(), cameraOn ? "true" : "false");
   sendFrame('H', (const uint8_t *)hello, n);
   Serial.printf("[hub] connected to %s:%d (wifi %d dBm)\n", HUB_HOST, HUB_PORT, WiFi.RSSI());
 }
