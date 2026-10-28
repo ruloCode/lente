@@ -9,9 +9,9 @@
 
 ## 2. Addressing rules
 
-- [ ] 2.1 `isAddressed` with name/alias and reply-chain rules, returning the deciding rule; unit tests for named, wearer-asks, other-person and reply cases
-- [ ] 2.2 Ambiguous-case check with Muse Spark 1.3 (minimal effort, yes/no); verify one real call returns a decision in the hub log
-- [ ] 2.3 Wearer name and aliases as a setting on the phone, stored by the hub; verify it survives a hub restart
+- [x] 2.1 `isAddressed` with name/alias and reply-chain rules, returning the deciding rule; unit tests for named, wearer-asks, other-person and reply cases
+- [x] 2.2 Ambiguous-case check with Muse Spark 1.3 (minimal effort, yes/no); verify one real call returns a decision in the hub log
+- [x] 2.3 Wearer name and aliases as a setting on the phone, stored by the hub; verify it survives a hub restart
 
 ## 3. Cues and signal
 

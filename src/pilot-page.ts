@@ -97,6 +97,13 @@ export const PILOT_PAGE = `<!doctype html>
   .item.k-summary .chip { color: var(--ink); }
   .item.k-summary p { color: var(--ink); font-style: italic; }
   .item.k-cue .chip, .item.k-live .chip { font-size: 11px; }
+  .me { margin-bottom: 10px; }
+  .me summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
+  .me summary b { color: var(--ink); font-weight: 700; }
+  .me form { display: flex; gap: 8px; padding-top: 6px; }
+  .me input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
+  .me button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 0 14px; font-weight: 600; }
+  .me p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
   .item.k-live p { color: var(--muted); font-size: 14px; }
   .item.k-cue p { color: var(--cyan); font-weight: 700; }
   .partial { color: var(--muted); font-style: italic; padding-left: 38px; overflow-wrap: anywhere; }
@@ -130,6 +137,14 @@ export const PILOT_PAGE = `<!doctype html>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Camera + mic
         </button>
       </div>
+      <details class="me" id="me">
+        <summary>Name people call you: <b id="me-names">not set</b></summary>
+        <form id="me-form">
+          <input id="me-input" autocomplete="off" autocapitalize="words" enterkeyhint="done" placeholder="Rulo, Raúl" aria-label="Your name and nicknames, separated by commas">
+          <button type="submit">Save</button>
+        </form>
+        <p>Lente answers when someone says one of these names. Say “Lente, soy Rulo” to tell it which voice is yours.</p>
+      </details>
       <div class="note" id="note" hidden></div>
     </div>
   </header>
@@ -323,10 +338,22 @@ export const PILOT_PAGE = `<!doctype html>
     }
   }
 
+  function showNames(names) {
+    $("me-names").textContent = names && names.length ? names.join(", ") : "not set";
+    if (document.activeElement !== $("me-input")) $("me-input").value = names ? names.join(", ") : "";
+  }
+  $("me-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    fetch("/profile", { method: "POST", body: JSON.stringify({ names: $("me-input").value }) }).catch(() => {});
+    $("me-input").blur();
+    $("me").open = false;
+  });
+
   function applyStatus(m) {
     const wearerChanged = !status || status.wearer !== m.wearer;
     status = m;
     if (wearerChanged) relabelSpeakers();
+    showNames(m.names);
     $("dot").classList.toggle("on", m.clip);
     $("clip").textContent = m.clip ? "Clip" : "Offline";
     $("listen").setAttribute("aria-pressed", String(m.listening));

@@ -20,6 +20,8 @@ import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuest
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
+import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseYesNo } from "./addressing.ts";
+import { ProfileStore } from "./profile.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
 
@@ -31,8 +33,7 @@ const LANGUAGE = process.env.PILOT_LANG ?? "Spanish";
 const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_GAP_MS = 400;
-// Until the phone setting lands, the enrollment phrase uses these names (comma-separated).
-const WEARER_NAMES = (process.env.PILOT_WEARER_NAMES ?? "").split(",").map((n) => n.trim()).filter(Boolean);
+const profile = new ProfileStore(fileURLToPath(new URL("../data/profile.json", import.meta.url)));
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
@@ -68,6 +69,8 @@ let status = {
   voice: elevenKey ? "elevenlabs" : "device",
   audioLost: 0,
   audioLate: 0,
+  /** Name and aliases other people use for the wearer (set on the phone). */
+  names: profile.names,
   /** Speaker label of the wearer in this transcription session, once known. */
   wearer: "",
   /** Why the last clip was refused (old firmware, bad hello); cleared by the next good hello. */
@@ -140,6 +143,31 @@ async function sayThis(turn: AsrTurn): Promise<void> {
     console.log(`[cue] ${ms} ms · ${text}`);
   } catch (error) {
     console.error(`[cue] failed: ${(error as Error).message.slice(0, 200)}`);
+  }
+}
+
+const ADDRESS_HISTORY_TURNS = 8;
+
+/** A day-log turn on the wall clock, which stays comparable across reconnects. */
+function toAddressTurn(e: Extract<DayEntry, { kind: "turn" }>): AddressTurn {
+  const startMs = e.spokeAt ?? e.at;
+  return { speaker: e.speaker, text: e.text, startMs, endMs: startMs + ((e.audioEndMs ?? 0) - (e.audioStartMs ?? 0)) };
+}
+
+/** Rules first; a model only for the ambiguous slice. `history` excludes the turn itself. */
+async function decideAddressed(turn: AddressTurn, history: AddressTurn[]): Promise<AddressDecision & { ms?: number }> {
+  const wearer = wearerTracker.wearer();
+  const decision = isAddressed(turn, history, wearer, profile.names);
+  if (decision.verdict !== "ask") return decision;
+  const started = performance.now();
+  try {
+    const answer = parseYesNo(await askSpark(addressMessages(turn, history, wearer, profile.names)));
+    const ms = Math.round(performance.now() - started);
+    // An unreadable answer counts as "not aimed at the wearer": a missed cue beats a false buzz.
+    return { verdict: answer ? "addressed" : "not-addressed", rule: "model", ms };
+  } catch (error) {
+    console.error(`[address] model check failed: ${(error as Error).message.slice(0, 200)}`);
+    return { verdict: "not-addressed", rule: "none" };
   }
 }
 
@@ -323,8 +351,9 @@ function startAsr(): void {
       syncWearer();
     },
     onTurn: (turn) => {
+      const earlier = day.entries.filter((e): e is Extract<DayEntry, { kind: "turn" }> => e.kind === "turn").slice(-ADDRESS_HISTORY_TURNS).map(toAddressTurn);
       if (turn.startMs !== undefined && turn.endMs !== undefined) wearerTracker.noteLoudness(turn.turnId, loudness.medianBetween(turn.startMs, turn.endMs));
-      if (isEnrollment(turn.text, WEARER_NAMES)) wearerTracker.noteEnrollment(turn.turnId);
+      if (isEnrollment(turn.text, profile.names)) wearerTracker.noteEnrollment(turn.turnId);
       if (turn.speaker !== undefined) wearerTracker.noteSpeaker(turn.turnId, turn.speaker);
       syncWearer();
       const question = isQuestion(turn.text);
@@ -335,6 +364,11 @@ function startAsr(): void {
       record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question, ...anchor }, { turnId: turn.turnId });
       const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
       console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
+      if (question && key) {
+        const now = anchor.spokeAt ?? Date.now();
+        const asked: AddressTurn = { speaker: turn.speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
+        void decideAddressed(asked, earlier).then((d) => console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`));
+      }
       if (question) void sayThis(turn);
     },
   });
@@ -507,6 +541,10 @@ const web = createHttpServer(async (req, res) => {
       res.write(`data: ${JSON.stringify({ kind: "history", items: day.entries.slice(-80) })}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
+    } else if (req.method === "POST" && req.url === "/profile") {
+      const { names } = JSON.parse((await readBody(req)) || "{}") as { names?: string };
+      setStatus({ names: profile.setNames(typeof names === "string" ? names : "") });
+      res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/tts") {
       const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };
       await speak(res, text ?? "");
