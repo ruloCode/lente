@@ -8,3 +8,9 @@ recordings/
 *.wav
 *.pcm
 results/
+
+# Device secrets (Wi-Fi credentials)
+firmware/**/secrets.h
+
+# The day as text (turns, cues, summaries) from the pilot hub
+data/
