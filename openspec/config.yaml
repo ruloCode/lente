@@ -1,0 +1,60 @@
+schema: spec-driven
+
+context: |
+  Language: English
+  All artifacts must be written in English.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  Product: Lente, an ambient meeting copilot for people who work in their second
+  language. A clip on any pair of glasses (Seeed XIAO ESP32-S3 Sense: OV3660 camera,
+  PDM microphone, LED, vibration motor) streams to a hub; the hub uses Meta's models
+  to tell when the wearer is being asked something and shows one short line to say
+  (the "Dilo" card), describes what the camera sees, keeps the day as text, and runs
+  agents after the meeting with the wearer's approval. Brand: "Calibre" (graphite,
+  cyan only for the line to say, amber only for measured numbers). See
+  docs/architecture.md for applications, stack and interfaces.
+
+  Hard constraints (Meta Global AI Developer Hackathon, deadline 2026-11-04 21:00 ET):
+  - New work only: never copy code, prompts or assets from other repositories,
+    including the author's hermes-os. Prior art (OpenGlass, Omi) is cited, not copied.
+  - Must use Meta's models: Muse Voice Transcribe, Muse Spark 1.3, Muse Spark Open,
+    optionally SAM 3.1, Muse Wonder, Muse Glimmer. Never call *-contributor models.
+  - Every number in docs and the demo video is measured by scripts/, never estimated.
+  - No secrets, meeting audio, transcripts or photos of real meetings in the repo.
+  - People recorded must have agreed; the free Meta credits allow product-improvement
+    use of content, so tests use the author's own voice and public media.
+
+  Stack and conventions:
+  - Hub: Node 22.18+, TypeScript run natively (.ts imports, erasable syntax only),
+    zero runtime dependencies unless one clearly earns its place (record why in
+    docs/kb/decisions.md). node:http, node:net, global fetch and WebSocket.
+  - Firmware: Arduino-ESP32 core 3.3.x, C++, board esp32:esp32:XIAO_ESP32S3:PSRAM=opi.
+  - Companion app: one HTML page served by the hub (no build step), SSE down, POST up.
+  - Pure logic lives in its own module with a test in test/ (node --test).
+  - `pnpm typecheck && pnpm test` before every commit.
+  - Code and docs in English; user-facing copy may be bilingual (Spanish first for the
+    wearer, English for meeting content).
+
+rules:
+  proposal:
+    - State what is out of scope for the hackathon (before 2026-11-04) explicitly.
+    - Name which Meta model each new behavior depends on.
+    - Note privacy impact when the change records, stores or sends content.
+  specs:
+    - Scenarios use WHEN/THEN bullets and describe observable behavior only.
+    - Latency or quality targets in specs are targets; measured values belong in docs/benchmarks.md.
+  design:
+    - Prefer extending existing modules (src/pilot.ts, src/clip-protocol.ts) over new services.
+    - Any new runtime dependency needs a justification and a rejected zero-dependency alternative.
+  tasks:
+    - Every task names its verification (a test, a command, or an observable behavior on the clip or phone).
+    - Group tasks so each group fits in a half-day session.
+
+operations:
+  apply:
+    guidance:
+      - Run pnpm typecheck && pnpm test after each task group.
+      - Add the day's row to "What was built during the hackathon" in README.md.
+  archive:
+    guidance:
+      - Summarize what changed in specs in two or three lines.
