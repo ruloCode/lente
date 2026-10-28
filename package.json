@@ -17,6 +17,7 @@
     "pilot": "node --env-file-if-exists=.env src/pilot.ts"
   },
   "devDependencies": {
+    "@fission-ai/openspec": "1.15.0",
     "@types/node": "^22.18.0",
     "typescript": "^5.9.0"
   }
