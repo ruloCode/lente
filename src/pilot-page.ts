@@ -108,6 +108,16 @@ export const PILOT_PAGE = `<!doctype html>
   .meet button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
   .meet[data-running="true"] button { background: var(--ink); border-color: var(--ink); color: var(--bg); }
   .meet .live-title { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brief { margin-bottom: 10px; }
+  .brief summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
+  .brief .row { display: flex; gap: 8px; margin: 6px 0; }
+  .brief input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 16px; }
+  .brief button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 10px 14px; font-weight: 600; white-space: nowrap; }
+  .brief .card { border-top: 1px solid var(--line); padding: 8px 0; display: grid; gap: 4px; font-size: 14px; }
+  .brief .sec { font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .brief ul { margin: 0; padding-left: 18px; }
+  .brief li small { display: block; color: var(--muted); font: 12px var(--mono); }
+  .brief .none { color: var(--muted); margin: 0; }
   .past { margin-bottom: 10px; }
   .past summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
   .lang { margin-bottom: 10px; }
@@ -174,6 +184,17 @@ export const PILOT_PAGE = `<!doctype html>
         <span class="live-title" id="meet-live" hidden></span>
         <button id="meet-btn" type="button">Iniciar</button>
       </div>
+      <details class="brief" id="brief">
+        <summary>Antes de la reunión</summary>
+        <div class="row">
+          <input id="brief-title" autocomplete="off" placeholder="Reunión (ej. Sprint review)" aria-label="Reunión">
+        </div>
+        <div class="row">
+          <input id="brief-names" autocomplete="off" placeholder="Con quién (opcional)" aria-label="Con quién">
+          <button id="brief-btn" type="button">Preparar</button>
+        </div>
+        <div id="brief-out"></div>
+      </details>
       <details class="past" id="past" hidden>
         <summary>Reuniones anteriores (<span id="past-count">0</span>)</summary>
         <div id="past-list"></div>
@@ -423,9 +444,50 @@ export const PILOT_PAGE = `<!doctype html>
     for (const it of items) { const li = document.createElement("li"); li.textContent = line(it); ul.append(li); }
     parent.append(ul);
   }
+  const BRIEF_SECTIONS = [["owed", "Le debes"], ["open", "Quedó abierto"], ["term", "Palabras que pueden salir"], ["phrase", "Frases a la mano"]];
+  function showBriefing(b) {
+    const out = $("brief-out");
+    out.textContent = "";
+    const card = document.createElement("div"); card.className = "card";
+    if (!b) { out.append(card); return; }
+    const title = {};
+    for (const s of b.sources) title[s.id] = (s.title || "Reunión sin título") + ", " + new Date(s.startedAt).toLocaleDateString([], { day: "numeric", month: "short" });
+    if (!b.remembered) {
+      const none = document.createElement("p"); none.className = "none";
+      none.textContent = "Aún no recuerdo reuniones relacionadas; solo te dejo frases para empezar.";
+      card.append(none);
+    }
+    for (const [kind, label] of BRIEF_SECTIONS) {
+      const items = b.items.filter((i) => i.kind === kind);
+      if (!items.length) continue;
+      const h = document.createElement("div"); h.className = "sec"; h.textContent = label; card.append(h);
+      const ul = document.createElement("ul");
+      for (const it of items) {
+        const li = document.createElement("li"); li.textContent = it.text;
+        if (it.sources.length) { const from = document.createElement("small"); from.textContent = "de " + it.sources.map((id) => title[id] || id).join(" · "); li.append(from); }
+        ul.append(li);
+      }
+      card.append(ul);
+    }
+    out.append(card);
+  }
+  $("brief-btn").addEventListener("click", async () => {
+    const btn = $("brief-btn");
+    btn.disabled = true; btn.textContent = "Preparando…";
+    try {
+      const res = await fetch("/briefing", { method: "POST", body: JSON.stringify({ title: $("brief-title").value, names: $("brief-names").value }) });
+      if (!res.ok) throw new Error(String(res.status));
+      showBriefing(await res.json());
+    } catch {
+      const out = $("brief-out"); out.textContent = "";
+      const p = document.createElement("p"); p.className = "none"; p.textContent = "No pude preparar el briefing. Intenta de nuevo."; out.append(p);
+    }
+    btn.disabled = false; btn.textContent = "Preparar";
+  });
   function showLanguage(l) {
     const terms = l ? l.glossary : [];
-    $("lang").hidden = !l || (!terms.length && !l.asked);
+    const phrases = l && l.phrases ? l.phrases : [];
+    $("lang").hidden = !l || (!terms.length && !l.asked && !phrases.length);
     if (!l) return;
     $("lang-count").textContent = terms.length;
     const s = $("lang-stats");
@@ -437,6 +499,13 @@ export const PILOT_PAGE = `<!doctype html>
     }
     const box = $("lang-list");
     box.textContent = "";
+    if (phrases.length) {
+      const h = document.createElement("div"); h.className = "t";
+      const strong = document.createElement("strong"); strong.textContent = "Lo que sueles decir";
+      h.append(strong);
+      for (const ph of phrases) { const em = document.createElement("em"); em.textContent = "“" + ph + "”"; h.append(em); }
+      box.append(h);
+    }
     for (const t of terms) {
       const el = document.createElement("div"); el.className = "t";
       const head = document.createElement("div");

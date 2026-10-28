@@ -14,6 +14,6 @@
 
 ## 3. Briefing and replies
 
-- [ ] 3.1 Briefing endpoint and card with sources; verify with two simulated meetings where the second briefing cites the first
-- [ ] 3.2 Grounding check drops items without valid sources; unit test
-- [ ] 3.3 Reply prompt includes the profile prefix; verify cached tokens appear in `usage` on the second call and record the hit rate in docs/benchmarks.md
+- [x] 3.1 Briefing endpoint and card with sources; verify with two simulated meetings where the second briefing cites the first
+- [x] 3.2 Grounding check drops items without valid sources; unit test
+- [x] 3.3 Reply prompt includes the profile prefix; verify cached tokens appear in `usage` on the second call and record the hit rate in docs/benchmarks.md

@@ -29,14 +29,14 @@ export interface TermSighting {
   example: string;
 }
 
-const key = (term: string) => term.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+export const termKey = (term: string) => term.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 /** Adds what one meeting found. A term already known is counted again (once per meeting), not duplicated. */
 export function mergeGlossary(entries: GlossaryEntry[], found: TermSighting[], meeting: string, at: number): GlossaryEntry[] {
   const next = entries.map((e) => ({ ...e, sightings: [...e.sightings] }));
   for (const item of found) {
     const example = item.example.trim().slice(0, MAX_EXAMPLE_CHARS);
-    const known = next.find((e) => key(e.term) === key(item.term));
+    const known = next.find((e) => termKey(e.term) === termKey(item.term));
     if (!known) {
       next.push({ term: item.term.trim(), meaning: item.meaning.trim(), sightings: [{ meeting, example, at }] });
       continue;
@@ -93,4 +93,45 @@ export function countAskedAnswered(turns: MeetingTurn[]): AskedAnswered {
 
 export function totalAskedAnswered(stats: (AskedAnswered | undefined)[]): AskedAnswered {
   return stats.reduce<AskedAnswered>((sum, s) => ({ asked: sum.asked + (s?.asked ?? 0), answered: sum.answered + (s?.answered ?? 0) }), { asked: 0, answered: 0 });
+}
+
+// --- Words the wearer uses ------------------------------------------------------------------------
+
+const MIN_PHRASE_WORDS = 3;
+const MAX_PHRASE_WORDS = 8;
+const PHRASE_LIMIT = 8;
+/** Little words that, alone, are not a phrasing worth keeping. */
+const FILLER = new Set(
+  ("i you he she it we they the a an and or but so then to of in on at for with is are was be do did can will this that there what " +
+    "yo tu el la los las un una y o pero que de en es son por con para se lo mi si no ya").split(" "),
+);
+
+/**
+ * Phrases the wearer repeats (three to eight words, in at least two of their turns), longest first
+ * when the count ties. A phrase inside a longer one that is as frequent is dropped.
+ */
+export function wearerPhrases(meetings: { turns: MeetingTurn[] }[], limit = PHRASE_LIMIT): string[] {
+  const counts = new Map<string, number>();
+  for (const meeting of meetings) {
+    for (const turn of meeting.turns.filter((t) => t.wearer)) {
+      const seen = new Set<string>();
+      for (const sentence of turn.text.toLowerCase().split(/[.!?¡¿;:\n]+/)) {
+        const words = sentence.split(/[^\p{L}\p{N}'’-]+/u).filter(Boolean);
+        for (let n = MIN_PHRASE_WORDS; n <= MAX_PHRASE_WORDS; n++) {
+          for (let i = 0; i + n <= words.length; i++) {
+            const gram = words.slice(i, i + n);
+            if (gram.every((w) => FILLER.has(w))) continue;
+            seen.add(gram.join(" "));
+          }
+        }
+      }
+      for (const gram of seen) counts.set(gram, (counts.get(gram) ?? 0) + 1);
+    }
+  }
+  const repeated = [...counts].filter(([, n]) => n >= 2);
+  const kept = repeated.filter(([gram, n]) => !repeated.some(([other, m]) => other !== gram && m >= n && ` ${other} `.includes(` ${gram} `)));
+  return kept
+    .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([gram]) => gram);
 }

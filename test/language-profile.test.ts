@@ -100,3 +100,29 @@ test("language store keeps the glossary across restarts", () => {
   new LanguageStore(file).set(mergeGlossary([], [GA], "m1", 1000));
   assert.equal(new LanguageStore(file).glossary[0].term, "GA");
 });
+
+import { wearerPhrases } from "../src/language-profile.ts";
+
+const said = (text: string, wearer = true): MeetingTurn => ({ id: "t", at: 0, text, wearer });
+
+test("a phrasing the wearer repeats across turns is kept, whole", () => {
+  const turns = [said("Sure. I'll double-check and get back to you."), said("Okay, I'll double-check and get back to you tomorrow."), said("Fine.")];
+  const phrases = wearerPhrases([{ turns }]);
+  assert.ok(phrases.includes("i'll double-check and get back to you"), phrases.join(" | "));
+  assert.ok(!phrases.includes("get back to you"), "a piece of a longer, equally frequent phrase is dropped");
+});
+
+test("a phrase said once, by someone else, or made of filler words is not the wearer's", () => {
+  const phrases = wearerPhrases([
+    { turns: [said("We should ship it on Friday"), said("This is what it is", false), said("This is what it is", false), said("and then it is the")] },
+    { turns: [said("and then it is the")] },
+  ]);
+  assert.deepEqual(phrases, []);
+});
+
+test("phrases count across meetings and put the most repeated first", () => {
+  const a = { turns: [said("let me check that for you"), said("sounds good to me")] };
+  const b = { turns: [said("let me check that for you"), said("sounds good to me")] };
+  const c = { turns: [said("sounds good to me")] };
+  assert.deepEqual(wearerPhrases([a, b, c]), ["sounds good to me", "let me check that for you"]);
+});

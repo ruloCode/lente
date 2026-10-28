@@ -12,6 +12,7 @@
     "ping": "node --env-file-if-exists=.env src/ping.ts",
     "bench:llm": "node --env-file-if-exists=.env scripts/bench-llm.ts",
     "bench:asr": "node --env-file-if-exists=.env scripts/bench-asr.ts",
+    "bench:cache": "node --env-file-if-exists=.env scripts/bench-cache.ts",
     "test": "node --test test/*.test.ts",
     "gen:fixtures": "node scripts/gen-fixtures-header.ts",
     "typecheck": "tsc --noEmit",

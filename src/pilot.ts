@@ -20,9 +20,10 @@ import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuest
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
-import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseYesNo } from "./addressing.ts";
+import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
-import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary } from "./language-profile.ts";
+import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
+import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
 import { MeetingStore } from "./meeting-store.ts";
 import { type Meeting, type MeetingTurn, addTurn, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
 import { ProfileStore } from "./profile.ts";
@@ -45,10 +46,6 @@ const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
 
-const SAY_THIS_PROMPT =
-  "You help a non-native English speaker answer in a live meeting. Given the conversation and the " +
-  "question just asked, write ONE natural sentence they can say right now. Under 90 characters, " +
-  "in the language of the question, no quotes, no preamble.";
 const ON_SCREEN_PROMPT =
   "You are the eyes of someone in a meeting, seeing through a small camera on their glasses. " +
   `In ONE sentence in ${LANGUAGE}, under 100 characters, say what matters in this view: what the slide, ` +
@@ -141,10 +138,7 @@ async function sayThis(turn: AsrTurn, asker: string | undefined, why: string): P
   const seq = ++cueSeq;
   const started = performance.now();
   try {
-    const reply = await askSpark([
-      { role: "system", content: SAY_THIS_PROMPT },
-      { role: "user", content: `Conversation so far:\n${recentTurns()}\n\nQuestion just asked: ${turn.text}` },
-    ]);
+    const reply = await askSpark(replyMessages(memoryText(), recentTurns(), turn.text));
     if (seq !== cueSeq) return; // a newer question already took the card
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply);
@@ -262,11 +256,20 @@ function meetingsEvent() {
   return {
     kind: "meetings",
     items: all.reverse().map(meetingSummary),
-    language: { glossary: viewGlossary(language.glossary), ...totalAskedAnswered(all.map((m) => m.stats)) },
+    language: { glossary: viewGlossary(language.glossary), phrases: wearerPhrases(finishedMeetings()), ...totalAskedAnswered(all.map((m) => m.stats)) },
   };
 }
 
+/** Meetings that are over: a running one would change the phrases (and the cached prefix) mid-meeting. */
+const finishedMeetings = (): Meeting[] => meetings.list().filter((m) => m.status !== "running" && m.status !== "extracting");
+
+/** The memory prefix, rebuilt only after meetings or the glossary change. */
+let memoryCache: string | undefined;
+const memoryText = (): string =>
+  (memoryCache ??= memoryPrefix({ phrases: wearerPhrases(finishedMeetings()), glossary: language.glossary, meetings: meetings.list() }));
+
 function broadcastMeetings(): void {
+  memoryCache = undefined;
   broadcast(meetingsEvent());
 }
 
@@ -331,6 +334,21 @@ async function extractNotes(m: Meeting): Promise<void> {
   if (deletedMeetings.has(m.id)) return;
   meetings.save(m);
   broadcastMeetings();
+}
+
+// --- Briefing: what to know before a meeting, only from what is remembered ----------------------------
+
+async function makeBriefing(title: string, names: string[]): Promise<Briefing> {
+  const started = performance.now();
+  const all = meetings.list().filter((m) => m.id !== current?.id);
+  const ids = rememberedMeetings(all).map((m) => m.id);
+  const text = await askSpark(briefingMessages(memoryText(), title, names), {
+    extra: { response_format: { type: "json_schema", json_schema: { name: "briefing", strict: true, schema: briefingSchema(ids) } } },
+    maxTokens: 1500,
+  });
+  const { items, dropped } = validateBriefing(JSON.parse(text), all, language.glossary);
+  console.log(`[briefing] "${title}" in ${Math.round(performance.now() - started)} ms · ${items.length} items from ${ids.length} meeting(s) · ${dropped} dropped`);
+  return { title, names, at: Date.now(), remembered: ids.length > 0, items, sources: citedSources(items, all), dropped };
 }
 
 /** A hub that stopped mid-meeting finishes it on the next start. */
@@ -711,6 +729,11 @@ const web = createHttpServer(async (req, res) => {
     } else if (req.method === "POST" && req.url === "/meeting/end") {
       void endMeeting("manual");
       res.writeHead(204).end();
+    } else if (req.method === "POST" && req.url === "/briefing") {
+      const { title, names } = JSON.parse((await readBody(req)) || "{}") as { title?: string; names?: string };
+      const briefing = await makeBriefing(typeof title === "string" ? title.trim().slice(0, 80) : "", parseNames(typeof names === "string" ? names : ""));
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(briefing));
     } else if (req.method === "POST" && req.url === "/meetings/delete") {
       const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
       const removed = typeof id === "string" && id !== current?.id && meetings.delete(id);

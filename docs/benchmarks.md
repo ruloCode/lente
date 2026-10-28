@@ -49,3 +49,14 @@ Open questions this run answers:
 | _pending first run_ | | | | |
 
 Recordings and results stay local (`recordings/`, `results/` and `*.wav` are git-ignored). Only meetings recorded with everyone's consent are used.
+
+## Prompt cache on the memory prefix
+
+`pnpm bench:cache 12 14` (2026-10-28): Muse Spark 1.3, effort minimal, not streamed (streamed replies carry no `usage`; `stream_options.include_usage` is ignored). Memory: 12 synthetic meetings, 6,333 characters, about 1,620 prompt tokens. Each call keeps the memory and changes only the conversation and the question; the last call of a run is a briefing, which shares the memory but not the task text.
+
+| Run | Calls counted | Cached / prompt tokens | Hit rate |
+|---|---|---|---|
+| 1 (`12 6`) | 2–6 | 1,521 / 8,178 | 18.6% |
+| 2 (`12 14`) | 2–14 | 6,084 / 21,167 | 28.7% |
+
+When the cache hits, 1,521 of about 1,620 tokens are served from it (93.8%); the rest is the changing tail. Hits are not steady: in run 2 calls 1, 5, 7, 8 and 9 hit and the others missed, in no pattern tied to the gap between calls (1.5 s). The briefing call never hit in either run. So the cache is a discount that sometimes applies, not something a latency budget can rely on. A real week of meetings will give a longer prefix; the number above is for the synthetic one.

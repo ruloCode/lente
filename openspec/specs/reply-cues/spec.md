@@ -6,7 +6,7 @@ The single line the wearer can say right after being asked something: the reason
 ## Requirements
 
 ### Requirement: Detect questions
-The hub SHALL treat a completed turn as a question when it ends with a question mark, starts with an inverted question mark, or its last sentence opens with an interrogative word in English or Spanish.
+The hub SHALL treat a completed turn as a question when it ends with a question mark, starts with an inverted question mark, or its last sentence opens with an interrogative word in English or Spanish. When a reply is generated, the wearer's language profile SHALL be part of the context so the reply prefers words and phrasings the wearer already uses.
 
 #### Scenario: Question without punctuation
 - **WHEN** a turn reads "Okay, let's move on. Who owns the API"
@@ -15,6 +15,10 @@ The hub SHALL treat a completed turn as a question when it ends with a question 
 #### Scenario: Statement
 - **WHEN** a turn reads "I think we should ship it."
 - **THEN** no reply is generated
+
+#### Scenario: Reply in the wearer's words
+- **WHEN** the profile shows the wearer usually says "I'll double-check and get back to you"
+- **THEN** a reply that defers an answer uses that phrasing rather than an unfamiliar idiom
 
 ### Requirement: One short reply per question
 For each question the hub SHALL ask Muse Spark 1.3 for one sentence the wearer can say, in the language of the question, using the last twelve turns as context, and SHALL publish it as a cue of at most 90 characters with no quotes or preamble.
