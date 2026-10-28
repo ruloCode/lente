@@ -14,3 +14,6 @@ firmware/**/secrets.h
 
 # The day as text (turns, cues, summaries) from the pilot hub
 data/
+
+# Rendered eval set (audio, timelines)
+eval/audio/

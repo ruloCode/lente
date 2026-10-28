@@ -2,8 +2,8 @@
 
 ## 1. Synthetic set
 
-- [ ] 1.1 Ten scripted dialogues (English meetings, a few Spanish lines) with labels in JSON; schema check in a unit test
-- [ ] 1.2 Renderer to 16 kHz PCM with distinct macOS voices and per-speaker gain; verify each file plays and lengths match the script
+- [x] 1.1 Ten scripted dialogues (English meetings, a few Spanish lines) with labels in JSON; schema check in a unit test
+- [x] 1.2 Renderer to 16 kHz PCM with distinct macOS voices and per-speaker gain; verify each file plays and lengths match the script
 
 ## 2. Runner and metrics
 

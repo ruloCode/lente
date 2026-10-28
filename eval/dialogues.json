@@ -1,0 +1,606 @@
+[
+ {
+  "id": "d01-standup",
+  "title": "Daily standup, questions by name",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Good morning everyone. Let's start with the billing export."
+   },
+   {
+    "speaker": "P1",
+    "text": "Rulo, can you share the status of the billing export?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "Sure. The export works, and I am testing it with larger files today."
+   },
+   {
+    "speaker": "P2",
+    "text": "Luis, did the deploy go through last night?",
+    "question": true
+   },
+   {
+    "speaker": "P3",
+    "text": "Yes, it finished at two in the morning without errors."
+   },
+   {
+    "speaker": "P1",
+    "text": "Rulo, are you blocked on anything?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "No, I am not blocked. Thanks for asking."
+   }
+  ]
+ },
+ {
+  "id": "d02-sprint-review",
+  "title": "Sprint review, a group question and a follow-up",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Okay, let's go through the open items from the sprint."
+   },
+   {
+    "speaker": "P1",
+    "text": "Who owns the API migration?",
+    "question": true
+   },
+   {
+    "speaker": "W",
+    "text": "I can take it. I already know the old endpoints."
+   },
+   {
+    "speaker": "P2",
+    "text": "Great. When can you have an estimate?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "I will send it on Thursday."
+   },
+   {
+    "speaker": "P2",
+    "text": "Perfect. We expect general availability in March."
+   },
+   {
+    "speaker": "P1",
+    "text": "Does anyone have questions about the roadmap?",
+    "question": true
+   }
+  ]
+ },
+ {
+  "id": "d03-client-call",
+  "title": "Client call, pricing",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Thanks for joining the call. We want to talk about the pricing page."
+   },
+   {
+    "speaker": "P2",
+    "text": "Rulo, what is your view on the annual plan?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "I think the annual plan is a good deal if the discount is clear."
+   },
+   {
+    "speaker": "P1",
+    "text": "How much of a discount would feel right?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "Around twenty percent is common."
+   },
+   {
+    "speaker": "P2",
+    "text": "Makes sense. Ana, could you update the slide?",
+    "question": true
+   },
+   {
+    "speaker": "P3",
+    "text": "Yes, I will update the slide after the call."
+   }
+  ]
+ },
+ {
+  "id": "d04-planning",
+  "title": "Planning, deadlines and risks",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Let's plan the release. The deadline is the end of the month."
+   },
+   {
+    "speaker": "P1",
+    "text": "Is that realistic for the mobile app?",
+    "question": true
+   },
+   {
+    "speaker": "P2",
+    "text": "It is tight, but we have done it before."
+   },
+   {
+    "speaker": "P1",
+    "text": "Rulo, what are the biggest risks you see?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "The biggest risk is the data migration. We have not tested it with real volumes."
+   },
+   {
+    "speaker": "P3",
+    "text": "Can we move the migration to the next sprint?",
+    "question": true
+   },
+   {
+    "speaker": "P1",
+    "text": "Let's decide that tomorrow."
+   }
+  ]
+ },
+ {
+  "id": "d05-design-review",
+  "title": "Design review, the wearer asks too",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "This is the new onboarding flow. It has four steps."
+   },
+   {
+    "speaker": "W",
+    "text": "Can you explain why the third step is optional?",
+    "question": true
+   },
+   {
+    "speaker": "P1",
+    "text": "Because most users skip it, and we want fewer drop-offs."
+   },
+   {
+    "speaker": "P2",
+    "text": "Rulo, do you think four steps is too many?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "Four is fine if each one is short."
+   },
+   {
+    "speaker": "P2",
+    "text": "Okay. And what about the empty state?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "I would add one sentence and a button."
+   }
+  ]
+ },
+ {
+  "id": "d06-retro",
+  "title": "Retrospective, statements and one question",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "I think we should ship smaller changes. That is my main point."
+   },
+   {
+    "speaker": "P2",
+    "text": "I agree. The last release had too many things at once."
+   },
+   {
+    "speaker": "P3",
+    "text": "We should also write the notes during the sprint, not after it."
+   },
+   {
+    "speaker": "P1",
+    "text": "Rulo, how did the testing go this sprint?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "It went well. We found two bugs before the release."
+   },
+   {
+    "speaker": "P2",
+    "text": "Good. Let's close the retro here."
+   }
+  ]
+ },
+ {
+  "id": "d07-one-on-one",
+  "title": "One on one, a manager and the wearer",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Thanks for making time. How are you feeling about the project?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "I feel good about it. The scope is clear now."
+   },
+   {
+    "speaker": "P1",
+    "text": "Do you need anything from me?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "Maybe some help prioritizing the backlog."
+   },
+   {
+    "speaker": "P1",
+    "text": "Of course. What would you like to work on next quarter?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "I would like to lead the search ranking work."
+   }
+  ]
+ },
+ {
+  "id": "d08-side-talk",
+  "title": "Two colleagues talk, the wearer only listens",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "gain": 0.15
+   },
+   "P3": {
+    "voice": "Reed (English (US))",
+    "gain": 0.12
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Did you see the numbers from the weekend?",
+    "question": true
+   },
+   {
+    "speaker": "P2",
+    "text": "Yes, the signups were higher than expected."
+   },
+   {
+    "speaker": "P1",
+    "text": "What do you think caused it?",
+    "question": true
+   },
+   {
+    "speaker": "P2",
+    "text": "I think the new landing page helped."
+   },
+   {
+    "speaker": "P1",
+    "text": "Should we run the same test in other countries?",
+    "question": true
+   },
+   {
+    "speaker": "P2",
+    "text": "Let's talk to Rulo about the budget first."
+   },
+   {
+    "speaker": "W",
+    "text": "I can look at the budget this week."
+   }
+  ]
+ },
+ {
+  "id": "d09-reunion-es",
+  "title": "Reunión en español",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "voiceEs": "Flo (Spanish (Mexico))",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "voiceEs": "Eddy (Spanish (Mexico))",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "voiceEs": "Reed (Spanish (Mexico))",
+    "gain": 0.15
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Buenos días a todos. Empecemos con el avance del proyecto.",
+    "lang": "es"
+   },
+   {
+    "speaker": "P1",
+    "text": "Rulo, ¿cómo va la integración con el banco?",
+    "question": true,
+    "addressedToWearer": true,
+    "lang": "es"
+   },
+   {
+    "speaker": "W",
+    "text": "Va bien. Ya terminé las pruebas con el ambiente de desarrollo.",
+    "lang": "es"
+   },
+   {
+    "speaker": "P2",
+    "text": "¿Quién se encarga de la documentación?",
+    "question": true,
+    "lang": "es"
+   },
+   {
+    "speaker": "P1",
+    "text": "Yo la reviso esta semana.",
+    "lang": "es"
+   },
+   {
+    "speaker": "P2",
+    "text": "Rulo, ¿puedes enviarme el resumen mañana?",
+    "question": true,
+    "addressedToWearer": true,
+    "lang": "es"
+   },
+   {
+    "speaker": "W",
+    "text": "Claro, te lo envío mañana temprano.",
+    "lang": "es"
+   }
+  ]
+ },
+ {
+  "id": "d10-code-switching",
+  "title": "Spanish and English in the same meeting",
+  "names": [
+   "Rulo"
+  ],
+  "speakers": {
+   "W": {
+    "voice": "Samantha",
+    "voiceEs": "Flo (Spanish (Mexico))",
+    "gain": 1.0,
+    "wearer": true
+   },
+   "P1": {
+    "voice": "Daniel",
+    "voiceEs": "Eddy (Spanish (Mexico))",
+    "gain": 0.15
+   },
+   "P2": {
+    "voice": "Fred",
+    "voiceEs": "Reed (Spanish (Mexico))",
+    "gain": 0.15
+   }
+  },
+  "lines": [
+   {
+    "speaker": "P1",
+    "text": "Let's review the roadmap for the next quarter."
+   },
+   {
+    "speaker": "P1",
+    "text": "Rulo, ¿cuál es el riesgo principal del release?",
+    "question": true,
+    "addressedToWearer": true,
+    "lang": "es"
+   },
+   {
+    "speaker": "W",
+    "text": "El riesgo principal es la migración de datos.",
+    "lang": "es"
+   },
+   {
+    "speaker": "P2",
+    "text": "What is the plan to reduce that risk?",
+    "question": true,
+    "addressedToWearer": true
+   },
+   {
+    "speaker": "W",
+    "text": "We will test with a copy of the real volumes."
+   },
+   {
+    "speaker": "P2",
+    "text": "Okay. ¿Alguien más tiene preguntas?",
+    "question": true,
+    "lang": "es"
+   },
+   {
+    "speaker": "P1",
+    "text": "No questions from my side."
+   }
+  ]
+ }
+]
