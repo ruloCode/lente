@@ -308,7 +308,8 @@ export const PILOT_PAGE = `<!doctype html>
     $("live-btn").disabled = !m.clip;
     $("live-btn").setAttribute("aria-pressed", String(!!m.live));
     let note = "";
-    if (/MODEL_API_KEY/.test(m.asr)) note = "No Meta key yet: camera and microphone only.";
+    if (m.clipError && !m.clip) note = "The clip was refused: " + m.clipError + ".";
+    else if (/MODEL_API_KEY/.test(m.asr)) note = "No Meta key yet: camera and microphone only.";
     else if (!m.clip) note = "Waiting for the clip. Check that it has power and is on the same Wi-Fi.";
     else if (m.listening && m.asr !== "listening") note = m.asr;
     $("note").textContent = note;

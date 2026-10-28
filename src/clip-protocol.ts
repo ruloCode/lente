@@ -86,6 +86,38 @@ export function parseHello(payload: Buffer): HelloResult {
   return { ok: true, hello: { proto, fw, codec, rate, device: typeof raw.device === "string" ? raw.device : undefined } };
 }
 
+/** Builds the hello frame of protocol v2 (the field order is part of the golden fixtures). */
+export function encodeHello(fields: { fw: string; device?: string; rssi?: number; camera?: boolean }): Buffer {
+  const hello = {
+    proto: `${PROTOCOL_MAJOR}.0`,
+    device: fields.device ?? "lente-clip",
+    fw: fields.fw,
+    codec: "pcm16",
+    rate: SAMPLE_RATE,
+    rssi: fields.rssi ?? 0,
+    camera: fields.camera ?? false,
+  };
+  return encodeFrame("H", Buffer.from(JSON.stringify(hello)));
+}
+
+/** Builds one audio frame: eight-byte header (sequence, capture ms) plus PCM16 samples. */
+export function encodeAudioFrame(seq: number, timeMs: number, pcm: Buffer): Buffer {
+  const header = Buffer.alloc(AUDIO_HEADER_BYTES);
+  header.writeUInt32LE(seq >>> 0, 0);
+  header.writeUInt32LE(timeMs >>> 0, 4);
+  return encodeFrame("A", Buffer.concat([header, pcm]));
+}
+
+/** Hub → clip single-byte commands. */
+export const COMMANDS = {
+  blink: "B",
+  photo: "P",
+  cameraOn: "C",
+  cameraOff: "c",
+  listen: "M",
+  pause: "m",
+} as const;
+
 export interface AudioFrame {
   seq: number;
   timeMs: number;

@@ -13,6 +13,6 @@
 
 ## 3. Emulator and docs
 
-- [ ] 3.1 `scripts/fake-clip.ts` (WAV + JPEG folder, real-time pace, obeys commands, reproducible); verify the phone shows a transcript and a cue with no hardware
-- [ ] 3.2 `docs/PROTOCOL.md` with frame layouts, command table, handshake, versioning rules and an annotated hex example; verify every example decodes in a test
-- [ ] 3.3 Old-firmware message on the phone when a v1 clip connects; verify with the current `pilot-2` firmware before reflashing
+- [x] 3.1 `scripts/fake-clip.ts` (WAV + JPEG folder, real-time pace, obeys commands, reproducible); verify the phone shows a transcript and a cue with no hardware
+- [x] 3.2 `docs/PROTOCOL.md` with frame layouts, command table, handshake, versioning rules and an annotated hex example; verify every example decodes in a test
+- [x] 3.3 Old-firmware message on the phone when a v1 clip connects; verify with the current `pilot-2` firmware before reflashing

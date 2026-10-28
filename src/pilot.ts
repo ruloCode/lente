@@ -64,6 +64,8 @@ let status = {
   voice: elevenKey ? "elevenlabs" : "device",
   audioLost: 0,
   audioLate: 0,
+  /** Why the last clip was refused (old firmware, bad hello); cleared by the next good hello. */
+  clipError: "",
   asr: key ? "waiting for the clip…" : "no MODEL_API_KEY: audio level only",
 };
 
@@ -355,10 +357,12 @@ const tcp = createTcpServer((socket) => {
         const result = frame.type === "H" ? parseHello(frame.payload) : ({ ok: false, reason: `the first frame is "${frame.type}", not a hello` } as const);
         if (!result.ok) {
           console.error(`[clip] refused: ${result.reason}`);
+          if (status.clipError !== result.reason) setStatus({ clipError: result.reason });
           socket.destroy();
           return;
         }
         helloSeen = true;
+        if (status.clipError) setStatus({ clipError: "" });
         const h = result.hello;
         console.log(`[clip] hello v${h.proto} fw=${h.fw} ${h.codec} ${h.rate} Hz`);
         continue;

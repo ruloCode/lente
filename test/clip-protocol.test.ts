@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { turnIdOf } from "../src/asr-session.ts";
-import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HEADER, loadFixtures, renderFixturesHeader } from "../scripts/gen-fixtures-header.ts";
 import { AsrSession } from "../src/asr-session.ts";
 import {
@@ -11,7 +16,9 @@ import {
   ClipFrameParser,
   JitterBuffer,
   StreamMap,
+  encodeAudioFrame,
   encodeFrame,
+  encodeHello,
   isQuestion,
   parseAudioFrame,
   parseHello,
@@ -115,13 +122,14 @@ test("golden frames decode to the types, sequences, times and samples in the fix
       assert.deepEqual(result.hello, {
         proto: "2.0", fw: "pilot-2", codec: "pcm16", rate: 16000, device: "lente-clip",
       });
-      assert.equal(encodeFrame("H", Buffer.from(JSON.stringify(f.hello))).toString("base64"), f.base64, `${f.name} re-encodes`);
+      const h = f.hello as { fw: string; rssi: number; camera: boolean };
+      assert.equal(encodeHello(h).toString("base64"), f.base64, `${f.name} re-encodes`);
     } else {
       const a = parseAudioFrame(frame.payload);
       assert.equal(a.seq, f.seq, f.name);
       assert.equal(a.timeMs, f.timeMs, f.name);
       assert.deepEqual(samplesOf(a.pcm), f.samples, f.name);
-      assert.equal(encodeFrame("A", audioPayload(f.seq!, f.timeMs!, f.samples!)).toString("base64"), f.base64, `${f.name} re-encodes`);
+      assert.equal(encodeAudioFrame(f.seq!, f.timeMs!, pcm(...f.samples!)).toString("base64"), f.base64, `${f.name} re-encodes`);
     }
   }
 });
@@ -214,4 +222,58 @@ test("turns carry offsets in the session audio, anchored to speech rather than t
 
 test("the firmware self-test header is generated from the shared fixtures (run pnpm gen:fixtures)", () => {
   assert.equal(readFileSync(HEADER, "utf8"), renderFixturesHeader(loadFixtures()));
+});
+
+test("the emulator sends the same hello and sequenced frames on every run", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fake-clip-"));
+  const wav = Buffer.alloc(44 + 3 * FRAME_BYTES);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24);
+  wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(3 * FRAME_BYTES, 40);
+  for (let i = 0; i < 3 * FRAME_BYTES / 2; i++) wav.writeInt16LE((i * 37) % 2000, 44 + i * 2);
+  writeFileSync(join(dir, "speech.wav"), wav);
+
+  const run = async () => {
+    const received: Buffer[] = [];
+    const server = createServer((s) => s.on("data", (c) => received.push(c)));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as { port: number };
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(process.execPath, [fileURLToPath(new URL("../scripts/fake-clip.ts", import.meta.url)), join(dir, "speech.wav"), "--port", String(port), "--linger-ms", "0"], { stdio: "ignore" });
+      child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`fake-clip exited with ${code}`))));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    server.close();
+    return Buffer.concat(received);
+  };
+  const first = await run();
+  assert.ok(first.equals(await run()), "two runs produce identical bytes");
+  const frames = new ClipFrameParser().push(first);
+  assert.deepEqual(frames.map((f) => f.type), ["H", "A", "A", "A"]);
+  assert.ok(parseHello(frames[0].payload).ok);
+  assert.deepEqual(frames.slice(1).map((f) => [parseAudioFrame(f.payload).seq, parseAudioFrame(f.payload).timeMs]), [[0, 0], [1, 80], [2, 160]]);
+});
+
+test("every hex example in docs/PROTOCOL.md decodes to the fixture it names", () => {
+  const doc = readFileSync(new URL("../docs/PROTOCOL.md", import.meta.url), "utf8");
+  const blocks = [...doc.matchAll(/```hex (\S+)\n([\s\S]*?)```/g)];
+  assert.ok(blocks.length >= 2, "the document has hex examples");
+  for (const [, name, body] of blocks) {
+    const wire = Buffer.from(body.replace(/#.*$/gm, "").replace(/\s+/g, ""), "hex");
+    const fixture = fixtures.frames.find((f) => f.name === name);
+    assert.ok(fixture, `fixture ${name} exists`);
+    assert.equal(wire.toString("base64"), fixture.base64, name);
+    const [frame, ...rest] = new ClipFrameParser().push(wire);
+    assert.equal(rest.length, 0);
+    assert.equal(frame.type, fixture.type);
+  }
 });
