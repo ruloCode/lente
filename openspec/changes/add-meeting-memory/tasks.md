@@ -8,9 +8,9 @@
 
 ## 2. Language profile
 
-- [ ] 2.1 Glossary merge (new term, repeated term, example update) as a pure function with tests
-- [ ] 2.2 Asked/answered counter fed by addressing decisions and wearer turns within 20 s; unit tests
-- [ ] 2.3 Glossary and stats view on the phone; verify at 390 px
+- [x] 2.1 Glossary merge (new term, repeated term, example update) as a pure function with tests
+- [x] 2.2 Asked/answered counter fed by addressing decisions and wearer turns within 20 s; unit tests
+- [x] 2.3 Glossary and stats view on the phone; verify at 390 px
 
 ## 3. Briefing and replies
 

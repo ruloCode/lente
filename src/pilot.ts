@@ -21,8 +21,10 @@ import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseYesNo } from "./addressing.ts";
+import { LanguageStore } from "./language-store.ts";
+import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary } from "./language-profile.ts";
 import { MeetingStore } from "./meeting-store.ts";
-import { type Meeting, addTurn, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
+import { type Meeting, type MeetingTurn, addTurn, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
 import { ProfileStore } from "./profile.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
@@ -37,6 +39,7 @@ const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_GAP_MS = 400;
 const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
 const meetings = new MeetingStore(fileURLToPath(new URL("../data/meetings/", import.meta.url)));
+const language = new LanguageStore(fileURLToPath(new URL("../data/language.json", import.meta.url)));
 const profile = new ProfileStore(fileURLToPath(new URL("../data/profile.json", import.meta.url)));
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
@@ -183,7 +186,14 @@ async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: nu
   }
   const d = await decideAddressed(asked, earlier);
   console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`);
-  if (d.verdict === "addressed") void sayThis(turn, speaker, d.rule);
+  if (d.verdict === "addressed") {
+    const kept = meetingTurns.get(turn.turnId);
+    if (kept && current?.turns.includes(kept)) {
+      kept.addressed = true;
+      meetings.save(current);
+    }
+    void sayThis(turn, speaker, d.rule);
+  }
 }
 
 /** Rules first; a model only for the ambiguous slice. `history` excludes the turn itself. */
@@ -229,6 +239,8 @@ async function onScreen(jpeg: Buffer): Promise<void> {
 // --- Meetings: start and end from the phone, notes extracted at the end ----------------------------
 
 let current: Meeting | undefined;
+/** ASR turn id → the meeting turn it became, so a late addressing decision can flag it. */
+const meetingTurns = new Map<string, MeetingTurn>();
 /** Deleted while their notes were still being written: the late result must not bring them back. */
 const deletedMeetings = new Set<string>();
 let lastSpeechAt = 0;
@@ -241,11 +253,21 @@ const meetingSummary = (m: Meeting) => ({
   status: m.status,
   turns: m.turns.length,
   notes: m.notes,
+  stats: m.stats,
   dropped: m.droppedItems,
 });
 
+function meetingsEvent() {
+  const all = meetings.list();
+  return {
+    kind: "meetings",
+    items: all.reverse().map(meetingSummary),
+    language: { glossary: viewGlossary(language.glossary), ...totalAskedAnswered(all.map((m) => m.stats)) },
+  };
+}
+
 function broadcastMeetings(): void {
-  broadcast({ kind: "meetings", items: meetings.list().reverse().map(meetingSummary) });
+  broadcast(meetingsEvent());
 }
 
 function syncMeeting(): void {
@@ -270,6 +292,10 @@ async function endMeeting(reason: "manual" | "silence" | "restart"): Promise<voi
   current = undefined;
   m.endedAt = Date.now();
   m.endReason = reason;
+  // Labels are only certain once enough was heard: the wearer is known by the end.
+  const wearerLabel = wearerTracker.wearer();
+  for (const t of m.turns) if (wearerLabel !== undefined && t.speaker === wearerLabel) t.wearer = true;
+  m.stats = countAskedAnswered(m.turns);
   m.status = isTooShort(m) ? "too-short" : "extracting";
   meetings.save(m);
   syncMeeting();
@@ -290,6 +316,10 @@ async function extractNotes(m: Meeting): Promise<void> {
     m.notes = notes;
     m.droppedItems = dropped;
     m.status = "done";
+    if (!deletedMeetings.has(m.id)) {
+      const found = (notes.glossary ?? []).map((g) => ({ term: g.term, meaning: g.meaning, example: m.turns.find((t) => t.id === g.evidence[0])?.text ?? "" }));
+      language.set(mergeGlossary(language.glossary, found, m.id, m.endedAt ?? Date.now()));
+    }
     console.log(
       `[meeting] notes for ${m.id} in ${Math.round(performance.now() - started)} ms · ${notes.decisions.length} decisions, ${notes.commitments.length} commitments, ${notes.openQuestions.length} open · ${dropped} dropped`,
     );
@@ -468,6 +498,7 @@ function startAsr(): void {
     onPartial: (text) => broadcast({ kind: "partial", text }),
     onSessionStart: () => {
       speakerOfTurn.clear();
+      meetingTurns.clear();
       wearerTracker.reset();
       syncWearer();
     },
@@ -489,7 +520,8 @@ function startAsr(): void {
           ? {}
           : { audioStartMs: Math.round(turn.startMs), audioEndMs: Math.round(turn.endMs), spokeAt: audioOrigin + Math.round(turn.startMs) };
       if (current) {
-        addTurn(current, { at: Date.now(), speaker: turn.speaker, wearer: turn.speaker !== undefined && turn.speaker === wearerTracker.wearer(), text: turn.text });
+        const added = addTurn(current, { at: Date.now(), startAt: anchor.spokeAt, speaker: turn.speaker, wearer: turn.speaker !== undefined && turn.speaker === wearerTracker.wearer(), text: turn.text });
+        meetingTurns.set(turn.turnId, added);
         lastSpeechAt = Date.now();
         meetings.save(current);
         syncMeeting();
@@ -669,7 +701,7 @@ const web = createHttpServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
       res.write(`data: ${JSON.stringify(status)}\n\n`);
       res.write(`data: ${JSON.stringify({ kind: "history", items: day.entries.slice(-80) })}\n\n`);
-      res.write(`data: ${JSON.stringify({ kind: "meetings", items: meetings.list().reverse().map(meetingSummary) })}\n\n`);
+      res.write(`data: ${JSON.stringify(meetingsEvent())}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
     } else if (req.method === "POST" && req.url === "/meeting/start") {
@@ -684,6 +716,7 @@ const web = createHttpServer(async (req, res) => {
       const removed = typeof id === "string" && id !== current?.id && meetings.delete(id);
       if (removed) {
         deletedMeetings.add(id as string);
+        language.set(forgetMeeting(language.glossary, id as string));
         broadcastMeetings();
       }
       res.writeHead(removed ? 204 : 404).end();
@@ -693,6 +726,7 @@ const web = createHttpServer(async (req, res) => {
         current = undefined; // discarded, not summarized
         syncMeeting();
       }
+      language.set([]);
       console.log(`[meeting] deleted ${meetings.deleteAll()} meeting(s)`);
       broadcastMeetings();
       res.writeHead(204).end();

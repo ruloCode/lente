@@ -110,6 +110,14 @@ export const PILOT_PAGE = `<!doctype html>
   .meet .live-title { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .past { margin-bottom: 10px; }
   .past summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
+  .lang { margin-bottom: 10px; }
+  .lang summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 4px 0; }
+  .lang .stats { margin: 4px 0 8px; font-size: 14px; }
+  .lang .stats b { font: 600 14px var(--mono); }
+  .lang .t { border-top: 1px solid var(--line); padding: 8px 0; display: grid; gap: 2px; font-size: 14px; }
+  .lang .t strong { font: 600 14px var(--mono); }
+  .lang .t .n { color: var(--muted); font: 500 12px var(--mono); margin-left: 6px; }
+  .lang .t em { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
   .past .m { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 4px; font-size: 14px; }
   .past .m h3 { margin: 0; font: 700 16px/1.2 var(--body); }
   .past .m .when { color: var(--muted); font-size: 12px; font-family: var(--mono); }
@@ -170,6 +178,11 @@ export const PILOT_PAGE = `<!doctype html>
         <summary>Reuniones anteriores (<span id="past-count">0</span>)</summary>
         <div id="past-list"></div>
         <button class="wipe" id="wipe" type="button">Borrar toda la memoria</button>
+      </details>
+      <details class="lang" id="lang" hidden>
+        <summary>Mi vocabulario (<span id="lang-count">0</span>)</summary>
+        <p class="stats" id="lang-stats"></p>
+        <div id="lang-list"></div>
       </details>
       <div class="note" id="note" hidden></div>
     </div>
@@ -410,6 +423,32 @@ export const PILOT_PAGE = `<!doctype html>
     for (const it of items) { const li = document.createElement("li"); li.textContent = line(it); ul.append(li); }
     parent.append(ul);
   }
+  function showLanguage(l) {
+    const terms = l ? l.glossary : [];
+    $("lang").hidden = !l || (!terms.length && !l.asked);
+    if (!l) return;
+    $("lang-count").textContent = terms.length;
+    const s = $("lang-stats");
+    s.textContent = "";
+    if (l.asked) {
+      const a = document.createElement("b"), c = document.createElement("b");
+      a.textContent = l.asked; c.textContent = l.answered;
+      s.append("Te preguntaron ", a, " veces y contestaste ", c, ".");
+    }
+    const box = $("lang-list");
+    box.textContent = "";
+    for (const t of terms) {
+      const el = document.createElement("div"); el.className = "t";
+      const head = document.createElement("div");
+      const strong = document.createElement("strong"); strong.textContent = t.term;
+      const n = document.createElement("span"); n.className = "n"; n.textContent = "×" + t.count;
+      head.append(strong, n);
+      const meaning = document.createElement("div"); meaning.textContent = t.meaning;
+      el.append(head, meaning);
+      if (t.example) { const ex = document.createElement("em"); ex.textContent = "“" + t.example + "”"; el.append(ex); }
+      box.append(el);
+    }
+  }
   function showPast(items) {
     $("past").hidden = !items.length;
     $("past-count").textContent = items.length;
@@ -473,7 +512,7 @@ export const PILOT_PAGE = `<!doctype html>
         addItem(e);
         if (e.kind === "summary") showSummary(e);
       }
-    } else if (m.kind === "meetings") showPast(m.items);
+    } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); }
     else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "partial") { $("tl-hint").hidden = true; partial.textContent = m.text; }
     else if (m.kind === "turn") addItem(m);

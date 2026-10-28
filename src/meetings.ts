@@ -11,6 +11,10 @@ export interface MeetingTurn {
   /** `t1`, `t2`… in order within the meeting; notes cite these. */
   id: string;
   at: number;
+  /** Wall-clock start of the turn (`at` is when it was completed); used for answer timing. */
+  startAt?: number;
+  /** The turn was a question aimed at the wearer (by name, reply or model; not the testing switch). */
+  addressed?: boolean;
   /** Diarized label as heard; the wearer is marked separately because labels reset per session. */
   speaker?: string;
   wearer?: boolean;
@@ -30,14 +34,27 @@ export interface Commitment {
   evidence: string[];
 }
 
+/** A term the wearer may not know, with its meaning; the example is the cited turn. */
+export interface GlossaryItem {
+  term: string;
+  meaning: string;
+  evidence: string[];
+}
+
 export interface Notes {
   summary: string;
+  glossary?: GlossaryItem[];
   decisions: Evidenced[];
   commitments: Commitment[];
   openQuestions: Evidenced[];
 }
 
 export type MeetingStatus = "running" | "extracting" | "done" | "too-short" | "failed";
+
+export interface AskedAnswered {
+  asked: number;
+  answered: number;
+}
 
 export interface Meeting {
   id: string;
@@ -48,6 +65,8 @@ export interface Meeting {
   status: MeetingStatus;
   turns: MeetingTurn[];
   notes?: Notes;
+  /** Questions aimed at the wearer and how many they answered within 20 s. */
+  stats?: AskedAnswered;
   /** Items the model proposed without a valid turn behind them. */
   droppedItems?: number;
   error?: string;
@@ -83,7 +102,7 @@ export function notesSchema(turnIds: string[]) {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["summary", "decisions", "commitments", "openQuestions"],
+    required: ["summary", "decisions", "commitments", "openQuestions", "glossary"],
     properties: {
       summary: { type: "string" },
       decisions: { type: "array", items: evidenced(turnIds) },
@@ -97,6 +116,15 @@ export function notesSchema(turnIds: string[]) {
         },
       },
       openQuestions: { type: "array", items: evidenced(turnIds) },
+      glossary: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["term", "meaning", "evidence"],
+          properties: { term: { type: "string" }, meaning: { type: "string" }, evidence: evidenceSchema(turnIds) },
+        },
+      },
     },
   };
 }
@@ -105,7 +133,7 @@ export const NOTES_PROMPT =
   "You write the notes of a meeting from its transcript. Lines look like `t3 YOU: text` or `t4 B: text`; " +
   "YOU is the person who wears the glasses. Answer in the language the meeting was held in. Give a summary of at most " +
   "two sentences, the decisions made, the commitments (what, owner, due date if one was said, else an empty string) " +
-  "and the questions left open. For an owner use `you` for YOU, otherwise the name said in the meeting or the speaker " +
+  "and the questions left open. Also list the glossary: terms, acronyms and idioms a Spanish speaker who learned English as a second language may not know, each with a one-line meaning in Spanish and the turn where it was said (skip common words). For an owner use `you` for YOU, otherwise the name said in the meeting or the speaker " +
   "letter. Every item must cite the turn ids that support it. Include only what was actually said; if there is none " +
   "of a kind, return an empty list.";
 
@@ -157,6 +185,7 @@ export function validateNotes(raw: unknown, turnIds: string[]): { notes: Notes; 
     commitments: list(input.commitments, (o, evidence) =>
       text(o.what) ? { what: text(o.what), owner: text(o.owner) || "?", ...(text(o.due) ? { due: text(o.due) } : {}), evidence } : undefined,
     ),
+    glossary: list(input.glossary, (o, evidence) => (text(o.term) && text(o.meaning) ? { term: text(o.term).slice(0, 60), meaning: text(o.meaning).slice(0, 200), evidence } : undefined)),
     openQuestions: list(input.openQuestions, (o, evidence) => (text(o.text) ? { text: text(o.text), evidence } : undefined)),
   };
   return { notes, dropped };

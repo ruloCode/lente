@@ -61,6 +61,7 @@ test("validateNotes keeps grounded items and counts the dropped ones", () => {
       { what: "", owner: "you", due: "", evidence: ["t1"] },
     ],
     openQuestions: [{ text: "Who owns the API?", evidence: ["t3"] }],
+    glossary: [{ term: "GA", meaning: "disponibilidad general", evidence: ["t2"] }, { term: "ghost", meaning: "x", evidence: ["t7"] }, { term: "", meaning: "x", evidence: ["t1"] }],
   };
   const { notes, dropped } = validateNotes(raw, ["t1", "t2", "t3"]);
   assert.equal(notes.summary, "Shipping Friday.");
@@ -70,7 +71,8 @@ test("validateNotes keeps grounded items and counts the dropped ones", () => {
     { what: "Fix the bug", owner: "?", evidence: ["t2"] },
   ]);
   assert.equal(notes.openQuestions.length, 1);
-  assert.equal(dropped, 3, "t9, no evidence, and the empty commitment");
+  assert.deepEqual(notes.glossary, [{ term: "GA", meaning: "disponibilidad general", evidence: ["t2"] }]);
+  assert.equal(dropped, 5, "t9, no evidence, the empty commitment, an unknown turn and an empty term");
 });
 
 test("validateNotes accepts an id followed by a quote, and survives junk", () => {

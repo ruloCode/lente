@@ -16,7 +16,7 @@ The hub already appends every turn, cue and summary to `data/days/<date>.jsonl` 
 
 ## Decisions
 
-1. **Files, not a database.** `data/meetings/<id>.json` per meeting (turns are references into the day log plus the extracted record) and `data/profile.json`. Plain JSON keeps judges able to read it and needs no dependency. Alternative: `node:sqlite`; deferred until queries outgrow a file scan (measure first).
+1. **Files, not a database.** `data/meetings/<id>.json` per meeting (turns are references into the day log plus the extracted record) and `data/language.json` (glossary; `data/profile.json` already holds the wearer's names and settings). Plain JSON keeps judges able to read it and needs no dependency. Alternative: `node:sqlite`; deferred until queries outgrow a file scan (measure first).
 2. **Long context with caching instead of RAG.** The memory prefix (profile, then meeting summaries oldest first) only grows at the end, so earlier bytes stay identical between calls and remain cacheable. Alternative: embeddings + top-k; rejected for being the generic pattern and for the dependency.
 3. **Structured output with a JSON schema** for extraction and briefing; the hub validates the result and drops items whose evidence ids do not exist (this enforces "grounded" in code, not in the prompt).
 4. **Extraction runs once at meeting end**, off the live path, so it never delays cues.
