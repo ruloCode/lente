@@ -5,7 +5,17 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type DayEntry =
-  | { at: number; kind: "turn"; speaker?: string; text: string; question?: boolean }
+  | {
+      at: number;
+      kind: "turn";
+      speaker?: string;
+      text: string;
+      question?: boolean;
+      /** Position in the connection's audio, in ms, and the time of day it was spoken. */
+      audioStartMs?: number;
+      audioEndMs?: number;
+      spokeAt?: number;
+    }
   | { at: number; kind: "cue"; label: string; text: string; ms?: number }
   | { at: number; kind: "live"; text: string }
   | { at: number; kind: "summary"; text: string };

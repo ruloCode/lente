@@ -16,7 +16,7 @@ import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { streamChat, type ChatMessage } from "./chat.ts";
-import { AudioConditioner, ClipFrameParser, JitterBuffer, isQuestion, rms, toCue } from "./clip-protocol.ts";
+import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { chatTargets } from "./providers.ts";
@@ -62,6 +62,8 @@ let status = {
   listening: true,
   live: false,
   voice: elevenKey ? "elevenlabs" : "device",
+  audioLost: 0,
+  audioLate: 0,
   asr: key ? "waiting for the clip…" : "no MODEL_API_KEY: audio level only",
 };
 
@@ -282,6 +284,9 @@ let asr: AsrSession | undefined;
 let pacer: ReturnType<typeof setInterval> | undefined;
 let jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
 let conditioner = new AudioConditioner(MIC_GAIN);
+let timeline = new AudioTimeline(FRAME_BYTES);
+/** Wall-clock time of the first audio frame of this connection: session audio 0 ms. */
+let audioOrigin = 0;
 
 function startAsr(): void {
   if (!key || !device || !status.listening || asr) return;
@@ -292,15 +297,23 @@ function startAsr(): void {
     onSpeaker: (turnId, speaker) => broadcast({ kind: "speaker", turnId, speaker }),
     onTurn: (turn) => {
       const question = isQuestion(turn.text);
-      record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question }, { turnId: turn.turnId });
-      console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${question ? "  ← question" : ""}`);
+      const anchor =
+        turn.startMs === undefined || turn.endMs === undefined || !audioOrigin
+          ? {}
+          : { audioStartMs: Math.round(turn.startMs), audioEndMs: Math.round(turn.endMs), spokeAt: audioOrigin + Math.round(turn.startMs) };
+      record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question, ...anchor }, { turnId: turn.turnId });
+      const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
+      console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
       if (question) void sayThis(turn);
     },
   });
   asr = session;
   session.start();
   // Feed transcription on a steady clock so Wi-Fi bursts never look like a stall.
-  pacer = setInterval(() => session.send(jitter.take()), FRAME_MS);
+  pacer = setInterval(() => {
+    const startMs = jitter.consumedMs;
+    session.send(jitter.take(), startMs);
+  }, FRAME_MS);
 }
 
 function stopAsr(): void {
@@ -317,12 +330,15 @@ const tcp = createTcpServer((socket) => {
   const parser = new ClipFrameParser();
   conditioner = new AudioConditioner(MIC_GAIN);
   jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
+  timeline = new AudioTimeline(FRAME_BYTES);
+  audioOrigin = 0;
+  let helloSeen = false;
   let lastLevel = 0;
   console.log(`[clip] connected from ${socket.remoteAddress}`);
   // The hub owns the settings: a clip that reconnects picks them up again.
   socket.write(status.mode === "camera" ? "C" : "c");
   socket.write(status.listening ? "M" : "m");
-  setStatus({ clip: true, asr: key ? (status.listening ? status.asr : "paused") : status.asr });
+  setStatus({ clip: true, audioLost: 0, audioLate: 0, asr: key ? (status.listening ? status.asr : "paused") : status.asr });
   startAsr();
 
   socket.on("data", (chunk) => {
@@ -335,8 +351,34 @@ const tcp = createTcpServer((socket) => {
       return;
     }
     for (const frame of frames) {
+      if (!helloSeen) {
+        const result = frame.type === "H" ? parseHello(frame.payload) : ({ ok: false, reason: `the first frame is "${frame.type}", not a hello` } as const);
+        if (!result.ok) {
+          console.error(`[clip] refused: ${result.reason}`);
+          socket.destroy();
+          return;
+        }
+        helloSeen = true;
+        const h = result.hello;
+        console.log(`[clip] hello v${h.proto} fw=${h.fw} ${h.codec} ${h.rate} Hz`);
+        continue;
+      }
       if (frame.type === "A") {
-        const clean = conditioner.process(frame.payload);
+        let audio;
+        try {
+          audio = parseAudioFrame(frame.payload);
+        } catch (error) {
+          console.error(`[clip] bad stream: ${(error as Error).message}`);
+          socket.destroy();
+          return;
+        }
+        const lateBefore = timeline.late;
+        const { pcm: aligned, lost } = timeline.accept(audio.seq, audio.pcm);
+        if (!audioOrigin) audioOrigin = Date.now();
+        if (lost) console.log(`[audio] lost ${lost} frame(s) before seq ${audio.seq}: filled ${lost * FRAME_MS} ms with silence · total lost ${timeline.lost}, late ${timeline.late}`);
+        if (timeline.late > lateBefore) console.log(`[audio] late or duplicate frame seq ${audio.seq} dropped · total lost ${timeline.lost}, late ${timeline.late}`);
+        if (lost || timeline.late > lateBefore) setStatus({ audioLost: timeline.lost, audioLate: timeline.late });
+        const clean = conditioner.process(aligned);
         jitter.push(clean);
         const now = Date.now();
         if (now - lastLevel > 200) {
@@ -350,8 +392,6 @@ const tcp = createTcpServer((socket) => {
           console.log(`[clip] photo ${Math.round(jpeg.length / 1024)} KB`);
           void onScreen(jpeg);
         }
-      } else if (frame.type === "H") {
-        console.log(`[clip] hello ${frame.payload.toString()}`);
       }
     }
   });

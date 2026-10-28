@@ -1,12 +1,18 @@
 // One live Muse Voice Transcribe stream in DIARIZATION mode. Reconnects on its
 // own until stopped, since sessions end at 60 minutes or on backend hiccups.
 
+import { StreamMap } from "./clip-protocol.ts";
 import { META_REALTIME_URL, TRANSCRIBE_MODEL } from "./providers.ts";
+
+const FRAME_MS = 80;
 
 export interface AsrTurn {
   turnId: string;
   text: string;
   speaker?: string;
+  /** Where the turn sits in the session audio, in ms; absent if the service sent no positions. */
+  startMs?: number;
+  endMs?: number;
 }
 
 export interface AsrHandlers {
@@ -22,6 +28,7 @@ interface ServerMessage {
   sessionId?: string;
   turnId?: string | number;
   transcript?: string;
+  audioProcessedMs?: number;
   final?: boolean;
   label?: string;
   message?: string;
@@ -38,7 +45,10 @@ export class AsrSession {
   private ws: WebSocket | undefined;
   private ready = false;
   private stopped = false;
-  private queue: Buffer[] = [];
+  private queue: { pcm: Buffer; sessionMs: number }[] = [];
+  private streamMap = new StreamMap(FRAME_MS);
+  private startedAt = new Map<string, number>();
+  private lastProcessedMs: number | undefined;
   private currentTurn: string | undefined;
   private speakerOf = new Map<string, string>();
   private key: string;
@@ -53,6 +63,10 @@ export class AsrSession {
 
   start(): void {
     this.ready = false;
+    // Stream positions restart with every connection.
+    this.streamMap = new StreamMap(FRAME_MS);
+    this.startedAt.clear();
+    this.lastProcessedMs = undefined;
     const ws = new WebSocket(META_REALTIME_URL);
     this.ws = ws;
     ws.addEventListener("open", () => {
@@ -81,13 +95,19 @@ export class AsrSession {
     ws.addEventListener("error", () => this.handlers.onStatus("transcription connection error"));
   }
 
-  send(pcm: Buffer): void {
+  /** `sessionMs` is where this frame starts in the session audio, so turns can be placed on it. */
+  send(pcm: Buffer, sessionMs: number): void {
     if (this.ready && this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(pcm);
+      this.deliver(pcm, sessionMs);
       return;
     }
-    this.queue.push(pcm);
+    this.queue.push({ pcm, sessionMs });
     if (this.queue.length > MAX_QUEUED_FRAMES) this.queue.shift();
+  }
+
+  private deliver(pcm: Buffer, sessionMs: number): void {
+    this.streamMap.record(sessionMs);
+    this.ws?.send(pcm);
   }
 
   stop(): void {
@@ -109,13 +129,15 @@ export class AsrSession {
     if (!msg.type && msg.sessionId) {
       this.ready = true;
       this.handlers.onStatus("listening");
-      for (const frame of this.queue.splice(0)) this.ws?.send(frame);
+      for (const frame of this.queue.splice(0)) this.deliver(frame.pcm, frame.sessionMs);
       return;
     }
     const turnId = turnIdOf(msg);
+    if (typeof msg.audioProcessedMs === "number") this.lastProcessedMs = msg.audioProcessedMs;
     switch (msg.type) {
       case "speechStart":
         this.currentTurn = turnId;
+        if (turnId !== undefined && typeof msg.audioProcessedMs === "number") this.startedAt.set(turnId, msg.audioProcessedMs);
         break;
       case "transcript":
         if (!msg.final && msg.transcript) this.handlers.onPartial(msg.transcript);
@@ -129,7 +151,16 @@ export class AsrSession {
       }
       case "speechComplete":
         if (turnId !== undefined && msg.transcript?.trim()) {
-          this.handlers.onTurn({ turnId, text: msg.transcript.trim(), speaker: this.speakerOf.get(turnId) });
+          const from = this.startedAt.get(turnId);
+          const to = msg.audioProcessedMs ?? this.lastProcessedMs;
+          this.handlers.onTurn({
+            turnId,
+            text: msg.transcript.trim(),
+            speaker: this.speakerOf.get(turnId),
+            startMs: from === undefined ? undefined : this.streamMap.sessionMsAt(from),
+            endMs: to === undefined ? undefined : this.streamMap.sessionMsAt(to),
+          });
+          this.startedAt.delete(turnId);
         }
         break;
       case "error":

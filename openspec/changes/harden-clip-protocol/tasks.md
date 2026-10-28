@@ -2,9 +2,9 @@
 
 ## 1. Protocol v2 on the hub
 
-- [ ] 1.1 Hello parsing and major-version check, audio header with sequence and capture time, loss accounting with silence fill; unit tests for each (`pnpm test`)
-- [ ] 1.2 Shared fixtures file `test/fixtures/frames.json` decoded by the tests
-- [ ] 1.3 Turns carry start/end offsets in the session audio; unit test on the offset mapping
+- [x] 1.1 Hello parsing and major-version check, audio header with sequence and capture time, loss accounting with silence fill; unit tests for each (`pnpm test`)
+- [x] 1.2 Shared fixtures file `test/fixtures/frames.json` decoded by the tests
+- [x] 1.3 Turns carry start/end offsets in the session audio; unit test on the offset mapping
 
 ## 2. Firmware
 

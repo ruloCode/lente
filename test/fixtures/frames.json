@@ -1,0 +1,54 @@
+{
+  "version": "2.0",
+  "description": "Shared protocol-v2 golden frames. Base64 holds the full wire frame (1-byte type + 4-byte LE length + payload). Written fresh for harden-clip-protocol; decoded by the hub tests and the firmware self-test.",
+  "frames": [
+    {
+      "name": "hello-v2",
+      "type": "H",
+      "base64": "SGsAAAB7InByb3RvIjoiMi4wIiwiZGV2aWNlIjoibGVudGUtY2xpcCIsImZ3IjoicGlsb3QtMiIsImNvZGVjIjoicGNtMTYiLCJyYXRlIjoxNjAwMCwicnNzaSI6LTU1LCJjYW1lcmEiOmZhbHNlfQ==",
+      "hello": {
+        "proto": "2.0",
+        "device": "lente-clip",
+        "fw": "pilot-2",
+        "codec": "pcm16",
+        "rate": 16000,
+        "rssi": -55,
+        "camera": false
+      }
+    },
+    {
+      "name": "audio-seq7",
+      "type": "A",
+      "base64": "QRgAAAAHAAAAQOIBAAAA6AMY/P9/AIB7ADj+FQM=",
+      "seq": 7,
+      "timeMs": 123456,
+      "samples": [
+        0,
+        1000,
+        -1000,
+        32767,
+        -32768,
+        123,
+        -456,
+        789
+      ]
+    },
+    {
+      "name": "audio-seq8",
+      "type": "A",
+      "base64": "QRgAAAAIAAAAkOIBAAoA7P8sAWDwiBOo/UYA+P8=",
+      "seq": 8,
+      "timeMs": 123536,
+      "samples": [
+        10,
+        -20,
+        300,
+        -4000,
+        5000,
+        -600,
+        70,
+        -8
+      ]
+    }
+  ]
+}
