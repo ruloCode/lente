@@ -21,7 +21,9 @@ Verified against the docs on 2026-10-26. Items marked **unverified** need a real
 | `muse-image-1.0` | Not planned | text, image | image |
 | `sam-3.1` | Not planned | image, video, text prompt | boxes, masks |
 
-Spark supports function calling, structured output, prompt caching and web-search grounding. Reasoning effort ranges `minimal` → `xhigh` (**unverified:** the exact Chat Completions field; Lente sends `reasoning_effort`). Reasoning tokens count as output tokens.
+Spark supports function calling, structured output, prompt caching and web-search grounding. Reasoning effort ranges `minimal` → `xhigh`; over Chat Completions the field is `reasoning_effort` (verified 2026-10-28: accepted, and it cut reasoning tokens from 1,381 to 214 on a one-line reply). Reasoning tokens count as output tokens and show in `usage.completion_tokens_details.reasoning_tokens`.
+
+Images over Chat Completions use the OpenAI shape, `{ "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,…" } }` (verified 2026-10-28 with a 640×480 JPEG from the clip).
 
 ### Responses API shape
 

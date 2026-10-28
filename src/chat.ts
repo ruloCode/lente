@@ -1,6 +1,13 @@
 import { SseParser, deltaText } from "./sse.ts";
 import type { ChatTarget } from "./providers.ts";
 
+export type ChatPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string | ChatPart[];
+}
+
 export interface StreamTiming {
   text: string;
   /** Request sent → first visible text token. */
@@ -11,7 +18,7 @@ export interface StreamTiming {
 /** Streams one chat completion and times it. Throws with the API's own error text. */
 export async function streamChat(
   target: ChatTarget,
-  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  messages: ChatMessage[],
   maxTokens = 120,
 ): Promise<StreamTiming> {
   if (!target.apiKey) throw new Error(`${target.keyEnv} is not set`);
