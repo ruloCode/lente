@@ -10,11 +10,13 @@ from playwright.sync_api import sync_playwright
 
 HERE = Path(__file__).parent
 OUT = HERE / "out"
-VIEWS = ["gafas", "frente", "capsula", "rayosx", "despiece"]
+VIEWS = ["gafas", "frente", "capsula", "rayosx", "despiece", "medidas"]
 
 glb = base64.b64encode((OUT / "assembly.glb").read_bytes()).decode()
+dims = (OUT / "dimensions.json").read_text()
 html = (HERE / "render.html").read_text().replace(
-    "<script type=\"module\">", f"<script>window.GLB_B64 = \"{glb}\";</script>\n<script type=\"module\">", 1
+    "<script type=\"module\">",
+    f"<script>window.GLB_B64 = \"{glb}\"; window.DIMS = {dims};</script>\n<script type=\"module\">", 1
 )
 
 with sync_playwright() as p:

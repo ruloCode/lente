@@ -5,6 +5,11 @@
 <style>
   html, body { margin: 0; background: #e9ebef; overflow: hidden; }
   #label { position: fixed; left: 28px; bottom: 22px; font: 500 15px/1.4 -apple-system, system-ui, sans-serif; color: #3a3f4a; }
+  #overlay { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; font-family: -apple-system, system-ui, sans-serif; }
+  #overlay .name { font-size: 15px; font-weight: 600; fill: #1f232b; }
+  #overlay .size { font-size: 14px; fill: #5a6070; font-variant-numeric: tabular-nums; }
+  #overlay .dim { font-size: 14px; font-weight: 600; fill: #b4441c; font-variant-numeric: tabular-nums; }
+  #overlay .title { font-size: 22px; font-weight: 650; fill: #1f232b; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -15,6 +20,7 @@
 </head>
 <body>
 <div id="label"></div>
+<svg id="overlay"></svg>
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -68,9 +74,11 @@ const root = new THREE.Group();
 root.rotation.x = -Math.PI / 2;
 scene.add(root);
 const nodes = {};
+let model;
 
 const glb = Uint8Array.from(atob(window.GLB_B64), (c) => c.charCodeAt(0)).buffer;
 new GLTFLoader().parse(glb, "", (gltf) => {
+  model = gltf.scene;
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
     const name = o.name || o.parent?.name;
@@ -140,12 +148,121 @@ const VIEWS = {
     for (const [n, dy] of Object.entries(offsets)) nodes[n].position.y = dy; // local Y = outward in model axes
     return { cam: frame(Object.keys(nodes).filter((n) => !GLASSES.includes(n)), [0.9, 0.75, -1.4], 30, 1.0), label: "Despiece: carcasa · batería 502540 + INMP441 + vibrador · ESP32-S3-CAM + OV2640 + interruptor · tapa" };
   },
+  medidas() {
+    reset();
+    setOpacity(nodes.shell_lid, 0.1);
+    setOpacity(nodes.shell_base, 0.25);
+    for (const n of ["board", "module", "usb_c", "chips"]) setOpacity(nodes[n], 0.6);
+    const { outer_mm: [ox, oy, oz], parts: p, temple_channel: t, shell_volume_cm3, shell_mass_g_pla_100pct } = window.DIMS;
+    const cam = frame(["shell_base", "shell_lid", "hinge"], [0.3, 0.32, -1], 26, 2.0);
+    const mm = (...v) => v.join(" × ") + " mm";
+    return {
+      cam,
+      label: `Medidas en mm, del modelo paramétrico (clip.py) · carcasa ${shell_volume_cm3} cm³, ~${Math.round(shell_mass_g_pla_100pct)} g en PLA`,
+      annotate: () => annotate(cam, {
+        title: "Lente clip v0 · tamaño real de cada pieza",
+        parts: [
+          { node: "lens", name: "Cámara OV2640", size: mm(p.camera[1], p.camera[2], p.camera[0]) },
+          { node: "board", side: -1, name: "ESP32-S3-CAM N16R8", size: mm(p.board[0], p.board[2], p.board[1]) },
+          // The battery sits behind the board; point at the end that shows past it.
+          { point: [ox - 7, 4.6, 10], name: "Batería LiPo 502540, 550 mAh", size: mm(p.battery[0], p.battery[2], p.battery[1]) + " con protección" },
+          { node: "mic", name: "Micrófono INMP441", size: mm(p.mic[0], p.mic[2], p.mic[1]) },
+          { node: "motor", name: "Vibrador de moneda", size: `Ø${p.motor[0]} × ${p.motor[1]} mm` },
+          { node: "switch", name: "Interruptor SS12D00", size: mm(...p.switch) },
+          { point: [ox * 0.15, -t.depth / 2, t.center_z], name: "Canal para la patilla", size: `${t.width} × ${t.depth} mm, patillas hasta ${t.width} mm` },
+        ],
+        // Model axes: X forward, Y outward, Z up; origin at the back / head-side / bottom corner.
+        dims: [
+          { from: [0, oy, 0], to: [ox, oy, 0], offset: [0, 0, -7], text: `${ox} mm` },
+          { from: [0, oy, 0], to: [0, oy, oz], offset: [-7, 0, 0], text: `${oz} mm` },
+          { from: [0, 0, oz], to: [0, oy, oz], offset: [0, 0, 7], text: `${oy} mm` },
+        ],
+      }),
+    };
+  },
 };
 
+const SVG = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs, text) {
+  const e = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text != null) e.textContent = text;
+  document.getElementById("overlay").appendChild(e);
+  return e;
+}
+
+function toScreen(cam, world) {
+  const v = world.clone().project(cam);
+  return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight];
+}
+
+const modelPoint = (cam, xyz) => toScreen(cam, model.localToWorld(new THREE.Vector3(...xyz)));
+const nodeCenter = (cam, name) => toScreen(cam, new THREE.Box3().setFromObject(nodes[name]).getCenter(new THREE.Vector3()));
+
+// Leader-line labels in two columns beside the pod, plus dimension lines on the shell.
+function annotate(cam, { title, parts, dims }) {
+  const halo = { stroke: "#e9ebef", "stroke-width": 5, "paint-order": "stroke", "stroke-linejoin": "round" };
+  el("text", { x: 28, y: 48, class: "title" }, title);
+
+  const spanX = (names) => {
+    const xs = [];
+    for (const n of names) {
+      const b = new THREE.Box3().setFromObject(nodes[n]);
+      for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z])
+        xs.push(toScreen(cam, new THREE.Vector3(x, y, z))[0]);
+    }
+    return [Math.min(...xs), Math.max(...xs)];
+  };
+  const [shellLeft, shellRight] = spanX(["shell_base"]);
+  const mid = (shellLeft + shellRight) / 2;
+  // Columns clear the whole pair of glasses so labels never sit on the frame.
+  const [left, right] = spanX(["shell_base", "frame", "temple_right"]).map((v, i) => v + (i ? 30 : -30));
+
+  const items = parts.map((part) => ({ ...part, at: part.node ? nodeCenter(cam, part.node) : modelPoint(cam, part.point) }));
+  for (const side of [-1, 1]) {
+    const col = items.filter((i) => (i.side ?? (i.at[0] < mid ? -1 : 1)) === side).sort((a, b) => a.at[1] - b.at[1]);
+    const gap = 48;
+    let y = -Infinity;
+    for (const item of col) item.y = y = Math.max(item.at[1], y + gap);
+    const overflow = y - (innerHeight - 90);
+    if (overflow > 0) for (const item of col) item.y -= overflow;
+    const x = side < 0 ? left : right;
+    for (const item of col) {
+      const anchor = side < 0 ? "end" : "start";
+      el("polyline", { points: `${item.at.join(",")} ${x - side * 14},${item.y} ${x - side * 4},${item.y}`, fill: "none", stroke: "#3a3f4a", "stroke-width": 1.2 });
+      el("circle", { cx: item.at[0], cy: item.at[1], r: 3.5, fill: "#1f232b", stroke: "#fff", "stroke-width": 1.5 });
+      el("text", { x, y: item.y - 3, "text-anchor": anchor, class: "name", ...halo }, item.name);
+      el("text", { x, y: item.y + 16, "text-anchor": anchor, class: "size", ...halo }, item.size);
+    }
+  }
+
+  for (const d of dims) {
+    const shift = (p) => p.map((v, i) => v + d.offset[i]);
+    const [a, b] = [modelPoint(cam, shift(d.from)), modelPoint(cam, shift(d.to))];
+    for (const [p, q] of [[d.from, a], [d.to, b]]) {
+      const base = modelPoint(cam, p);
+      el("line", { x1: base[0], y1: base[1], x2: q[0], y2: q[1], stroke: "#b4441c", "stroke-width": 1, "stroke-dasharray": "3 3" });
+    }
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "#b4441c", "stroke-width": 1.6 });
+    for (const [p, dir] of [[b, ang + Math.PI], [a, ang]]) {
+      const wing = (s) => `${p[0] + 9 * Math.cos(dir + s)},${p[1] + 9 * Math.sin(dir + s)}`;
+      el("polyline", { points: `${wing(0.4)} ${p[0]},${p[1]} ${wing(-0.4)}`, fill: "none", stroke: "#b4441c", "stroke-width": 1.6 });
+    }
+    const deg = THREE.MathUtils.radToDeg(ang);
+    const upright = deg > 90 || deg < -90 ? deg + 180 : deg;
+    const [mx, my] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    el("text", { x: mx, y: my - 8, "text-anchor": "middle", class: "dim", transform: `rotate(${upright} ${mx} ${my})`, ...halo }, d.text);
+  }
+}
+
 window.setView = (name) => {
-  const { cam, label } = VIEWS[name]();
+  const { cam, label, annotate } = VIEWS[name]();
   document.getElementById("label").textContent = label;
+  document.getElementById("overlay").replaceChildren();
   renderer.render(scene, cam);
+  annotate?.();
 };
 </script>
 </body>
