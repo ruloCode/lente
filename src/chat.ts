@@ -1,4 +1,4 @@
-import { SseParser, deltaText } from "./sse.ts";
+import { SseParser, deltaReasoning, deltaText } from "./sse.ts";
 import type { ChatTarget } from "./providers.ts";
 
 export type ChatPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
@@ -15,44 +15,80 @@ export interface StreamTiming {
   totalMs: number;
 }
 
+/** The error for a non-2xx answer; a 403/404 usually means the key and the model name do not match. */
+export function httpError(target: ChatTarget, status: number, body: string): Error {
+  const hint =
+    (status === 403 || status === 404) && target.modelEnv
+      ? ` (model "${target.model}" refused: check that ${target.modelEnv} matches the key)`
+      : "";
+  return new Error(`${target.id}: HTTP ${status}${hint} ${body}`);
+}
+
+const tokenBudget = (target: ChatTarget, asked: number): number => Math.max(asked, target.minMaxTokens ?? 0);
+
+/** Aborts the request when no token arrived in `ms`; call `got()` at the first token and `end()` when done. */
+function firstTokenGuard(ms: number | undefined) {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined =
+    ms === undefined ? undefined : setTimeout(() => controller.abort(new Error(`no first token within ${ms} ms`)), ms);
+  const end = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  return { signal: controller.signal, got: end, end };
+}
+
 /** Streams one chat completion and times it. Throws with the API's own error text. */
 export async function streamChat(
   target: ChatTarget,
   messages: ChatMessage[],
   maxTokens = 120,
+  opts: { firstTokenTimeoutMs?: number } = {},
 ): Promise<StreamTiming> {
   if (!target.apiKey) throw new Error(`${target.keyEnv} is not set`);
   const started = performance.now();
-  const res = await fetch(`${target.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${target.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: target.model,
-      messages,
-      stream: true,
-      max_tokens: maxTokens,
-      ...target.extra,
-    }),
-  });
-  if (!res.ok || !res.body) {
-    throw new Error(`${target.id}: HTTP ${res.status} ${await res.text().catch(() => "")}`);
-  }
+  const guard = firstTokenGuard(opts.firstTokenTimeoutMs);
+  try {
+    const res = await fetch(`${target.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${target.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: target.model,
+        messages,
+        stream: true,
+        max_tokens: tokenBudget(target, maxTokens),
+        ...target.extra,
+      }),
+      signal: guard.signal,
+    });
+    if (!res.ok || !res.body) throw httpError(target, res.status, await res.text().catch(() => ""));
 
-  const parser = new SseParser();
-  const decoder = new TextDecoder();
-  let text = "";
-  let ttftMs: number | undefined;
-  for await (const chunk of res.body) {
-    for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
-      const delta = deltaText(payload);
-      if (delta && ttftMs === undefined) ttftMs = performance.now() - started;
-      text += delta;
+    const parser = new SseParser();
+    const decoder = new TextDecoder();
+    let text = "";
+    let thinking = "";
+    let ttftMs: number | undefined;
+    let thinkingMs: number | undefined;
+    for await (const chunk of res.body) {
+      for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
+        const delta = deltaText(payload);
+        const thought = deltaReasoning(payload);
+        if (delta && ttftMs === undefined) ttftMs = performance.now() - started;
+        if (thought && thinkingMs === undefined) thinkingMs = performance.now() - started;
+        if (delta || thought) guard.got();
+        text += delta;
+        thinking += thought;
+      }
     }
+    // Some hosts leave `content` empty and put the answer in `reasoning_content`.
+    if (!text.trim() && thinking.trim()) return { text: thinking, ttftMs: thinkingMs, totalMs: performance.now() - started };
+    return { text, ttftMs, totalMs: performance.now() - started };
+  } finally {
+    guard.end();
   }
-  return { text, ttftMs, totalMs: performance.now() - started };
 }
 
 export interface Completion {
@@ -74,14 +110,15 @@ export async function completeChat(target: ChatTarget, messages: ChatMessage[], 
   const res = await fetch(`${target.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${target.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: target.model, messages, max_tokens: opts.maxTokens ?? 400, ...target.extra, ...opts.extra }),
+    body: JSON.stringify({ model: target.model, messages, max_tokens: tokenBudget(target, opts.maxTokens ?? 400), ...target.extra, ...opts.extra }),
   });
-  if (!res.ok) throw new Error(`${target.id}: HTTP ${res.status} ${await res.text().catch(() => "")}`);
+  if (!res.ok) throw httpError(target, res.status, await res.text().catch(() => ""));
   const json = (await res.json()) as {
-    choices?: { message?: { content?: unknown } }[];
+    choices?: { message?: { content?: unknown; reasoning_content?: unknown } }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
   };
-  const content = json.choices?.[0]?.message?.content;
+  const message = json.choices?.[0]?.message;
+  const content = typeof message?.content === "string" && message.content.trim() ? message.content : message?.reasoning_content;
   return {
     text: typeof content === "string" ? content : "",
     totalMs: performance.now() - started,
@@ -143,10 +180,11 @@ export interface StreamedCompletion extends Completion {
  * Look, live view). Chat Completions streams carry no `usage` on the Meta API even with
  * `stream_options.include_usage`; the Responses stream reports it, cache hits included, at the end.
  */
-export async function streamResponse(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number } = {}): Promise<StreamedCompletion> {
+export async function streamResponse(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number; firstTokenTimeoutMs?: number } = {}): Promise<StreamedCompletion> {
   if (!target.apiKey) throw new Error(`${target.keyEnv} is not set`);
   const { reasoning_effort, ...extra } = target.extra ?? {};
   const started = performance.now();
+  const guard = firstTokenGuard(opts.firstTokenTimeoutMs);
   const res = await fetch(`${target.baseUrl}/responses`, {
     method: "POST",
     headers: { Authorization: `Bearer ${target.apiKey}`, "Content-Type": "application/json" },
@@ -158,21 +196,32 @@ export async function streamResponse(target: ChatTarget, messages: ChatMessage[]
       ...(reasoning_effort ? { reasoning: { effort: reasoning_effort } } : {}),
       ...extra,
     }),
+    signal: guard.signal,
   });
-  if (!res.ok || !res.body) throw new Error(`${target.id}: HTTP ${res.status} ${await res.text().catch(() => "")}`);
+  if (!res.ok || !res.body) {
+    guard.end();
+    throw httpError(target, res.status, await res.text().catch(() => ""));
+  }
   const parser = new SseParser();
   const decoder = new TextDecoder();
   let text = "";
   let ttftMs: number | undefined;
   let usage: ResponseEvent["usage"];
-  for await (const chunk of res.body) {
-    for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
-      const event = responseEvent(payload);
-      if (event.error) throw new Error(`${target.id}: ${event.error}`);
-      if (event.delta && ttftMs === undefined) ttftMs = performance.now() - started;
-      if (event.delta) text += event.delta;
-      if (event.usage) usage = event.usage;
+  try {
+    for await (const chunk of res.body) {
+      for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
+        const event = responseEvent(payload);
+        if (event.error) throw new Error(`${target.id}: ${event.error}`);
+        if (event.delta && ttftMs === undefined) ttftMs = performance.now() - started;
+        if (event.delta) {
+          guard.got();
+          text += event.delta;
+        }
+        if (event.usage) usage = event.usage;
+      }
     }
+  } finally {
+    guard.end();
   }
   return {
     text,
@@ -182,4 +231,11 @@ export async function streamResponse(target: ChatTarget, messages: ChatMessage[]
     cachedTokens: usage?.input_tokens_details?.cached_tokens,
     completionTokens: usage?.output_tokens,
   };
+}
+
+/** One streamed reply on the wire format the target speaks; the cue and the other card calls use this. */
+export async function streamReply(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number; firstTokenTimeoutMs?: number } = {}): Promise<StreamedCompletion> {
+  if (target.api !== "chat") return streamResponse(target, messages, opts);
+  const timing = await streamChat(target, messages, opts.maxTokens ?? 400, { firstTokenTimeoutMs: opts.firstTokenTimeoutMs });
+  return { ...timing, promptTokens: undefined, cachedTokens: undefined, completionTokens: undefined };
 }

@@ -21,7 +21,7 @@ import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
-import { type ChatMessage, completeChat, streamResponse } from "./chat.ts";
+import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
@@ -39,7 +39,8 @@ import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy,
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
-import { chatTargets } from "./providers.ts";
+import { type ChatTarget, chatTargets } from "./providers.ts";
+import { CUE_FIRST_TOKEN_TIMEOUT_MS, RoutePolicy } from "./routing.ts";
 import { ArrivalClock, type Stages, formatStages } from "./stages.ts";
 import { SessionClock, connectEvents } from "./live-session.ts";
 import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
@@ -248,11 +249,21 @@ function setStatus(patch: Partial<typeof status>): void {
 
 let sparkTargets = chatTargets().filter((t) => t.id.startsWith("spark-1.3"));
 
+/** Reply cues try Muse Spark Open first, then Spark 1.3 at minimal effort; everything else stays on Spark 1.3. */
+const cueRoutes = (): ChatTarget[] => {
+  const all = chatTargets();
+  return ["spark-open", "spark-1.3-minimal"].flatMap((id) => all.filter((t) => t.id === id));
+};
+const routePolicy = new RoutePolicy();
+
 interface SparkReply {
   text: string;
   /** Wall-clock time the answering request was sent, and its first token if it was streamed. */
   askedAt: number;
   firstTokenAt?: number;
+  /** The model and provider that answered. */
+  model: string;
+  provider: string;
 }
 
 /**
@@ -260,25 +271,32 @@ interface SparkReply {
  * Responses API so their first token is timed; structured calls (`extra` with a JSON schema) use
  * Chat Completions and wait for the whole answer.
  */
-async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean }): Promise<SparkReply> {
+async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue" }): Promise<SparkReply> {
   let lastError: unknown;
-  for (const target of sparkTargets) {
+  const job = opts.job;
+  // Cue routes keep their order and a cool-down; the other jobs reorder to stick with what answered last.
+  const targets = job ? routePolicy.pick(job, cueRoutes().map((t) => Object.assign(t, { configured: Boolean(t.apiKey) }))) : sparkTargets;
+  for (const [i, target] of targets.entries()) {
     try {
       const askedAt = Date.now();
       const maxTokens = opts.maxTokens ?? 400;
-      const done = opts.stream ? await streamResponse(target, messages, { maxTokens }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
-      sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
-      broadcast({ kind: "usage", label: opts.label, model: target.id, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
+      // The last resort has nobody to fall back to, so it gets no first-token deadline.
+      const firstTokenTimeoutMs = job && i < targets.length - 1 ? CUE_FIRST_TOKEN_TIMEOUT_MS : undefined;
+      const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
+      if (job) routePolicy.succeeded(job, target.id);
+      else sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
+      broadcast({ kind: "usage", label: opts.label, model: target.id, provider: target.provider, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
       usage.addCall(target.model, { input: done.promptTokens, cached: done.cachedTokens, output: done.completionTokens });
       usageChanged = true;
       broadcast(spendEvent());
-      return { text: done.text, askedAt, firstTokenAt: done.ttftMs === undefined ? undefined : askedAt + Math.round(done.ttftMs) };
+      return { text: done.text, askedAt, firstTokenAt: done.ttftMs === undefined ? undefined : askedAt + Math.round(done.ttftMs), model: target.model, provider: target.provider };
     } catch (error) {
       lastError = error;
+      if (job) routePolicy.failed(job, target.id);
       console.error(`[spark] ${target.id} failed: ${(error as Error).message.slice(0, 200)}`);
     }
   }
-  throw lastError;
+  throw lastError ?? new Error(`no provider is configured for ${job ?? "this job"}`);
 }
 
 const askSpark = async (messages: ChatMessage[], opts: Parameters<typeof callSpark>[1]): Promise<string> => (await callSpark(messages, opts)).text;
@@ -296,16 +314,16 @@ async function sayThis(turn: AsrTurn, asker: string | undefined, why: string, st
   const seq = ++cueSeq;
   const started = performance.now();
   try {
-    const reply = await callSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue", stream: true });
+    const reply = await callSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue", stream: true, job: "cue" });
     if (seq !== cueSeq) return; // a newer question already took the card
     if (profile.assistMode !== "assist") return; // switched to Solo grabar while the reply was on its way
     const ms = Math.round(performance.now() - started);
     const { text, meaning } = parseReply(reply.text, turn.text);
     if (!text) return;
     const timed = { ...stages, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
-    recordStaged({ at: Date.now(), kind: "cue", label: "DILO", text, meaning, ms, asker, why, stages: timed }, { turnId: turn.turnId });
+    recordStaged({ at: Date.now(), kind: "cue", label: "DILO", text, meaning, ms, asker, why, model: reply.model, provider: reply.provider, stages: timed }, { turnId: turn.turnId });
     device?.write("B");
-    console.log(`[cue] ${ms} ms · ${text}${meaning ? ` (${meaning})` : ""}`);
+    console.log(`[cue] ${ms} ms · ${reply.provider} ${reply.model} · ${text}${meaning ? ` (${meaning})` : ""}`);
   } catch (error) {
     console.error(`[cue] failed: ${(error as Error).message.slice(0, 200)}`);
   }

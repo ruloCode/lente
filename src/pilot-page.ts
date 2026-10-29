@@ -826,6 +826,7 @@ export const PILOT_PAGE = `<!doctype html>
     for (const row of timeline.querySelectorAll(".item.k-turn")) row.querySelector(".chip").textContent = speakerChip(row.dataset.speaker);
   }
   const WHY = { name: "dijeron tu nombre", reply: "te respondían a ti", model: "parece dirigida a ti", testing: "modo todas las preguntas" };
+  const servedBy = (e) => (e.model ? (e.provider ? e.provider + " · " : "") + e.model : "");
   const whyLine = (e) => (e.why ? [e.asker ? "pregunta " + speakerChip(e.asker) : "", WHY[e.why] || e.why].filter(Boolean).join(" · ") : "");
   function addItem(e) {
     $("tl-hint").hidden = true;
@@ -838,7 +839,7 @@ export const PILOT_PAGE = `<!doctype html>
     row.querySelector(".chip").textContent = chip;
     if (kind === "turn") row.dataset.speaker = e.speaker || "";
     row.querySelector("p").textContent = text;
-    row.querySelector("time").textContent = [fmt(e.at || Date.now()), kind === "cue" ? whyLine(e) : ""].filter(Boolean).join(" · ");
+    row.querySelector("time").textContent = [fmt(e.at || Date.now()), kind === "cue" ? [whyLine(e), servedBy(e)].filter(Boolean).join(" · ") : ""].filter(Boolean).join(" · ");
     timeline.insertBefore(row, partial);
     if (e.turnId != null) rows.set(String(e.turnId), row);
     if (kind === "turn") $("tl-count").textContent = ++count + " turnos";
@@ -1351,7 +1352,7 @@ export const PILOT_PAGE = `<!doctype html>
     $("lv-card-label").textContent = isDilo(e.label) ? "DILO" : e.label;
     $("lv-card-text").textContent = e.text;
     $("lv-card-meaning").textContent = e.meaning || "";
-    $("lv-card-meta").textContent = [whyLine(e), e.ms != null ? "en " + e.ms + " ms" : ""].filter(Boolean).join(" · ");
+    $("lv-card-meta").textContent = [whyLine(e), e.ms != null ? "en " + e.ms + " ms" : "", servedBy(e)].filter(Boolean).join(" · ");
     $("lv-card-label").hidden = $("lv-card-text").hidden = false;
     $("lv-card-meaning").hidden = !e.meaning;
     $("lv-card-meta").hidden = !$("lv-card-meta").textContent;
@@ -1501,7 +1502,7 @@ export const PILOT_PAGE = `<!doctype html>
         // The Spanish meaning of a line in another language; never spoken, only read.
         $("cue-meaning").textContent = m.meaning || "";
         $("cue-meaning").hidden = !m.meaning;
-        $("cue-meta").textContent = [whyLine(m), m.ms != null ? "en " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
+        $("cue-meta").textContent = [whyLine(m), m.ms != null ? "en " + m.ms + " ms" : "", servedBy(m)].filter(Boolean).join(" · ");
         cueId = m.id;
         $("cue-stages").textContent = stagesLine(m.stages);
         showSlot(m);

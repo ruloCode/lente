@@ -33,3 +33,14 @@ export function deltaText(payload: string): string {
     return "";
   }
 }
+
+/** Reasoning text of one chunk (`reasoning_content`), which some hosts fill while `content` stays null. */
+export function deltaReasoning(payload: string): string {
+  if (payload === "[DONE]") return "";
+  try {
+    const text = JSON.parse(payload)?.choices?.[0]?.delta?.reasoning_content;
+    return typeof text === "string" ? text : "";
+  } catch {
+    return "";
+  }
+}

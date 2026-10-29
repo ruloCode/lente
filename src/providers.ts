@@ -8,6 +8,14 @@ export interface ChatTarget {
   model: string;
   apiKey: string | undefined;
   keyEnv: string;
+  /** Who serves it, shown next to the model on each cue. */
+  provider: string;
+  /** Streaming wire format: Meta's Responses API, or plain Chat Completions (partner hosts). */
+  api?: "responses" | "chat";
+  /** Floor for max_tokens when the model spends tokens thinking before it answers. */
+  minMaxTokens?: number;
+  /** Env var that overrides `model`, named in the error when the host refuses the model. */
+  modelEnv?: string;
   /** Extra body fields, e.g. reasoning effort for the hosted reasoning model. */
   extra?: Record<string, unknown>;
 }
@@ -28,6 +36,7 @@ export function chatTargets(): ChatTarget[] {
       model: "muse-spark-1.3",
       apiKey: env.MODEL_API_KEY,
       keyEnv: "MODEL_API_KEY",
+      provider: "Meta",
       extra: { reasoning_effort: "minimal" },
     },
     {
@@ -37,6 +46,7 @@ export function chatTargets(): ChatTarget[] {
       model: "muse-spark-1.3",
       apiKey: env.MODEL_API_KEY,
       keyEnv: "MODEL_API_KEY",
+      provider: "Meta",
     },
     {
       id: "spark-open",
@@ -45,6 +55,10 @@ export function chatTargets(): ChatTarget[] {
       model: env.BASETEN_MODEL ?? "meta-models/muse-spark-open-1026",
       apiKey: env.BASETEN_API_KEY,
       keyEnv: "BASETEN_API_KEY",
+      provider: "Baseten",
+      api: "chat",
+      minMaxTokens: 1024,
+      modelEnv: "BASETEN_MODEL",
     },
   ];
 }
