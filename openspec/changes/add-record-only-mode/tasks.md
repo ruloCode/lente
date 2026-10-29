@@ -8,8 +8,8 @@
 
 ## 2. Phone
 
-- [ ] 2.1 Asistir / Solo grabar switch on Ahora and the "GRABANDO" pill; verify both modes on the phone with the clip [hw] [phone]
-- [ ] 2.2 Recorded time today in Dispositivos (measured from audio received, amber); verify it grows while recording and stops while paused [phone]
+- [x] 2.1 Asistir / Solo grabar switch on Ahora and the "GRABANDO" pill; verify both modes on the phone with the clip [hw] [phone]
+- [x] 2.2 Recorded time today in Dispositivos (measured from audio received, amber); verify it grows while recording and stops while paused [phone]
 
 ## 3. Docs
 

@@ -11,6 +11,7 @@
 //
 // Usage: pnpm pilot   (MODEL_API_KEY in .env; ELEVENLABS_API_KEY optional for a natural voice)
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createTcpServer, type Socket } from "node:net";
 import { networkInterfaces } from "node:os";
@@ -29,6 +30,7 @@ import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPr
 import { MeetingStore } from "./meeting-store.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
+import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
 import { ArrivalClock, type Stages, formatStages } from "./stages.ts";
@@ -52,6 +54,11 @@ const DATA_DIR = process.env.PILOT_DATA_DIR ?? fileURLToPath(new URL("../data/",
 const meetings = new MeetingStore(join(DATA_DIR, "meetings"));
 const language = new LanguageStore(join(DATA_DIR, "language.json"));
 const profile = new ProfileStore(join(DATA_DIR, "profile.json"));
+const RECORDED_FILE = join(DATA_DIR, "recorded.json");
+const recorded = new RecordedToday(readRecorded());
+/** How often the phone hears the recorded time while audio arrives, and how often it is saved. */
+const RECORDED_PUSH_MS = 1000;
+const RECORDED_SAVE_MS = 10_000;
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
@@ -70,6 +77,29 @@ const SUMMARY_PROMPT =
   `(and sometimes saw). In ${LANGUAGE}, in at most two short sentences, say what matters: decisions, ` +
   "questions aimed at them, commitments, the topic. Speak to them directly. If nothing relevant happened, " +
   "say so in a few words. No preamble, no lists.";
+
+function readRecorded(): Partial<RecordedSnapshot> | undefined {
+  if (!existsSync(RECORDED_FILE)) return undefined;
+  try {
+    return JSON.parse(readFileSync(RECORDED_FILE, "utf8")) as Partial<RecordedSnapshot>;
+  } catch (error) {
+    console.error(`[recorded] could not read ${RECORDED_FILE}: ${(error as Error).message}`);
+    return undefined;
+  }
+}
+
+let recordedSavedAt = 0;
+function saveRecorded(): void {
+  recordedSavedAt = Date.now();
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(RECORDED_FILE, JSON.stringify(recorded.snapshot()) + "\n");
+  } catch (error) {
+    console.error(`[recorded] could not save ${RECORDED_FILE}: ${(error as Error).message}`);
+  }
+}
+
+const recordedEvent = () => ({ kind: "recorded", ms: recorded.total() });
 
 // --- State shared with the phone ----------------------------------------------------------
 
@@ -577,6 +607,10 @@ function setEveryQuestion(on: boolean): void {
 function setListening(on: boolean): void {
   setStatus({ listening: on });
   device?.write(on ? "M" : "m");
+  if (!on) {
+    saveRecorded();
+    broadcast(recordedEvent());
+  }
   if (on) startAsr();
   else {
     stopAsr();
@@ -681,6 +715,7 @@ const tcp = createTcpServer((socket) => {
   arrivals = new ArrivalClock();
   let helloSeen = false;
   let lastLevel = 0;
+  let lastRecordedPush = 0;
   console.log(`[clip] connected from ${socket.remoteAddress}`);
   // The hub owns the settings: a clip that reconnects picks them up again.
   socket.write(status.mode === "camera" ? "C" : "c");
@@ -732,6 +767,13 @@ const tcp = createTcpServer((socket) => {
         loudness.push(rms(clean));
         const now = Date.now();
         arrivals.note(jitter.consumedMs + jitter.bufferedBytes / BYTES_PER_MS, now);
+        // Only audio that arrived counts: silence filled in for loss, late duplicates and frames still in flight after a pause do not.
+        if (status.listening) recorded.add((aligned.length - lost * FRAME_BYTES) / BYTES_PER_MS, now);
+        if (now - lastRecordedPush >= RECORDED_PUSH_MS) {
+          lastRecordedPush = now;
+          broadcast(recordedEvent());
+        }
+        if (now - recordedSavedAt >= RECORDED_SAVE_MS) saveRecorded();
         if (now - lastLevel > 200) {
           lastLevel = now;
           broadcast({ kind: "level", rms: Math.round(rms(clean)) });
@@ -752,6 +794,7 @@ const tcp = createTcpServer((socket) => {
     stopAsr();
     device = undefined;
     liveBusySince = 0;
+    saveRecorded();
     setStatus({ clip: false, asr: key ? "waiting for the clip…" : status.asr });
     console.log("[clip] disconnected");
   });
@@ -826,6 +869,7 @@ const web = createHttpServer(async (req, res) => {
       res.write(`data: ${JSON.stringify(status)}\n\n`);
       res.write(`data: ${JSON.stringify({ kind: "history", items: day.entries.slice(-80) })}\n\n`);
       res.write(`data: ${JSON.stringify(meetingsEvent())}\n\n`);
+      res.write(`data: ${JSON.stringify(recordedEvent())}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
     } else if (req.method === "POST" && req.url === "/meeting/start") {

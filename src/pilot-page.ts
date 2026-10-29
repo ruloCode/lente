@@ -177,6 +177,8 @@ export const PILOT_PAGE = `<!doctype html>
   .modes button { border: 0; background: transparent; border-radius: 999px; min-height: var(--tap); padding: 0 8px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--muted); }
   .modes button[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
   .modes svg { width: 18px; height: 18px; flex: none; }
+  .modes button[data-assist="record"][aria-pressed="true"] svg { color: var(--live); }
+  .rv.measured { color: var(--amber); font: 500 14px var(--mono); }
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .tile { background: var(--surface); border-radius: 20px; padding: 16px 18px; display: grid; gap: 4px; }
   .tile b { font: 600 36px/1 var(--mono); color: var(--ink); }
@@ -262,6 +264,14 @@ export const PILOT_PAGE = `<!doctype html>
 
       <section class="screen on" data-screen="ahora">
         <button class="statusrow" id="status-row" aria-label="Ver dispositivos"><span class="dot" id="dot"></span><span id="clip">Sin clip</span><span id="mode-text"></span><span class="bars" aria-hidden="true" id="bars"><i></i><i></i><i></i><i></i><i></i></span></button>
+        <div class="modes" role="group" aria-label="Modo de Lente" id="assist">
+          <button data-assist="assist" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v10H10l-5 4z"/></svg>Asistir
+          </button>
+          <button data-assist="record" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Solo grabar
+          </button>
+        </div>
         <div class="note" id="note" hidden></div>
         <section class="cue" id="cue" aria-live="assertive" hidden>
           <span class="label" id="cue-label">DILO</span>
@@ -349,6 +359,7 @@ export const PILOT_PAGE = `<!doctype html>
             <div class="rowi"><span class="dot" id="dev-dot"></span><span class="rl" id="dev-state">Sin clip</span></div>
             <div class="rowi"><span class="rl">Audio perdido</span><span class="rv" id="dev-lost">0</span></div>
             <div class="rowi"><span class="rl">Audio con retraso</span><span class="rv" id="dev-late">0</span></div>
+            <div class="rowi"><span class="rl">Grabado hoy<small>Audio recibido, guardado solo como texto</small></span><span class="rv measured" id="dev-recorded">0 s</span></div>
           </div>
           <p class="hint" id="dev-help">Enciende el clip: se conecta solo a la misma red Wi-Fi que la computadora.</p>
         </div>
@@ -400,7 +411,7 @@ export const PILOT_PAGE = `<!doctype html>
         <div class="section">
           <span class="cap">Lente</span>
           <div class="group">
-            <a class="rowi" href="#grabar"><span class="rl">Solo grabar<small>Guarda tu día como texto y aprende, sin sugerencias</small></span><span class="tag">Pronto</span></a>
+            <label class="rowi"><span class="rl">Solo grabar<small>Guarda tu día como texto y aprende, sin sugerencias</small></span><input type="checkbox" class="switch" id="assist-set"></label>
             <label class="rowi"><span class="rl">Leer en voz alta<small>Las respuestas y los resúmenes, en el teléfono</small></span><input type="checkbox" class="switch" id="voice-set"></label>
             <label class="rowi"><span class="rl">Contestar todas las preguntas<small>Para pruebas: aunque no sean para ti</small></span><input type="checkbox" class="switch" id="me-all"></label>
           </div>
@@ -510,8 +521,6 @@ export const PILOT_PAGE = `<!doctype html>
       text: "Usa Lente en Meet, Teams o Zoom sin el clip: una página en la computadora comparte el audio de la llamada." },
     telefono: { title: "Usar el teléfono", when: "Llega con add-phone-capture", icon: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/>',
       text: "Si el clip no está, el micrófono y la cámara del teléfono hacen su trabajo: Lente escucha, responde y mira igual." },
-    grabar: { title: "Solo grabar", when: "Llega con add-record-only-mode", icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
-      text: "Lente guarda tu día como texto y aprende de él sobre la marcha (notas, vocabulario, tus frases), sin sugerencias en tiempo real." },
     nube: { title: "Hub en la nube", when: "Llega con add-cloud-hub", icon: '<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>',
       text: "El clip funcionará en cualquier lugar, con el hotspot de tu teléfono, sin depender de una computadora encendida. Emparejas el teléfono con un código." },
   };
@@ -678,6 +687,12 @@ export const PILOT_PAGE = `<!doctype html>
     $("now-text").textContent = e.text;
     $("now-text").classList.remove("idle");
     $("now-time").textContent = fmt(e.at || Date.now());
+  }
+
+  // Recorded time today, as the hub measured it from the audio it received.
+  function showRecorded(ms) {
+    const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), min = Math.floor((s % 3600) / 60);
+    $("dev-recorded").textContent = h ? h + " h " + String(min).padStart(2, "0") + " min" : min ? min + " min " + String(s % 60).padStart(2, "0") + " s" : s + " s";
   }
 
   function setLevel(rms) {
@@ -877,6 +892,10 @@ export const PILOT_PAGE = `<!doctype html>
     showNames(m.names);
     showMeeting(m.meeting);
     $("me-all").checked = !!m.everyQuestion;
+    const recording = m.assistMode === "record";
+    for (const b of document.querySelectorAll("[data-assist]")) b.setAttribute("aria-pressed", String(b.dataset.assist === m.assistMode));
+    $("assist-set").checked = recording;
+    if (recording) $("cue").hidden = true; // no cues in Solo grabar: an old one would read as current
     const clipText = m.clip ? "Clip conectado" : "Sin clip";
     for (const id of ["dot", "menu-dot", "dev-dot", "intro-clip-dot"]) $(id).classList.toggle("on", m.clip);
     $("clip").textContent = m.clip ? "Clip" : "Sin clip";
@@ -894,7 +913,7 @@ export const PILOT_PAGE = `<!doctype html>
     const state = !m.listening ? "paused" : m.clip ? "listening" : "idle";
     document.body.dataset.state = state;
     keepAwake(state === "listening");
-    $("listen-text").textContent = { listening: "Escuchando", paused: "En pausa", idle: "Esperando" }[state];
+    $("listen-text").textContent = { listening: recording ? "Grabando" : "Escuchando", paused: "En pausa", idle: "Esperando" }[state];
     for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === m.mode));
     $("camoff").hidden = m.mode === "camera";
     $("look").disabled = !m.clip;
@@ -921,6 +940,7 @@ export const PILOT_PAGE = `<!doctype html>
       }
     } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); }
     else if (m.kind === "level") setLevel(m.rms);
+    else if (m.kind === "recorded") showRecorded(m.ms);
     else if (m.kind === "partial") { $("tl-hint").hidden = true; partial.textContent = m.text; }
     else if (m.kind === "turn") addItem(m);
     else if (m.kind === "speaker") { const r = rows.get(String(m.turnId)); if (r) { r.dataset.speaker = m.speaker; r.querySelector(".chip").textContent = speakerChip(m.speaker); } }
@@ -957,6 +977,8 @@ export const PILOT_PAGE = `<!doctype html>
 
   $("listen").addEventListener("click", () => post(status.listening ? "/listen/off" : "/listen/on"));
   for (const b of document.querySelectorAll("[data-mode]")) b.addEventListener("click", () => post("/mode/" + b.dataset.mode));
+  for (const b of document.querySelectorAll("[data-assist]")) b.addEventListener("click", () => post("/assist-mode/" + b.dataset.assist));
+  $("assist-set").addEventListener("change", () => post($("assist-set").checked ? "/assist-mode/record" : "/assist-mode/assist"));
   $("live-btn").addEventListener("click", () => post(status.live ? "/live/off" : "/live/on"));
   $("voice").addEventListener("click", () => setVoice(!voiceOn));
   $("summary").addEventListener("click", () => post("/summary"));
