@@ -14,7 +14,7 @@
 - [x] 2.2 Local task list and reminder tools (reminders exported as an `.ics` file); verify a created task links to its meeting
 - [x] 2.3 Email draft tool (draft only, never sends); verify the draft is editable and copied, not sent
 
-- [ ] 2.4 Reminders use the wearer's local time (09:00 where the wearer is, a floating `.ics` time without `Z`), not 09:00 UTC, which is 4 a.m. in Bogotá; fix the comment in `src/agent-tools.ts` to match; test that the `.ics` carries no `Z` and the hour is local (`pnpm test`)
+- [x] 2.4 Reminders use the wearer's local time (09:00 where the wearer is, a floating `.ics` time without `Z`), not 09:00 UTC, which is 4 a.m. in Bogotá; fix the comment in `src/agent-tools.ts` to match; test that the `.ics` carries no `Z` and the hour is local (`pnpm test`)
 
 ## 3. Approval and traces
 

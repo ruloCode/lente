@@ -83,19 +83,25 @@ export interface Reminder {
 const pad = (n: number): string => String(n).padStart(2, "0");
 const icsStamp = (d: Date): string =>
   `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+/** Floating local time (no `Z`): calendars read it in the wearer's own zone. */
+const icsFloating = (y: number, m: number, d: number, h: number, min: number): string =>
+  `${y}${pad(m)}${pad(d)}T${pad(h)}${pad(min)}00`;
 const icsEscape = (s: string): string => s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/[,;]/g, (c) => `\\${c}`);
 
-/** One VEVENT with an alarm `REMINDER_LEAD_HOURS` before the due date. Pure. */
+/** One VEVENT at `REMINDER_HOUR` local time (floating, so 09:00 where the wearer is, not UTC) with an alarm `REMINDER_LEAD_HOURS` before the due date. Pure. */
 export function reminderEvent(r: Reminder, now: number): string {
   const [y, m, d] = r.date.split("-").map(Number);
+  // Date.UTC is only calendar arithmetic here; the fields are written out as floating local time.
   const start = new Date(Date.UTC(y, m - 1, d, REMINDER_HOUR));
   const end = new Date(start.getTime() + 30 * 60_000);
+  const floating = (t: Date): string =>
+    icsFloating(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate(), t.getUTCHours(), t.getUTCMinutes());
   return [
     "BEGIN:VEVENT",
     `UID:${r.meetingId}-${start.getTime()}-${Math.abs(hash(r.title))}@lente`,
     `DTSTAMP:${icsStamp(new Date(now))}`,
-    `DTSTART:${icsStamp(start)}`,
-    `DTEND:${icsStamp(end)}`,
+    `DTSTART:${floating(start)}`,
+    `DTEND:${floating(end)}`,
     `SUMMARY:${icsEscape(r.title)}`,
     `DESCRIPTION:${icsEscape([r.note, `Lente meeting ${r.meetingId}`].filter(Boolean).join("\n"))}`,
     "BEGIN:VALARM",

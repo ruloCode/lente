@@ -73,7 +73,9 @@ test("reminders accumulate in one valid .ics with an alarm a day before", async 
   const ics = readFileSync(remindersFile, "utf8");
   assert.equal(ics.match(/BEGIN:VCALENDAR/g)!.length, 1);
   assert.equal(ics.match(/BEGIN:VEVENT/g)!.length, 2);
-  assert.match(ics, /DTSTART:20261030T090000Z/);
+  assert.match(ics, /DTSTART:20261030T090000\r\n/);
+  assert.match(ics, /DTEND:20261030T093000\r\n/);
+  assert.doesNotMatch(ics.replace(/DTSTAMP:\S+/g, ""), /\d{6}Z/);
   assert.match(ics, /TRIGGER:-PT24H/);
   assert.match(ics, /SUMMARY:Deck\\, final\\; v2/);
   assert.ok(ics.endsWith("END:VCALENDAR\r\n"));
