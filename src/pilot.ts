@@ -16,7 +16,9 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createServer as createTcpServer, type Socket } from "node:net";
+import { createServer as createHttpsServer } from "node:https";
+import { createServer as createTcpServer } from "node:net";
+import type { Duplex } from "node:stream";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +28,7 @@ import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuest
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
+import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -803,7 +806,7 @@ setInterval(() => {
 
 // --- The clip ------------------------------------------------------------------------------------
 
-let device: Socket | undefined;
+let device: Duplex | undefined;
 let asr: AsrSession | undefined;
 let pacer: ReturnType<typeof setInterval> | undefined;
 let jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
@@ -905,10 +908,10 @@ function stopAsr(): void {
   latestPartial = "";
 }
 
-const tcp = createTcpServer((socket) => {
+/** The one device the hub listens to: the clip over TCP, or the phone or desktop over a WebSocket. */
+function serveDevice(socket: Duplex, remote: string | undefined): void {
   device?.destroy();
   device = socket;
-  socket.setNoDelay(true);
   const parser = new ClipFrameParser();
   conditioner = new AudioConditioner(MIC_GAIN);
   jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
@@ -919,7 +922,7 @@ const tcp = createTcpServer((socket) => {
   let helloSeen = false;
   let lastLevel = 0;
   let lastRecordedPush = 0;
-  console.log(`[clip] connected from ${socket.remoteAddress}`);
+  console.log(`[clip] connected from ${remote}`);
   // The hub owns the settings: a clip that reconnects picks them up again.
   socket.write(status.mode === "camera" ? "C" : "c");
   socket.write(status.listening ? "M" : "m");
@@ -1003,6 +1006,11 @@ const tcp = createTcpServer((socket) => {
     console.log("[clip] disconnected");
   });
   socket.on("error", (error) => console.error(`[clip] ${error.message}`));
+}
+
+const tcp = createTcpServer((socket) => {
+  socket.setNoDelay(true);
+  serveDevice(socket, socket.remoteAddress);
 });
 
 // --- Web: the phone page, its event stream, its buttons and the voice --------------------------
@@ -1054,7 +1062,7 @@ const ACTIONS: Record<string, () => void> = {
 const ICON_SIZES: Record<string, number> = { "/icon-192.png": 192, "/icon-512.png": 512, "/apple-touch-icon.png": 180 };
 const iconCache = new Map<string, Buffer>();
 
-const web = createHttpServer(async (req, res) => {
+const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   try {
     if (req.method === "GET" && req.url === "/manifest.webmanifest") {
       res.writeHead(200, { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" });
@@ -1165,6 +1173,20 @@ const web = createHttpServer(async (req, res) => {
     console.error(`[web] ${(error as Error).message}`);
     if (!res.headersSent) res.writeHead(500).end();
   }
+};
+
+// Browsers open the microphone only in a secure context: with a certificate and key the page is served over HTTPS.
+const TLS_CERT = process.env.PILOT_TLS_CERT;
+const TLS_KEY = process.env.PILOT_TLS_KEY;
+if (Boolean(TLS_CERT) !== Boolean(TLS_KEY)) {
+  console.error("PILOT_TLS_CERT and PILOT_TLS_KEY go together: set both to serve the page over HTTPS, or neither.");
+  process.exit(1);
+}
+const web = TLS_CERT && TLS_KEY ? createHttpsServer({ cert: readFileSync(TLS_CERT), key: readFileSync(TLS_KEY) }, handleWeb) : createHttpServer(handleWeb);
+web.on("upgrade", (req, raw, head) => {
+  if (req.url !== DEVICE_WS_PATH) return void raw.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+  const socket = acceptDevice(req, raw, head);
+  if (socket) serveDevice(socket, `${req.socket.remoteAddress} (WebSocket)`);
 });
 setInterval(() => {
   for (const res of clients) res.write(": keep-alive\n\n");
@@ -1177,7 +1199,7 @@ const lanAddresses = Object.values(networkInterfaces())
 
 tcp.listen(DEVICE_PORT, () => console.log(`Clip port ${DEVICE_PORT} (set HUB_HOST to ${lanAddresses.join(" or ")})`));
 web.listen(WEB_PORT, () => {
-  for (const ip of lanAddresses) console.log(`Phone: http://${ip}:${WEB_PORT}`);
+  for (const ip of lanAddresses) console.log(`Phone: ${TLS_CERT ? "https" : "http"}://${ip}:${WEB_PORT}`);
   console.log(`Voice: ${elevenKey ? "ElevenLabs" : "the phone's own voice (set ELEVENLABS_API_KEY for ElevenLabs)"}`);
   if (!key) console.log("MODEL_API_KEY is not set: the page shows connection, audio level and photos only.");
 });

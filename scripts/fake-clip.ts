@@ -2,7 +2,8 @@
 // sequenced audio frames at real-time pace, answers photo requests with the JPEGs of a
 // folder and obeys the hub's commands. Lets anyone run Lente without the hardware.
 //
-// Usage: node scripts/fake-clip.ts <speech.wav> [--photos <dir>] [--host 127.0.0.1] [--port 7070] [--loop] [--v1] [--linger-ms 8000]
+// Usage: node scripts/fake-clip.ts <speech.wav> [--photos <dir>] [--host 127.0.0.1] [--port 7070] [--loop] [--v1] [--linger-ms 8000] [--ws]
+// `--ws` connects like the phone page does: a WebSocket on the hub's web port (default 8080, path /device) carrying the same frames.
 // Make a WAV from any recording: ffmpeg -i in.m4a -ac 1 -ar 16000 -c:a pcm_s16le speech.wav
 //
 // Reproducible: frames depend only on the inputs (sequence from 0, capture time = sequence × 80 ms,
@@ -10,10 +11,12 @@
 // `--v1` sends the old hello without a version, to see how the hub refuses an outdated clip.
 
 import { readdirSync, readFileSync } from "node:fs";
-import { connect } from "node:net";
+import { request } from "node:http";
+import { type Socket, connect } from "node:net";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { COMMANDS, SAMPLE_RATE, encodeAudioFrame, encodeFrame, encodeHello } from "../src/clip-protocol.ts";
+import { OPCODE, WsFrameParser, encodeFrame as wsFrame } from "../src/websocket.ts";
 import { frameBytes, readPcm16Wav } from "../src/wav.ts";
 
 const FRAME_MS = 80;
@@ -23,7 +26,8 @@ const { values, positionals } = parseArgs({
   options: {
     photos: { type: "string" },
     host: { type: "string", default: "127.0.0.1" },
-    port: { type: "string", default: "7070" },
+    port: { type: "string" },
+    ws: { type: "boolean", default: false },
     loop: { type: "boolean", default: false },
     v1: { type: "boolean", default: false },
     "linger-ms": { type: "string", default: "8000" }, // keep listening for cues after the audio ends
@@ -53,8 +57,60 @@ let tick = 0; // frames elapsed on the clip's clock, sent or not
 let offset = 0; // read position in the WAV
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-const socket = connect({ host: values.host, port: Number(values.port) });
-socket.setNoDelay(true);
+const port = Number(values.port ?? (values.ws ? 8080 : 7070));
+
+/** What the emulator needs of its link: write frames, hear commands, hear the end. TCP raw, or WebSocket messages. */
+interface Link {
+  write(bytes: Buffer): void;
+  end(): void;
+  readonly destroyed: boolean;
+  on(event: "connect", cb: () => void): void;
+  on(event: "data", cb: (chunk: Buffer) => void): void;
+  on(event: "close", cb: () => void): void;
+  on(event: "error", cb: (error: Error) => void): void;
+}
+
+function connectTcp(): Link {
+  const tcp = connect({ host: values.host, port });
+  tcp.setNoDelay(true);
+  return tcp as Socket & Link;
+}
+
+function connectWs(): Link {
+  const handlers: Record<string, (arg?: any) => void> = {};
+  let raw: Socket | undefined;
+  const mask = () => Buffer.from([1, 2, 3, 4].map((n) => (n * 37 + seq) & 0xff));
+  const link: Link = {
+    write: (bytes) => raw?.write(wsFrame(OPCODE.binary, bytes, mask())),
+    end: () => raw?.end(wsFrame(OPCODE.close, Buffer.alloc(0), mask())),
+    get destroyed() {
+      return !raw || raw.destroyed;
+    },
+    on: ((event: string, cb: () => void) => void (handlers[event] = cb)) as Link["on"],
+  };
+  const req = request({
+    host: values.host,
+    port,
+    path: "/device",
+    headers: { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": Buffer.from("lente-fake-clip!").toString("base64") },
+  });
+  req.on("upgrade", (_res, upgraded) => {
+    raw = upgraded;
+    const parser = new WsFrameParser();
+    upgraded.on("data", (chunk) => {
+      for (const message of parser.push(chunk)) if (message.opcode === OPCODE.binary) handlers.data?.(message.payload);
+    });
+    upgraded.on("close", () => handlers.close?.());
+    upgraded.on("error", (error) => handlers.error?.(error));
+    handlers.connect?.();
+  });
+  req.on("response", (res) => handlers.error?.(new Error(`the hub answered HTTP ${res.statusCode} instead of upgrading`)));
+  req.on("error", (error) => handlers.error?.(error));
+  req.end();
+  return link;
+}
+
+const socket: Link = values.ws ? connectWs() : connectTcp();
 
 function sendPhoto(): void {
   if (!photos.length) return void console.log("[fake-clip] photo requested but no --photos folder was given");
@@ -64,7 +120,7 @@ function sendPhoto(): void {
 }
 
 socket.on("connect", () => {
-  console.log(`[fake-clip] connected to ${values.host}:${values.port}, ${(wav.data.length / (SAMPLE_RATE * 2)).toFixed(1)} s of audio`);
+  console.log(`[fake-clip] connected to ${values.host}:${port}${values.ws ? " (WebSocket)" : ""}, ${(wav.data.length / (SAMPLE_RATE * 2)).toFixed(1)} s of audio`);
   if (values.v1) socket.write(encodeFrame("H", Buffer.from('{"device":"lente-clip","fw":"pilot-2","rssi":-50,"camera":false}')));
   else socket.write(encodeHello({ fw: "fake-clip", device: "fake-clip" }));
   const start = performance.now();

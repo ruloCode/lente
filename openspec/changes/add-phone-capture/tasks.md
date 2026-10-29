@@ -2,7 +2,7 @@
 
 ## 1. Transport
 
-- [ ] 1.1 WebSocket upgrade on the hub's HTTP server carrying clip protocol v2 messages, dependency-free (reuse the RFC 6455 framing in `src/websocket.ts`, built with tests for the `add-evals` smoke test); shared with `add-desktop-mode`; verify with a Node client sending the emulator's frames
+- [x] 1.1 WebSocket upgrade on the hub's HTTP server carrying clip protocol v2 messages, dependency-free (reuse the RFC 6455 framing in `src/websocket.ts`, built with tests for the `add-evals` smoke test); shared with `add-desktop-mode`; verify with a Node client sending the emulator's frames
 - [ ] 1.2 Optional HTTPS with `PILOT_TLS_CERT` / `PILOT_TLS_KEY` and a short guide to make a local certificate; verify the phone opens the page over the LAN with the microphone allowed [phone]
 
 ## 2. Phone capture
