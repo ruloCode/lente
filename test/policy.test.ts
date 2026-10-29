@@ -27,6 +27,12 @@ test("the auto lane leaves git history to the runner", () => {
   }
 });
 
+test("the auto lane never plays audio out loud, only to files", () => {
+  for (const cmd of ["say -v Samantha 'hello'", "afplay /tmp/x.wav", "cd /tmp && say hi", "pnpm test; say done"]) assert.ok(blocked(cmd, LANE), cmd);
+  for (const cmd of ["say -v Samantha -o /tmp/x.aiff 'hello'", "say -o /tmp/x.aiff --data-format=LEI16@16000 hi", "node scripts/fake-clip.ts t.wav --ws", "echo say hello"]) assert.equal(checkCommand(cmd, LANE), null, cmd);
+  assert.equal(blocked("say hi"), false, "a human session may speak");
+});
+
 test("the auto lane never loads another checkout's keys", () => {
   for (const cmd of ["node --env-file=/Users/rulocode/dev/side/lente/.env src/pilot.ts", "node --env-file-if-exists=../../.env src/pilot.ts", "set -a; source ../../../.env; set +a"]) {
     assert.ok(blocked(cmd, LANE), cmd);

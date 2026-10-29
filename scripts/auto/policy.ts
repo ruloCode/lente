@@ -23,6 +23,8 @@ const LANE_GIT = new RegExp(String.raw`(?:${GIT}(?:commit|push|merge|rebase|cher
 const ARDUINO_PORT = /\barduino-cli\b[^;&|]*\b(?:upload|monitor|burn-bootloader|compile\b[^;&|]*--upload)\b/;
 const PORT_ARG = /(?:\s-p|\s--port)[ =]?(\S+)/;
 const OTHER_ENV = /(?:^|[\s='"])[^\s='"]*\/\.env(?![\w.-]*\.example\b)(?=$|[\s'";|&)])/;
+// Aloud: `say` without -o and `afplay` play through the human's speakers; the lane may only write audio to files.
+const PLAYS_AUDIO = /(?:^|[;&|(]\s*)(?:afplay\b|say\b(?![^;&|]*\s(?:-o|--output-file)\b))/;
 const RM_ROOTS = /\brm\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*r[a-zA-Z]*\s+(?:-[a-zA-Z]+\s+)*(?:\/|~|\$HOME|\.\.?|\.git)(?:\/)?(?:\s|$)/;
 
 /** Why a shell command must not run, or null when it may. */
@@ -32,6 +34,7 @@ export function checkCommand(cmd: string, ctx: Context): string | null {
   if (FORCE_PUSH.test(cmd)) return "force push rewrites published history; push normally or ask the human";
   if (ADD_FORBIDDEN.test(cmd)) return "rule 3: keys, the day record, recordings and audio never go into git (and no `git add -f`)";
   if (RM_ROOTS.test(cmd)) return "refusing to recursively delete the home, root, repository or .git directory";
+  if (ctx.auto && PLAYS_AUDIO.test(cmd)) return "auto lane: no audio plays out loud (the human sleeps); render speech to a file with `say -o` and feed it with scripts/fake-clip.ts, or report the check as needing real audio";
   if (ctx.auto && OTHER_ENV.test(cmd)) return "auto lane: building Lente spends no model credit; use the stub (pnpm stub), never another checkout's .env";
   if (ctx.auto && LANE_GIT.test(cmd)) return "auto lane: leave changes uncommitted; the runner reviews, commits, merges and pushes";
   if (ARDUINO_PORT.test(cmd)) {
