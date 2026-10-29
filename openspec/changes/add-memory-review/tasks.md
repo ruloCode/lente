@@ -8,5 +8,5 @@
 
 ## 2. Phone
 
-- [ ] 2.1 "Por revisar" and kept facts in Memoria (Guardar, Descartar, turn link, search, delete); verify on the phone after a meeting recorded from test speech [hw] [phone]
-- [ ] 2.2 README "What was built during the hackathon" row for the day the change lands
+- [x] 2.1 "Por revisar" and kept facts in Memoria (Guardar, Descartar, turn link, search, delete); verify on the phone after a meeting recorded from test speech [hw] [phone]
+- [x] 2.2 README "What was built during the hackathon" row for the day the change lands

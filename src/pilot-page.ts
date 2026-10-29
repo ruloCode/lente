@@ -451,6 +451,17 @@ export const PILOT_PAGE = `<!doctype html>
           <div class="tile"><b id="mem-asked">0</b><span>veces te preguntaron</span></div>
           <div class="tile"><b id="mem-answered">0</b><span>veces contestaste</span></div>
         </div>
+        <div class="section" id="facts-review-box" hidden>
+          <span class="cap" id="facts-review-cap">Por revisar</span>
+          <div class="group" id="facts-review"></div>
+        </div>
+        <div class="section" id="facts-kept-box" hidden>
+          <span class="cap">Lo que Lente recuerda</span>
+          <div class="group">
+            <div class="pad"><input class="field" id="facts-search" type="search" autocomplete="off" placeholder="Buscar en lo que recuerda" aria-label="Buscar en lo que recuerda"></div>
+            <div id="facts-kept"></div>
+          </div>
+        </div>
         <div class="section" id="mem-phrases-box" hidden>
           <span class="cap">Lo que sueles decir</span>
           <div class="group" id="mem-phrases"></div>
@@ -715,6 +726,7 @@ export const PILOT_PAGE = `<!doctype html>
       $("soon-icon").innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + planned.icon + "</svg>";
     }
     $("main").scrollTop = 0;
+    if (screen === "memoria") loadFacts();
     if (screen === "reunion") openDetail(hash.split("/")[1], hash.split("/")[2]);
   }
   addEventListener("hashchange", route);
@@ -972,6 +984,47 @@ export const PILOT_PAGE = `<!doctype html>
     btn.disabled = false; btn.textContent = "Preparar";
   });
 
+  // --- Facts: proposed ones wait under "Por revisar", kept ones are searchable and deletable
+  let factList = [], memLanguage = false;
+  async function loadFacts() {
+    try {
+      const r = await fetch("/facts", { cache: "no-store" });
+      if (!r.ok) return;
+      factList = (await r.json()).facts || [];
+    } catch { return; }
+    showFacts();
+  }
+  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  function factAct(path, id, btn) {
+    btn.disabled = true;
+    fetch(path, { method: "POST", body: JSON.stringify({ id }) }).catch(() => {}).then(loadFacts);
+  }
+  function factRow(f, review) {
+    const row = document.createElement("div"); row.className = "term";
+    const text = document.createElement("div"); text.textContent = f.text; row.append(text);
+    const bar = document.createElement("div"); bar.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px";
+    const btn = (label, cls, path) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn" + (cls ? " " + cls : ""); b.textContent = label; b.addEventListener("click", () => factAct(path, f.id, b)); return b; };
+    if (review) bar.append(btn("Guardar", "primary", "/facts/keep"), btn("Descartar", "", "/facts/discard"));
+    else bar.append(btn("Borrar", "danger", "/facts/discard"));
+    if (f.evidence && f.evidence.length) { const a = document.createElement("a"); a.href = "#m/" + f.meetingId + "/" + f.evidence[0]; a.textContent = "Ver el turno"; a.style.color = "var(--muted)"; bar.append(a); }
+    row.append(bar);
+    return row;
+  }
+  function showFacts() {
+    const proposed = factList.filter((f) => f.status === "proposed");
+    const kept = factList.filter((f) => f.status === "kept");
+    $("facts-review-box").hidden = !proposed.length;
+    $("facts-review-cap").textContent = proposed.length + " por revisar";
+    const rbox = $("facts-review"); rbox.textContent = "";
+    for (const f of proposed) rbox.append(factRow(f, true));
+    $("facts-kept-box").hidden = !kept.length;
+    const q = norm($("facts-search").value.trim());
+    const kbox = $("facts-kept"); kbox.textContent = "";
+    for (const f of kept) if (!q || norm(f.text).includes(q)) kbox.append(factRow(f, false));
+    $("mem-empty").hidden = memLanguage || factList.length > 0;
+  }
+  $("facts-search").addEventListener("input", showFacts);
+
   // --- Memory: questions asked and answered, the wearer's phrases, the glossary
   function showLanguage(l) {
     const terms = l ? l.glossary : [];
@@ -982,7 +1035,8 @@ export const PILOT_PAGE = `<!doctype html>
     $("mem-answered").textContent = l ? l.answered : 0;
     $("mem-phrases-box").hidden = !phrases.length;
     $("mem-terms-box").hidden = !terms.length;
-    $("mem-empty").hidden = !!(asked || phrases.length || terms.length);
+    memLanguage = !!(asked || phrases.length || terms.length);
+    $("mem-empty").hidden = memLanguage || factList.length > 0;
     const pbox = $("mem-phrases"); pbox.textContent = "";
     for (const ph of phrases) { const r = document.createElement("div"); r.className = "term"; const em = document.createElement("div"); em.textContent = "“" + ph + "”"; r.append(em); pbox.append(r); }
     const tbox = $("mem-terms"); tbox.textContent = "";
@@ -1473,7 +1527,7 @@ export const PILOT_PAGE = `<!doctype html>
         if (e.kind === "summary") showSummary(e);
       }
       catchUpSlot(m.items);
-    } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); }
+    } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); loadFacts(); }
     else if (m.kind === "actions") showActions(m);
     else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "recorded") showRecorded(m.ms);
