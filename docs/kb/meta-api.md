@@ -78,7 +78,11 @@ Batch: `POST /v1/asr/transcribe`, up to 10 minutes of audio per request, 32 MB b
 ## Baseten (Muse Spark Open, open weights)
 
 - **Endpoint:** `POST https://inference.baseten.co/v1/chat/completions`, OpenAI-compatible, `Authorization: Bearer $BASETEN_API_KEY`.
-- **Model:** `meta-models/muse-spark-open`. Verified 2026-10-28 with our key: `-1026` (the name in the partner email) returns 404 "please check the model you provided"; the unsuffixed name answers 200 in ~2 s. Override with `BASETEN_MODEL` if Baseten enables `-1026`.
+- **Model:** `meta-models/muse-spark-open-1026`, the hackathon model. The key name depends on the key (verified 2026-10-28):
+  - Hackathon key (from the partner email, carries the USD 100 credit): only `-1026` works (200 in ~1.3 s); the unsuffixed name returns 403 PERMISSION_DENIED.
+  - Regular account key: only `meta-models/muse-spark-open` works; `-1026` returns 404. Calls are billed to the account, not the hackathon credit.
+  - Set `BASETEN_MODEL` to match a non-hackathon key.
+- **Credit balance:** the management API (`api.baseten.co/v1/billing/usage_summary`) reports usage only, and the hackathon key gets 403 on it; check the balance in the dashboard (Settings → Billing).
 - **Reasoning:** the reply can come back with `content: null` and the text in `reasoning_content`; leave room in `max_tokens` and handle both.
 - Accepts text, image, audio and video; returns text and a reasoning output (see Baseten's "Reasoning" guide before parsing).
 - Counts toward **Best Build on Meta Open Weight Models**: the partner verifies the project runs on it.

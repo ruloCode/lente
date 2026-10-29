@@ -42,7 +42,7 @@ export function chatTargets(): ChatTarget[] {
       id: "spark-open",
       label: "Muse Spark Open · Baseten (open weights)",
       baseUrl: env.BASETEN_BASE_URL ?? "https://inference.baseten.co/v1",
-      model: env.BASETEN_MODEL ?? "meta-models/muse-spark-open",
+      model: env.BASETEN_MODEL ?? "meta-models/muse-spark-open-1026",
       apiKey: env.BASETEN_API_KEY,
       keyEnv: "BASETEN_API_KEY",
     },
