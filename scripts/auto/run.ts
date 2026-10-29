@@ -399,12 +399,12 @@ function restoreHub(wasUp: boolean): void {
 // ---------- main loop ----------
 
 function anotherRunner(): boolean {
-  const r = sh("pgrep", ["-f", "scripts/auto/run.ts"], ROOT);
+  const r = sh("pgrep", ["-f", String.raw`^node .*scripts/auto/run\.ts`], ROOT); // not shells or watchers that merely mention it
   return r.out.split("\n").map(Number).some((pid) => pid && pid !== process.pid && pid !== process.ppid);
 }
 
 async function main(): Promise<void> {
-  if (!opt["dry-run"] && anotherRunner()) throw new Error("another auto lane runner is already running (pgrep -f scripts/auto/run.ts)");
+  if (!opt["dry-run"] && anotherRunner()) throw new Error("another auto lane runner is already running (pgrep -f '^node .*scripts/auto/run.ts')");
   const failed = new Set<string>();
   for (;;) {
     const { bench, boardPort, phone } = detectBench();
