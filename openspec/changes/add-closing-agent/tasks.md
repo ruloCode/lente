@@ -3,8 +3,8 @@
 ## 1. Agent loop
 
 - [ ] 1.1 Verify Muse Spark 1.3 function calling with one real call and record the request/response shape in docs/kb/meta-api.md [key:MODEL_API_KEY]
-- [ ] 1.2 Tool registry and two-phase loop with an eight-step limit; unit tests with a fake model covering plan, early stop and the external-effect guard (`pnpm test`)
-- [ ] 1.3 Evidence resolution drops ungrounded proposals; unit test
+- [x] 1.2 Tool registry and two-phase loop with an eight-step limit; unit tests with a fake model covering plan, early stop and the external-effect guard (`pnpm test`)
+- [x] 1.3 Evidence resolution drops ungrounded proposals; unit test
 
 ## 2. Tools
 
