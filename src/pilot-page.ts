@@ -742,12 +742,16 @@ export const PILOT_PAGE = `<!doctype html>
   const player = new Audio();
   let speaking = false;
   let lastLiveSpoken = 0;
+  // The phone's microphone stays muted while it speaks and this long after, for the room's tail.
+  const MIC_HOLD_MS = 600;
+  let mutedUntil = 0;
   const isSpanish = (t) => /[áéíóúñ¿¡]|\\b(el|la|que|de|los|las|una|está|hay|con|para)\\b/i.test(t);
 
   function stopVoice() {
     try { speechSynthesis.cancel(); } catch {}
     player.pause();
     speaking = false;
+    mutedUntil = Date.now() + MIC_HOLD_MS;
   }
 
   async function say(text, priority) {
@@ -757,7 +761,9 @@ export const PILOT_PAGE = `<!doctype html>
     else if (speaking) return;
     if (priority === "low") lastLiveSpoken = Date.now();
     speaking = true;
-    const done = () => { speaking = false; };
+    // Tell the hub what is about to be read, so a microphone that hears it is not taken for a speaker.
+    fetch("/narrated", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }).catch(() => {});
+    const done = () => { speaking = false; mutedUntil = Date.now() + MIC_HOLD_MS; };
     if (status.voice === "elevenlabs") {
       try {
         const r = await fetch("/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
@@ -1353,7 +1359,10 @@ export const PILOT_PAGE = `<!doctype html>
     phone.seq = 0; phone.t0 = performance.now();
     phone.node.port.onmessage = (ev) => {
       if (!phone.sending || !phone.ws || phone.ws.readyState !== 1) return;
+      const mute = speaking || Date.now() < mutedUntil;
       for (const f of phone.framer.push(phone.resampler.push(ev.data))) {
+        // Silence in place of speech keeps the sequence and the clock whole; the gate drops it.
+        if (mute) f.fill(0);
         phone.ws.send(phoneAudioFrame(phone.seq, Math.round(performance.now() - phone.t0), f));
         phone.seq++;
       }

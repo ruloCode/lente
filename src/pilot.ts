@@ -50,6 +50,7 @@ import { SessionClock, connectEvents } from "./live-session.ts";
 import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
 import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
 import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
+import { NarrationGuard } from "./self-voice.ts";
 import { type UsageSnapshot, UsageMeter } from "./usage-meter.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
@@ -201,6 +202,9 @@ let latestPartial = "";
 
 /** The status as sent: the session view is taken at send time so every phone shows the same elapsed time. */
 const statusEvent = () => ({ ...status, session: sessionClock.view(Date.now()) });
+
+/** What the phone read out loud lately; a turn that repeats it is Lente hearing itself. */
+const narration = new NarrationGuard();
 
 function broadcast(event: object): void {
   const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -865,6 +869,10 @@ function startAsr(): void {
     },
     onTurn: (turn) => {
       latestPartial = "";
+      if (narration.repeats(turn.text, Date.now())) {
+        console.log(`[self-voice] dropped a turn that repeats Lente's own voice: ${turn.text}`);
+        return;
+      }
       const stages: Stages = { heard: turn.endMs === undefined ? undefined : arrivals.at(turn.endMs), turn: Date.now() };
       const earlier = day.entries.filter((e): e is Extract<DayEntry, { kind: "turn" }> => e.kind === "turn").slice(-ADDRESS_HISTORY_TURNS).map(toAddressTurn);
       if (turn.startMs !== undefined && turn.endMs !== undefined) wearerTracker.noteLoudness(turn.turnId, loudness.medianBetween(turn.startMs, turn.endMs));
@@ -1182,6 +1190,10 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
       const code = out.ok ? 200 : out.reason === "unknown-kind" ? 400 : out.reason === "record-only" || out.reason === "no-turns" ? 409 : 502;
       res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
+    } else if (req.method === "POST" && req.url === "/narrated") {
+      const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };
+      if (typeof text === "string") narration.narrated(text, Date.now());
+      res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/tts") {
       const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };
       await speak(res, text ?? "");
