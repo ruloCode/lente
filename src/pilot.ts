@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
-import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
+import { AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, JitterBuffer, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
@@ -168,6 +168,8 @@ type Pause = { reason: "start" | "manual" } | { reason: "idle"; at: number; basi
 let status = {
   kind: "status",
   clip: false,
+  /** Which device is connected: the clip, or the phone page standing in for it (`""` when none). */
+  device: "" as "" | "clip" | "phone",
   mode: "mic" as Mode,
   listening: false,
   pause: { reason: "start" } as Pause | null,
@@ -810,6 +812,8 @@ setInterval(() => {
 // --- The clip ------------------------------------------------------------------------------------
 
 let device: Duplex | undefined;
+/** Devices that came in over the WebSocket door (the phone page, the desktop app). */
+const webDevices = new WeakSet<Duplex>();
 let asr: AsrSession | undefined;
 let pacer: ReturnType<typeof setInterval> | undefined;
 let jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
@@ -913,8 +917,11 @@ function stopAsr(): void {
 
 /** The one device the hub listens to: the clip over TCP, or the phone or desktop over a WebSocket. */
 function serveDevice(socket: Duplex, remote: string | undefined): void {
-  device?.destroy();
+  const previous = device;
   device = socket;
+  // A phone that is replaced is told why, so its page says the clip took over instead of "connection lost".
+  if (previous && webDevices.has(previous)) previous.write(COMMANDS.takeover, () => previous.destroy());
+  else previous?.destroy();
   const parser = new ClipFrameParser();
   conditioner = new AudioConditioner(MIC_GAIN);
   jitter = new JitterBuffer(FRAME_BYTES, FRAME_BYTES * 25);
@@ -929,10 +936,11 @@ function serveDevice(socket: Duplex, remote: string | undefined): void {
   // The hub owns the settings: a clip that reconnects picks them up again.
   socket.write(status.mode === "camera" ? "C" : "c");
   socket.write(status.listening ? "M" : "m");
-  setStatus({ clip: true, audioLost: 0, audioLate: 0, asr: key ? (status.listening ? status.asr : "paused") : status.asr });
+  setStatus({ clip: true, device: "", audioLost: 0, audioLate: 0, asr: key ? (status.listening ? status.asr : "paused") : status.asr });
   startAsr();
 
   socket.on("data", (chunk) => {
+    if (device !== socket) return; // replaced by another device while its last bytes were in flight
     let frames;
     try {
       frames = parser.push(chunk);
@@ -953,7 +961,8 @@ function serveDevice(socket: Duplex, remote: string | undefined): void {
         helloSeen = true;
         if (status.clipError) setStatus({ clipError: "" });
         const h = result.hello;
-        console.log(`[clip] hello v${h.proto} fw=${h.fw} ${h.codec} ${h.rate} Hz`);
+        setStatus({ device: h.device === PHONE_DEVICE ? "phone" : "clip" });
+        console.log(`[clip] hello v${h.proto} fw=${h.fw} ${h.device ?? ""} ${h.codec} ${h.rate} Hz`);
         continue;
       }
       if (frame.type === "A") {
@@ -1005,7 +1014,7 @@ function serveDevice(socket: Duplex, remote: string | undefined): void {
     liveBusySince = 0;
     saveRecorded();
     saveUsage();
-    setStatus({ clip: false, asr: key ? "waiting for the clip…" : status.asr });
+    setStatus({ clip: false, device: "", asr: key ? "waiting for the clip…" : status.asr });
     console.log("[clip] disconnected");
   });
   socket.on("error", (error) => console.error(`[clip] ${error.message}`));
@@ -1199,7 +1208,9 @@ const web = TLS_CERT && TLS_KEY ? createHttpsServer({ cert: readFileSync(TLS_CER
 web.on("upgrade", (req, raw, head) => {
   if (req.url !== DEVICE_WS_PATH) return void raw.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
   const socket = acceptDevice(req, raw, head);
-  if (socket) serveDevice(socket, `${req.socket.remoteAddress} (WebSocket)`);
+  if (!socket) return;
+  webDevices.add(socket);
+  serveDevice(socket, `${req.socket.remoteAddress} (WebSocket)`);
 });
 setInterval(() => {
   for (const res of clients) res.write(": keep-alive\n\n");

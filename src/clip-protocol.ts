@@ -6,7 +6,8 @@
 // An audio payload is an 8-byte header (u32 LE sequence, u32 LE capture ms since the
 // clip started) followed by PCM16 mono samples at the rate the hello declared.
 // Downlink (hub → clip) is single bytes: "B" blink for a cue, "P" take a photo,
-// "C"/"c" camera on/off (off = mic-only, saves battery), "M"/"m" listen/pause.
+// "C"/"c" camera on/off (off = mic-only, saves battery), "M"/"m" listen/pause, and "T" to a
+// phone page only: another device took over.
 
 export interface ClipFrame {
   type: string;
@@ -116,7 +117,11 @@ export const COMMANDS = {
   cameraOff: "c",
   listen: "M",
   pause: "m",
+  /** Only to WebSocket devices (the phone page): another device took over, stop capturing. */
+  takeover: "T",
 } as const;
+/** The `device` a phone page declares in its hello. */
+export const PHONE_DEVICE = "lente-phone";
 
 export interface AudioFrame {
   seq: number;

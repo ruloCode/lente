@@ -4,6 +4,7 @@
 // introduction sets the wearer up. Served by src/pilot.ts and fed by Server-Sent Events.
 
 import { logoSvg } from "./brand.ts";
+import { PHONE_AUDIO_PAGE_SCRIPT } from "./phone-audio.ts";
 import { TRANSCRIPT_PAGE_SCRIPT } from "./transcript-view.ts";
 
 export const PILOT_PAGE = `<!doctype html>
@@ -156,6 +157,8 @@ export const PILOT_PAGE = `<!doctype html>
   .rv { color: var(--muted); font-size: 14px; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { width: 18px; height: 18px; flex: none; color: var(--muted); transition: transform .15s; }
   details[open] > summary .chev { transform: rotate(90deg); }
+  button.rowi:disabled { opacity: .55; }
+  button.rowi[aria-pressed="true"] .rl > span { color: var(--accent, var(--ink)); }
   a.rowi, button.rowi { width: 100%; border: 0; background-color: transparent; text-align: left; }
   .pad { padding: 0 16px 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .pad p, .group p.help { margin: 0; font-size: 14px; color: var(--muted); }
@@ -343,6 +346,7 @@ export const PILOT_PAGE = `<!doctype html>
           </button>
         </div>
         <div class="note" id="note" hidden></div>
+        <div class="note" id="phone-note" hidden><span id="phone-note-text"></span><button class="btn" id="phone-resume" type="button" hidden>Reanudar</button></div>
         <div class="note" id="pause-note" hidden><span id="pause-text"></span><button class="btn" id="pause-go" type="button"></button></div>
         <section class="cue" id="cue" aria-live="assertive" hidden>
           <span class="label" id="cue-label">DILO</span>
@@ -506,7 +510,7 @@ export const PILOT_PAGE = `<!doctype html>
         <div class="section">
           <span class="cap">Otras formas de usar Lente</span>
           <div class="group">
-            <a class="rowi" href="#telefono"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg><span class="rl">Usar el teléfono<small>Su micrófono y cámara, sin el clip</small></span><span class="tag">Pronto</span></a>
+            <button class="rowi" id="phone-use" type="button" aria-pressed="false"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg><span class="rl"><span id="phone-use-text">Usar el teléfono</span><small id="phone-use-hint">Su micrófono y cámara, sin el clip</small></span></button>
             <a class="rowi" href="#computadora"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="rl">Modo computadora<small>Meet, Teams o Zoom, sin el clip</small></span><span class="tag">Pronto</span></a>
             <a class="rowi" href="#nube"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/></svg><span class="rl">Hub en la nube<small>Funciona fuera de casa</small></span><span class="tag">Pronto</span></a>
           </div>
@@ -1297,12 +1301,147 @@ export const PILOT_PAGE = `<!doctype html>
   }
   document.addEventListener("visibilitychange", () => keepAwake(document.body.dataset.state === "listening"));
 
+  // --- The phone as the device: its microphone (and rear camera) stand in for the clip, over the
+  // hub's WebSocket door with the clip protocol. Resampling and framing are src/phone-audio.ts.
+  ${PHONE_AUDIO_PAGE_SCRIPT}
+  const PHONE_FW = "phone-page-1";
+  const STILL_WIDTH = 1024, STILL_HEIGHT = 768, STILL_SETTLE_MS = 500;
+  const phone = { ws: null, stream: null, ctx: null, node: null, resampler: null, framer: null, seq: 0, t0: 0, sending: false, on: false, hiddenDuring: false, wantMic: false };
+  const secureOk = window.isSecureContext && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  function phoneNote(text, resume) {
+    $("phone-note").hidden = !text;
+    $("phone-note-text").textContent = text || "";
+    $("phone-resume").hidden = !resume;
+  }
+  function phoneWords() {
+    if (!secureOk) return "Requiere HTTPS o localhost: el navegador no abre el micrófono por HTTP.";
+    if (status.clip && status.device === "clip") return "El clip está conectado: el teléfono no hace falta.";
+    return phone.on ? "Escuchando con el micrófono del teléfono" : "Su micrófono y cámara, sin el clip";
+  }
+  function phoneUi() {
+    const clip = status.clip && status.device === "clip";
+    $("phone-use").disabled = !secureOk || (clip && !phone.on);
+    $("phone-use").setAttribute("aria-pressed", String(phone.on));
+    $("phone-use-text").textContent = phone.on ? "Dejar de usar el teléfono" : "Usar el teléfono";
+    $("phone-use-hint").textContent = phoneWords();
+  }
+  function releaseMic() {
+    phone.sending = false;
+    if (phone.node) { phone.node.port.onmessage = null; phone.node.disconnect(); phone.node = null; }
+    if (phone.ctx) { phone.ctx.close().catch(() => {}); phone.ctx = null; }
+    if (phone.stream) { for (const t of phone.stream.getTracks()) t.stop(); phone.stream = null; }
+  }
+  function stopPhone(why) {
+    phone.on = false; phone.wantMic = false; phone.hiddenDuring = false;
+    releaseMic();
+    if (phone.ws) { const w = phone.ws; phone.ws = null; w.onclose = null; try { w.close(); } catch {} }
+    phoneNote(why || "", false);
+    phoneUi();
+  }
+  async function openMic() {
+    phone.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    const ctx = new AudioContext();
+    phone.ctx = ctx;
+    const src = ctx.createMediaStreamSource(phone.stream);
+    const code = "class Tap extends AudioWorkletProcessor { process(inputs) { const c = inputs[0] && inputs[0][0]; if (c) this.port.postMessage(c.slice(0)); return true; } } registerProcessor('lente-tap', Tap);";
+    const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+    await ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+    phone.node = new AudioWorkletNode(ctx, "lente-tap");
+    phone.resampler = new PcmResampler(ctx.sampleRate);
+    phone.framer = new PcmFramer();
+    phone.seq = 0; phone.t0 = performance.now();
+    phone.node.port.onmessage = (ev) => {
+      if (!phone.sending || !phone.ws || phone.ws.readyState !== 1) return;
+      for (const f of phone.framer.push(phone.resampler.push(ev.data))) {
+        phone.ws.send(phoneAudioFrame(phone.seq, Math.round(performance.now() - phone.t0), f));
+        phone.seq++;
+      }
+    };
+    src.connect(phone.node);
+    // Chrome mutes a capture track by itself when the page is hidden or the call app takes the mic.
+    for (const t of phone.stream.getAudioTracks()) t.onended = () => { if (phone.on) { phone.hiddenDuring = true; releaseMic(); phoneNote("El micrófono se detuvo.", true); } };
+  }
+  function openSocket() {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/device");
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => { ws.send(phoneHello(PHONE_FW)); phone.ws = ws; resolve(); };
+      ws.onerror = () => reject(new Error("No se pudo conectar con la computadora."));
+      ws.onmessage = (ev) => { for (const b of new Uint8Array(ev.data)) onHub(String.fromCharCode(b)); };
+      ws.onclose = () => { if (phone.ws === ws) stopPhone("Se perdió la conexión con la computadora."); };
+    });
+  }
+  function onHub(cmd) {
+    if (cmd === "M") { phone.sending = !!phone.stream; if (phone.stream) for (const t of phone.stream.getAudioTracks()) t.enabled = true; }
+    else if (cmd === "m") { phone.sending = false; if (phone.stream) for (const t of phone.stream.getAudioTracks()) t.enabled = false; }
+    else if (cmd === "P") takeStill();
+    else if (cmd === "B") { if (navigator.vibrate) navigator.vibrate(120); }
+    else if (cmd === "T") stopPhone("El clip tomó el control: el teléfono dejó de escuchar.");
+    // "C"/"c" (camera on/off) mean nothing here: the camera opens for each still.
+  }
+  /** One picture from the rear camera, sized like the clip's, sent as a J frame. */
+  let stillBusy = false;
+  async function takeStill() {
+    if (stillBusy || !phone.ws) return;
+    stillBusy = true;
+    let cam = null;
+    try {
+      cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: STILL_WIDTH }, height: { ideal: STILL_HEIGHT } } });
+      const v = document.createElement("video");
+      v.muted = true; v.playsInline = true; v.srcObject = cam;
+      await v.play();
+      await new Promise((r) => setTimeout(r, STILL_SETTLE_MS)); // the first frames are dark while exposure settles
+      const scale = Math.min(1, STILL_WIDTH / Math.max(v.videoWidth, v.videoHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+      c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+      const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.8));
+      if (blob && phone.ws && phone.ws.readyState === 1) phone.ws.send(uplinkFrame("J", new Uint8Array(await blob.arrayBuffer())));
+    } catch (e) {
+      phoneNote("No se pudo usar la cámara del teléfono: " + (e && e.name === "NotAllowedError" ? "falta el permiso." : "no está disponible."), false);
+    } finally {
+      if (cam) for (const t of cam.getTracks()) t.stop();
+      stillBusy = false;
+    }
+  }
+  async function startPhone() {
+    phoneNote("", false);
+    try {
+      if (!phone.ws) await openSocket();
+      phone.wantMic = true;
+      phone.on = true;
+      if (!phone.stream) await openMic();
+      phone.sending = !!status.listening;
+      if (!status.listening) for (const t of phone.stream.getAudioTracks()) t.enabled = false;
+    } catch (e) {
+      const denied = e && e.name === "NotAllowedError";
+      stopPhone(denied ? "El navegador no dio permiso al micrófono." : (e && e.message) || "No se pudo abrir el micrófono.");
+      return;
+    }
+    phoneUi();
+  }
+  $("phone-use").addEventListener("click", () => { if (phone.on) stopPhone(""); else startPhone(); });
+  $("phone-resume").addEventListener("click", () => startPhone());
+  // Browsers stop capture in a hidden page: let go of the microphone and say so on return.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && phone.on && phone.stream) {
+      phone.hiddenDuring = true;
+      releaseMic();
+    } else if (document.visibilityState === "visible" && phone.on && phone.hiddenDuring) {
+      phone.hiddenDuring = false;
+      phoneNote("La captura se pausó mientras saliste de Lente.", true);
+    }
+  });
+  phoneUi();
+
   // --- Live view: full screen on Ahora while a listening session runs. The transcript goes through
   // the hub-tested reducer (src/transcript-view.ts), carried into the page as it is.
   ${TRANSCRIPT_PAGE_SCRIPT}
   const STOP_CONFIRM_MS = 4000;
   const LV_FOLLOW_PX = 48;
   const HINT_CLIP = "Puedes bloquear el teléfono: el clip sigue escuchando.";
+  const HINT_PHONE = "Deja Lente abierto y la pantalla encendida: el teléfono escucha.";
   let tx = emptyTranscript();
   /** performance.now() when the latest status arrived: the phone adds only what it counted since. */
   let statusAt = performance.now();
@@ -1344,13 +1483,13 @@ export const PILOT_PAGE = `<!doctype html>
     $("lv-help").hidden = !assist;
     $("lv-mode").textContent = assist ? "Asistir" : "Solo grabar";
     $("lv-dot").classList.toggle("on", !!status.clip);
-    $("lv-clip").textContent = status.clip ? "Clip conectado" : "Sin clip";
+    $("lv-clip").textContent = status.clip ? (status.device === "phone" ? "Teléfono conectado" : "Clip conectado") : "Sin clip";
     $("lv").dataset.state = document.body.dataset.state;
     $("lv-pause").setAttribute("aria-label", status.listening ? "Pausar" : "Seguir escuchando");
     $("lv-pause").innerHTML = status.listening
       ? '<svg class="i" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
       : '<svg class="i" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
-    if (!stopTimer) $("lv-hint").textContent = status.clip ? HINT_CLIP : "Conecta el clip para escuchar.";
+    if (!stopTimer) $("lv-hint").textContent = status.clip ? (status.device === "phone" ? HINT_PHONE : HINT_CLIP) : "Conecta el clip para escuchar.";
     $("lv-empty").textContent = status.listening ? "Escuchando… lo que se diga aparece aquí." : "En pausa. Toca ▶ para seguir escuchando.";
     if (relabel) renderTranscript(true, false);
     if (open && !lvWasOpen) { lvFollow = true; $("lv-new").hidden = true; lvTx.scrollTop = lvTx.scrollHeight; }
@@ -1474,9 +1613,10 @@ export const PILOT_PAGE = `<!doctype html>
     for (const b of document.querySelectorAll("[data-assist]")) b.setAttribute("aria-pressed", String(b.dataset.assist === m.assistMode));
     $("assist-set").checked = recording;
     if (recording) $("cue").hidden = true; // no cues in Solo grabar: an old one would read as current
-    const clipText = m.clip ? "Clip conectado" : "Sin clip";
+    const phoneDev = m.clip && m.device === "phone";
+    const clipText = m.clip ? (phoneDev ? "Teléfono conectado" : "Clip conectado") : "Sin clip";
     for (const id of ["dot", "menu-dot", "dev-dot", "intro-clip-dot"]) $(id).classList.toggle("on", m.clip);
-    $("clip").textContent = m.clip ? "Clip" : "Sin clip";
+    $("clip").textContent = m.clip ? (phoneDev ? "Teléfono" : "Clip") : "Sin clip";
     $("mode-text").textContent = m.clip ? "· " + (m.mode === "camera" ? "Audio y cámara" : "Solo audio") : "";
     $("menu-clip").textContent = clipText;
     $("dev-state").textContent = clipText;
@@ -1515,6 +1655,7 @@ export const PILOT_PAGE = `<!doctype html>
     }
     if (!m.clip || !m.listening) setLevel(0);
     syncLive(wearerChanged);
+    phoneUi();
   }
 
   const es = new EventSource("/events");
