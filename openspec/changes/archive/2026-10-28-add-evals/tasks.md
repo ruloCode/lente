@@ -17,6 +17,6 @@
 
 ## 4. CI
 
-- [ ] 4.1 GitHub Actions workflow: `pnpm typecheck && pnpm test` on Node 22.18; verify a green run on the public repo
-- [ ] 4.2 Firmware compile step with arduino-cli and the ESP32 core pinned to 3.3.12; verify it fails on a deliberate syntax error in a branch
-- [ ] 4.3 End-to-end smoke: clip emulator (from `harden-clip-protocol`) → hub with a stubbed Meta API → assert status, turn and cue events over SSE; verify it runs in CI under one minute
+- [x] 4.1 GitHub Actions workflow: `pnpm typecheck && pnpm test` on Node 22.18; verify a green run on the public repo
+- [x] 4.2 Firmware compile step with arduino-cli and the ESP32 core pinned to 3.3.12; verify it fails on a deliberate syntax error in a branch
+- [x] 4.3 End-to-end smoke: clip emulator (from `harden-clip-protocol`) → hub with a stubbed Meta API → assert status, turn and cue events over SSE; verify it runs in CI under one minute
