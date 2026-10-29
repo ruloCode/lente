@@ -2,10 +2,10 @@
 
 ## 1. Hub
 
-- [ ] 1.1 Spanish-first transcription bias: `["Spanish", "English"]` as the default in `src/asr-session.ts`; unit test that the session request lists Spanish first (`pnpm test`)
-- [ ] 1.2 Reply with meaning: the reply call returns the sentence and, for a question not in Spanish, its Spanish meaning in one Muse Spark 1.3 call; a pure parser in `src/briefing.ts` caps both at 90 characters and drops a missing or Spanish-question meaning; the cue event gains the meaning as its own field; unit tests for English, Spanish and missing-meaning answers (`pnpm test`)
-- [ ] 1.3 Measure the reply before and after 1.2 on the eval set (`pnpm eval`); record cue latency (p50, p90) and how many English replies carried a meaning in `docs/benchmarks.md`, and the decision in `docs/kb/decisions.md` [key:MODEL_API_KEY]
-- [ ] 1.4 Spanish notes: the notes prompt in `src/meetings.ts` writes summary, decisions, commitments and open questions in Spanish, names and terms as said; verify one real extraction of an English test meeting (synthetic speech, not a real meeting) comes back in Spanish [key:MODEL_API_KEY]
+- [x] 1.1 Spanish-first transcription bias: `["Spanish", "English"]` as the default in `src/asr-session.ts`; unit test that the session request lists Spanish first (`pnpm test`)
+- [x] 1.2 Reply with meaning: the reply call returns the sentence and, for a question not in Spanish, its Spanish meaning in one Muse Spark 1.3 call; a pure parser in `src/briefing.ts` caps both at 90 characters and drops a missing or Spanish-question meaning; the cue event gains the meaning as its own field; unit tests for English, Spanish and missing-meaning answers (`pnpm test`)
+- [x] 1.3 Measure the reply before and after 1.2 on the eval set (`pnpm eval`); record cue latency (p50, p90) and how many English replies carried a meaning in `docs/benchmarks.md`, and the decision in `docs/kb/decisions.md` [key:MODEL_API_KEY]
+- [x] 1.4 Spanish notes: the notes prompt in `src/meetings.ts` writes summary, decisions, commitments and open questions in Spanish, names and terms as said; verify one real extraction of an English test meeting (synthetic speech, not a real meeting) comes back in Spanish [key:MODEL_API_KEY]
 
 ## 2. Phone
 

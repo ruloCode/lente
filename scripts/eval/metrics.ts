@@ -19,6 +19,8 @@ export interface RawCue {
   atMs: number;
   /** Model time reported by the hub for the reply. */
   modelMs?: number;
+  /** The cue carried a Spanish meaning under the line. */
+  meaning?: boolean;
 }
 
 export interface RawUsage {
@@ -42,10 +44,11 @@ export function percentile(values: number[], p: number): number | undefined {
 export interface Spread {
   n: number;
   p50?: number;
+  p90?: number;
   p95?: number;
 }
 
-export const spread = (values: number[]): Spread => ({ n: values.length, p50: percentile(values, 50), p95: percentile(values, 95) });
+export const spread = (values: number[]): Spread => ({ n: values.length, p50: percentile(values, 50), p90: percentile(values, 90), p95: percentile(values, 95) });
 
 const overlapMs = (a: { startMs: number; endMs: number }, b: { startMs: number; endMs: number }) => Math.max(0, Math.min(a.endMs, b.endMs) - Math.max(a.startMs, b.startMs));
 
@@ -68,6 +71,10 @@ export interface LineResult {
   turnId?: string;
   /** The hub put a card up for the turn this line is in. */
   cued: boolean;
+  /** The line is scripted in Spanish (`lang: "es"`). */
+  spanish: boolean;
+  /** The card for this line carried a Spanish meaning. */
+  meaning: boolean;
   finalizeMs?: number;
   cueMs?: number;
   modelMs?: number;
@@ -95,6 +102,8 @@ export function matchLines(dialogue: Dialogue, timings: LineTiming[], turns: Raw
       addressed: line.addressedToWearer === true,
       turnId: turn?.turnId,
       cued: cue !== undefined && owns,
+      spanish: line.lang === "es",
+      meaning: cue !== undefined && owns && cue.meaning === true,
       finalizeMs: turn ? Math.round(turn.atMs - lastEnd) : undefined,
       cueMs: cue && owns ? Math.round(cue.atMs - lastEnd) : undefined,
       modelMs: cue && owns ? cue.modelMs : undefined,
@@ -174,6 +183,21 @@ export interface Summary {
   tokensPerMeeting: Tokens;
   /** Per-stage time of the cues (see src/stages.ts). */
   stages: Partial<Record<StageName, Spread>>;
+  /** Cued questions by scripted language, and how many of those cards carried a Spanish meaning. */
+  meanings: { english: MeaningCount; spanish: MeaningCount };
+}
+
+export interface MeaningCount {
+  cued: number;
+  withMeaning: number;
+}
+
+export function countMeanings(results: LineResult[]): Summary["meanings"] {
+  const count = (spanish: boolean): MeaningCount => {
+    const cued = results.filter((r) => r.question && r.cued && r.spanish === spanish);
+    return { cued: cued.length, withMeaning: cued.filter((r) => r.meaning).length };
+  };
+  return { english: count(false), spanish: count(true) };
 }
 
 /** Everything from several dialogues at once; latencies are pooled, tokens are averaged per meeting. */
@@ -190,5 +214,6 @@ export function summarize(runs: { results: LineResult[]; mergedTurns: number; us
     mergedTurns: runs.reduce((n, r) => n + r.mergedTurns, 0),
     tokensPerMeeting: { prompt: per(total.prompt), cached: per(total.cached), completion: per(total.completion), calls: per(total.calls) },
     stages: stageSpreads(runs.flatMap((r) => r.stages ?? [])),
+    meanings: countMeanings(all),
   };
 }

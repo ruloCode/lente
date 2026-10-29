@@ -3,6 +3,7 @@
 // repeated calls cheap; the briefing is checked in code so every claim has a meeting behind it.
 // Pure: the hub gathers the data and makes the model call.
 
+import { toCue } from "./clip-protocol.ts";
 import { type GlossaryEntry, termKey } from "./language-profile.ts";
 import type { Meeting } from "./meetings.ts";
 
@@ -52,10 +53,16 @@ export const withMemory = (memory: string, task: string): string => (memory ? `$
 
 // --- Reply ----------------------------------------------------------------------------------------
 
+/** Marks the line that carries the Spanish meaning of the sentence. */
+export const MEANING_MARK = "ES:";
+export const REPLY_MAX_CHARS = 90;
+
 export const SAY_THIS_PROMPT =
-  "You help a non-native English speaker answer in a live meeting. Given the conversation and the " +
+  "You help a Spanish speaker answer in a live meeting. Given the conversation and the " +
   "question just asked, write ONE natural sentence they can say right now. Under 90 characters, " +
-  "in the language of the question, no quotes, no preamble.";
+  "in the language of the question, no quotes, no preamble. If the question is not in Spanish, add a second line " +
+  `starting with "${MEANING_MARK} " and what the sentence means in Spanish, under 90 characters. ` +
+  "If the question is in Spanish, write only the sentence.";
 const MEMORY_HINT =
   " Where it fits, use the words and phrasings the wearer already says (listed in the memory above) " +
   "and what the memory says they promised or decided; never state anything the memory and the conversation do not support.";
@@ -66,6 +73,42 @@ export function replyMessages(memory: string, conversation: string, question: st
     { role: "system" as const, content: withMemory(memory, SAY_THIS_PROMPT + (memory ? MEMORY_HINT : "")) },
     { role: "user" as const, content: `Conversation so far:\n${conversation}\n\nQuestion just asked: ${question}` },
   ];
+}
+
+export interface Reply {
+  /** The sentence to say, in the language of the question. */
+  text: string;
+  /** Its meaning in Spanish; absent for a Spanish question or when the model gave none. */
+  meaning?: string;
+}
+
+const SPANISH_WORDS = new Set("que qué el la los las una es está están por para con del al pero como cómo cuándo dónde quién lo se su sus puedes podemos tienes tengo hay ya sí también nos le les te eso esto este esta mañana".split(" "));
+const ENGLISH_WORDS = new Set("the an is are you we to of and can could will would do does did it that this what when how where who have has for on in with be your our by".split(" "));
+
+/** Inverted marks or more common Spanish words than English ones; an accented name alone doesn't count. */
+export function looksSpanish(text: string): boolean {
+  if (/[¿¡]/.test(text)) return true;
+  const words = text.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+  const es = words.filter((w) => SPANISH_WORDS.has(w)).length;
+  const en = words.filter((w) => ENGLISH_WORDS.has(w)).length;
+  return es > en;
+}
+
+const sameWords = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "") === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/**
+ * Splits the reply into the sentence and its Spanish meaning, each one short line. The meaning is
+ * dropped when it is missing or empty, when the question or the sentence is Spanish, or when it
+ * only repeats the sentence: the card never waits or retries for it.
+ */
+export function parseReply(raw: string, question: string): Reply {
+  const mark = new RegExp(`^\\s*${MEANING_MARK.replace(":", "")}\\s*[:\\-–]`, "i");
+  const lines = raw.split("\n").filter((l) => l.trim());
+  const meaningLine = lines.find((l) => mark.test(l));
+  const text = toCue(lines.filter((l) => l !== meaningLine).join("\n"), REPLY_MAX_CHARS);
+  const meaning = meaningLine ? toCue(meaningLine.replace(mark, ""), REPLY_MAX_CHARS) : "";
+  const usable = /\p{L}/u.test(meaning) && text && !looksSpanish(question) && !looksSpanish(text) && !sameWords(meaning, text);
+  return usable ? { text, meaning } : { text };
 }
 
 // --- Briefing -------------------------------------------------------------------------------------

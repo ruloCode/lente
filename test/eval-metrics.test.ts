@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type RawCue, type RawTurn, type RawUsage, matchLines, percentile, scoreLines, spread, stageSpreads, sumUsage, summarize, turnForLine } from "../scripts/eval/metrics.ts";
+import { type RawCue, type RawTurn, type RawUsage, countMeanings, matchLines, percentile, scoreLines, spread, stageSpreads, sumUsage, summarize, turnForLine } from "../scripts/eval/metrics.ts";
 import { type Dialogue } from "../scripts/eval/set.ts";
 
 const dialogue = (lines: Dialogue["lines"]): Dialogue => ({
@@ -19,7 +19,7 @@ test("percentiles use the nearest rank and handle empty lists", () => {
   assert.equal(percentile([10, 20, 30, 40], 50), 20);
   assert.equal(percentile([10, 20, 30, 40], 95), 40);
   assert.equal(percentile([40, 10, 30, 20, 50, 60, 70, 80, 90, 100], 95), 100);
-  assert.deepEqual(spread([3, 1, 2]), { n: 3, p50: 2, p95: 3 });
+  assert.deepEqual(spread([3, 1, 2]), { n: 3, p50: 2, p90: 3, p95: 3 });
 });
 
 test("a turn matches the line it covers most, and only if it covers half of it", () => {
@@ -41,11 +41,23 @@ test("lines join the labels with the turn and cue the hub produced, with latenci
   const cues: RawCue[] = [{ turnId: "t1", atMs: 4100, modelMs: 900 }, { turnId: "t2", atMs: 7000 }];
   const { lines: r, mergedTurns } = matchLines(dialogue(lines), timings, turns, cues);
   assert.equal(mergedTurns, 0);
-  assert.deepEqual(r[0], { index: 0, question: true, addressed: true, turnId: "t1", cued: true, finalizeMs: 600, cueMs: 2100, modelMs: 900 });
+  assert.deepEqual(r[0], { index: 0, question: true, addressed: true, turnId: "t1", cued: true, spanish: false, meaning: false, finalizeMs: 600, cueMs: 2100, modelMs: 900 });
   assert.equal(r[1].cued, true);
   assert.equal(r[1].cueMs, 2000);
   assert.equal(r[2].cued, false);
   assert.equal(r[3].turnId, undefined, "never transcribed");
+});
+
+test("meanings are counted per scripted language, on cued questions only", () => {
+  const ls = [
+    { speaker: "P", text: "q en", question: true, addressedToWearer: true },
+    { speaker: "P", text: "q es", question: true, addressedToWearer: true, lang: "es" },
+    { speaker: "P", text: "q en 2", question: true, addressedToWearer: true },
+  ] as Dialogue["lines"];
+  const turns = [turn("t1", 0, 2000, 2600), turn("t2", 3000, 5000, 5900), turn("t3", 6000, 8000, 8500)];
+  const cues: RawCue[] = [{ turnId: "t1", atMs: 4000, meaning: true }, { turnId: "t2", atMs: 7000, meaning: false }, { turnId: "t3", atMs: 9000 }];
+  const { lines: r } = matchLines(dialogue(ls), timings, turns, cues);
+  assert.deepEqual(countMeanings(r), { english: { cued: 2, withMeaning: 1 }, spanish: { cued: 1, withMeaning: 0 } });
 });
 
 test("a turn that swallowed two lines is counted as merged", () => {
@@ -117,8 +129,8 @@ test("stage spreads pool each stage's time over cues and skip stages nobody reac
     { heard: 0, turn: 700, asked: 800, firstToken: 1600, done: 1650, sent: 1651, phone: 1680 },
     { heard: 0, turn: 900, asked: 950, firstToken: 1950, done: 2000, sent: 2001 },
   ]);
-  assert.deepEqual(s.turn, { n: 2, p50: 700, p95: 900 });
-  assert.deepEqual(s.firstToken, { n: 2, p50: 800, p95: 1000 });
-  assert.deepEqual(s.phone, { n: 1, p50: 29, p95: 29 });
+  assert.deepEqual(s.turn, { n: 2, p50: 700, p90: 900, p95: 900 });
+  assert.deepEqual(s.firstToken, { n: 2, p50: 800, p90: 1000, p95: 1000 });
+  assert.deepEqual(s.phone, { n: 1, p50: 29, p90: 29, p95: 29 });
   assert.equal(s.heard, undefined);
 });

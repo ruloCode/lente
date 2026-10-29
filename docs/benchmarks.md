@@ -87,3 +87,23 @@ What the run showed (4 false cues, 3 missed, from 16 questions aimed at the wear
 - The transcription joined two lines into one turn 6 times with a 0.9 s pause between them; a real meeting has fewer clean pauses than this set.
 - Hub calls are no longer streamed so each one reports `usage`; the cue path waited for the whole answer before, so only first-token timing is lost.
 - Cached tokens were 0 in this run: the prompts here carry no memory, so they are below what the cache keeps (see the cache section above).
+
+## Reply with a Spanish meaning — 2026-10-28
+
+The DILO reply now asks Muse Spark 1.3 for a second line, `ES: …`, with the sentence's meaning in Spanish when the question is not in Spanish (`add-spanish-first`, task 1.2). Two `pnpm eval --vision 0` runs on the same set, back to back, both with the Spanish-first transcription bias, so the only difference is the reply prompt and parser. Models: spark-1.3-minimal (reasoning effort minimal), `muse-voice-transcribe-1.0`. Raw results stay local in `results/eval-spanish-before/` and `results/eval-spanish-after/`.
+
+| Metric | Before (sentence only) | After (sentence + meaning) |
+|---|---|---|
+| Cue, question end → card on the phone, p50 / p90 | 2.94 s / 3.74 s (n=19) | 3.25 s / 3.77 s (n=17) |
+| Model first token, p50 / p95 | 1.06 s / 1.65 s | 1.36 s / 1.94 s |
+| Rest of the reply, p50 / p95 | 0.11 s / 0.26 s | 0.16 s / 0.39 s |
+| Reply model time, p50 / p95 | 1.28 s / 1.91 s | 1.52 s / 2.13 s |
+| English questions whose card carried a meaning | 0 of 16 | 14 of 14 |
+| Spanish questions whose card carried a meaning | 0 of 3 | 0 of 3 |
+| Completion tokens per meeting | 615 | 711 |
+
+What the runs showed:
+
+- The cue got about 0.3 s slower at the median and stayed the same at p90. Most of the median gap is in the first token (+0.30 s), not in the extra line (+0.05 s): the longer instruction costs more than writing the meaning. One run each, so a 0.3 s difference is within what two runs of the same code can differ by; it is a cost to watch, not a settled one.
+- Every English card carried a meaning, including the English question in the code-switching meeting (d10). The two Spanish cards (d09, three Spanish questions, two of them merged into one turn) came back as a sentence alone. Example: "I can share an estimate by tomorrow morning." / "Puedo dar la estimación mañana por la mañana."
+- Addressing differs between the runs (19 vs 17 cues) because the addressing call is a model call too; it does not use the reply prompt.

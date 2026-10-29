@@ -17,7 +17,7 @@ export type DayEntry =
       audioEndMs?: number;
       spokeAt?: number;
     }
-  | { at: number; kind: "cue"; label: string; text: string; ms?: number; /** Speaker label of who asked and the addressing rule that let the cue through. */ asker?: string; why?: string; stages?: Stages }
+  | { at: number; kind: "cue"; label: string; text: string; /** Spanish meaning of a DILO line in another language. */ meaning?: string; ms?: number; /** Speaker label of who asked and the addressing rule that let the cue through. */ asker?: string; why?: string; stages?: Stages }
   | { at: number; kind: "live"; text: string; stages?: Stages }
   | { at: number; kind: "summary"; text: string };
 

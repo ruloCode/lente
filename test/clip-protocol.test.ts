@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { turnIdOf } from "../src/asr-session.ts";
+import { sessionRequest, turnIdOf } from "../src/asr-session.ts";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -31,6 +31,13 @@ test("turn id 0 is a real turn, not a missing one", () => {
   assert.equal(turnIdOf({ turnId: "7" }), "7");
   assert.equal(turnIdOf({}), undefined);
   assert.equal(turnIdOf({ turnId: null }), undefined);
+});
+
+test("the session request biases transcription Spanish first, then English", () => {
+  const req = sessionRequest("k");
+  assert.deepEqual(req.languageBias, ["Spanish", "English"]);
+  assert.equal(req.mode, "DIARIZATION");
+  assert.deepEqual(sessionRequest("k", ["English"]).languageBias, ["English"]);
 });
 
 const pcm = (...samples: number[]) => {

@@ -156,7 +156,8 @@ export function notesSchema(turnIds: string[]) {
 
 export const NOTES_PROMPT =
   "You write the notes of a meeting from its transcript. Lines look like `t3 YOU: text` or `t4 B: text`; " +
-  "YOU is the person who wears the glasses. Answer in the language the meeting was held in. Give a summary of at most " +
+  "YOU is the person who wears the glasses. Write the summary, decisions, commitments and open questions in Spanish, " +
+  "whatever language the meeting was held in; keep names, product terms and quoted words exactly as they were said. Give a summary of at most " +
   "two sentences, the decisions made, the commitments (what, owner, due date if one was said, else an empty string) " +
   "and the questions left open. Also list the glossary: terms, acronyms and idioms a Spanish speaker who learned English as a second language may not know, each with a one-line meaning in Spanish and the turn where it was said (skip common words). For an owner use `you` for YOU, otherwise the name said in the meeting or the speaker " +
   "letter. Every item must cite the turn ids that support it. Include only what was actually said; if there is none " +

@@ -26,7 +26,7 @@ import { PILOT_PAGE } from "./pilot-page.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
-import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
+import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, parseReply, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
 import { MeetingStore } from "./meeting-store.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
@@ -232,12 +232,12 @@ async function sayThis(turn: AsrTurn, asker: string | undefined, why: string, st
     if (seq !== cueSeq) return; // a newer question already took the card
     if (profile.assistMode !== "assist") return; // switched to Solo grabar while the reply was on its way
     const ms = Math.round(performance.now() - started);
-    const text = toCue(reply.text);
+    const { text, meaning } = parseReply(reply.text, turn.text);
     if (!text) return;
     const timed = { ...stages, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
-    recordStaged({ at: Date.now(), kind: "cue", label: "DILO", text, ms, asker, why, stages: timed }, { turnId: turn.turnId });
+    recordStaged({ at: Date.now(), kind: "cue", label: "DILO", text, meaning, ms, asker, why, stages: timed }, { turnId: turn.turnId });
     device?.write("B");
-    console.log(`[cue] ${ms} ms · ${text}`);
+    console.log(`[cue] ${ms} ms · ${text}${meaning ? ` (${meaning})` : ""}`);
   } catch (error) {
     console.error(`[cue] failed: ${(error as Error).message.slice(0, 200)}`);
   }

@@ -45,6 +45,14 @@ test("the transcript marks the wearer as YOU", () => {
   assert.match(messages[1].content, /"Sprint review"/);
 });
 
+test("notes are asked for in Spanish whatever the meeting language, names and terms as said", () => {
+  const [system] = extractionMessages(meetingWith(["Hello"]));
+  assert.match(system.content, /summary, decisions, commitments and open questions in Spanish/);
+  assert.match(system.content, /whatever language the meeting was held in/);
+  assert.match(system.content, /names, product terms and quoted words exactly as they were said/);
+  assert.doesNotMatch(system.content, /Answer in the language the meeting was held in/);
+});
+
 test("the schema only allows evidence ids that exist", () => {
   const schema = notesSchema(["t1", "t2"]);
   assert.deepEqual(schema.properties.decisions.items.properties.evidence.items.enum, ["t1", "t2"]);

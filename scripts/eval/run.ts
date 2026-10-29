@@ -166,7 +166,7 @@ async function replay(d: Dialogue): Promise<DialogueRun> {
       if (msg.kind === "turn" && msg.turnId !== undefined && typeof msg.audioStartMs === "number") {
         turns.push({ turnId: String(msg.turnId), startMs: msg.audioStartMs, endMs: msg.audioEndMs, atMs: at - t0, text: msg.text, speaker: msg.speaker });
       } else if (msg.kind === "cue" && msg.label === "DILO" && msg.turnId !== undefined) {
-        cues.push({ turnId: String(msg.turnId), atMs: at - t0, modelMs: msg.ms });
+        cues.push({ turnId: String(msg.turnId), atMs: at - t0, modelMs: msg.ms, meaning: typeof msg.meaning === "string" && msg.meaning !== "" });
         if (msg.stages) stages.push(acknowledged.get(msg.id) ?? msg.stages);
       } else if (msg.kind === "usage") {
         usage.push({ label: msg.label, ms: msg.ms, promptTokens: msg.promptTokens, cachedTokens: msg.cachedTokens, completionTokens: msg.completionTokens });
@@ -242,7 +242,8 @@ function markdown(date: string, set: Dialogue[], s: Summary, vision: VisionRun |
   const effort = chatTargets().find((t) => models.includes(t.id))?.extra?.reasoning_effort ?? "default";
   const rows = [
     ["Transcription finalize (line end → turn)", `${sec(s.finalize.p50)} / ${sec(s.finalize.p95)}`, `n=${s.finalize.n}`],
-    ["Cue (question end → card on the phone)", `${sec(s.cue.p50)} / ${sec(s.cue.p95)}`, `n=${s.cue.n}`],
+    ["Cue (question end → card on the phone)", `${sec(s.cue.p50)} / ${sec(s.cue.p95)}`, `n=${s.cue.n}; p90 ${sec(s.cue.p90)}`],
+    ["Spanish meaning on the card", `${s.meanings.english.withMeaning} of ${s.meanings.english.cued} English`, `${s.meanings.spanish.withMeaning} of ${s.meanings.spanish.cued} Spanish (should be 0)`],
     ["Reply model time", `${sec(s.modelMs.p50)} / ${sec(s.modelMs.p95)}`, `n=${s.modelMs.n}`],
     ["Addressing precision", pct(s.scores.precision), `${s.scores.truePositives} right of ${s.scores.truePositives + s.scores.falsePositives} cues`],
     ["Addressing recall", pct(s.scores.recall), `${s.scores.truePositives} of ${s.scores.truePositives + s.scores.falseNegatives} questions for the wearer`],

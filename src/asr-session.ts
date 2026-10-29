@@ -38,6 +38,21 @@ interface ServerMessage {
 
 const MAX_QUEUED_FRAMES = 25;
 
+/** Spanish first: the wearer's language. A bias is only a hint, so English meetings stay English. */
+export const DEFAULT_LANGUAGE_BIAS = ["Spanish", "English"];
+
+/** The first text frame of a session: auth goes here, not in an HTTP header. */
+export function sessionRequest(key: string, languages: string[] = DEFAULT_LANGUAGE_BIAS) {
+  return {
+    authorization: { accessToken: `Bearer ${key}` },
+    audioEncoding: "PCM_16KHZ",
+    model: TRANSCRIBE_MODEL,
+    mode: "DIARIZATION",
+    languageBias: languages,
+    keywords: ["Lente", "Muse Spark", "Meta"],
+  };
+}
+
 /** Turn ids arrive as numbers starting at 0, so a truthiness check would drop the first turn. */
 export function turnIdOf(msg: { turnId?: string | number | null }): string | undefined {
   return msg.turnId === undefined || msg.turnId === null ? undefined : String(msg.turnId);
@@ -57,7 +72,7 @@ export class AsrSession {
   private handlers: AsrHandlers;
   private languages: string[];
 
-  constructor(key: string, handlers: AsrHandlers, languages = ["English", "Spanish"]) {
+  constructor(key: string, handlers: AsrHandlers, languages = DEFAULT_LANGUAGE_BIAS) {
     this.key = key;
     this.handlers = handlers;
     this.languages = languages;
@@ -74,17 +89,7 @@ export class AsrSession {
     const ws = new WebSocket(META_REALTIME_URL);
     this.ws = ws;
     ws.addEventListener("open", () => {
-      // Auth goes in the first text frame, not in an HTTP header.
-      ws.send(
-        JSON.stringify({
-          authorization: { accessToken: `Bearer ${this.key}` },
-          audioEncoding: "PCM_16KHZ",
-          model: TRANSCRIBE_MODEL,
-          mode: "DIARIZATION",
-          languageBias: this.languages,
-          keywords: ["Lente", "Muse Spark", "Meta"],
-        }),
-      );
+      ws.send(JSON.stringify(sessionRequest(this.key, this.languages)));
     });
     ws.addEventListener("message", (event) => this.onMessage(String(event.data)));
     ws.addEventListener("close", (event) => {

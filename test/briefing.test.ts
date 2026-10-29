@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MEMORY_MAX_CHARS, briefingMessages, briefingSchema, citedSources, memoryPrefix, replyMessages, validateBriefing, withMemory } from "../src/briefing.ts";
+import { MEMORY_MAX_CHARS, briefingMessages, briefingSchema, citedSources, looksSpanish, memoryPrefix, parseReply, replyMessages, validateBriefing, withMemory } from "../src/briefing.ts";
 import { mergeGlossary } from "../src/language-profile.ts";
 import { type Meeting, newMeeting } from "../src/meetings.ts";
 
@@ -59,6 +59,53 @@ test("the reply prompt puts the memory before the task and mentions the wearer's
   assert.match(system.content as string, /words and phrasings the wearer already says/);
   assert.match(user.content as string, /Question just asked: Can you do it\?/);
   assert.doesNotMatch(replyMessages("", "A: hi", "Q?")[0].content as string, /memory above/);
+});
+
+test("the reply prompt asks for a Spanish meaning on a second line only for a question not in Spanish", () => {
+  const [system] = replyMessages("", "A: hi", "Q?");
+  assert.match(system.content as string, /ES: /);
+  assert.match(system.content as string, /in Spanish, write only the sentence/);
+});
+
+test("an English answer keeps its sentence and its Spanish meaning, each a single line", () => {
+  const r = parseReply("Yes, I'll have the estimate ready by Thursday.\nES: Sí, tendré el estimado listo para el jueves.", "Can you have the estimate ready by Thursday?");
+  assert.deepEqual(r, { text: "Yes, I'll have the estimate ready by Thursday.", meaning: "Sí, tendré el estimado listo para el jueves." });
+});
+
+test("sentence and meaning are each capped at 90 characters", () => {
+  const long = "word ".repeat(40).trim();
+  const r = parseReply(`${long}\nES: ${"palabra ".repeat(30).trim()}`, "Can you explain the plan?");
+  assert.ok(r.text.length <= 90 && r.text.endsWith("…"));
+  assert.ok(r.meaning !== undefined && r.meaning.length <= 90 && r.meaning.endsWith("…"));
+});
+
+test("a Spanish question gets the sentence alone, even if the model added a meaning", () => {
+  const q = "¿Puedes tener el estimado para el jueves?";
+  assert.deepEqual(parseReply("Sí, lo tengo listo para el jueves.", q), { text: "Sí, lo tengo listo para el jueves." });
+  assert.deepEqual(parseReply("Sí, lo tengo listo para el jueves.\nES: Sí, lo tengo listo para el jueves.", q), { text: "Sí, lo tengo listo para el jueves." });
+  assert.deepEqual(parseReply("Sí, claro.\nES: Sí, claro.", "puedes revisar el contrato"), { text: "Sí, claro." });
+});
+
+test("a missing or empty meaning leaves the sentence alone, without failing", () => {
+  const q = "Can you send the deck?";
+  assert.deepEqual(parseReply("Sure, I'll send it after lunch.", q), { text: "Sure, I'll send it after lunch." });
+  assert.deepEqual(parseReply("Sure, I'll send it after lunch.\nES:", q), { text: "Sure, I'll send it after lunch." });
+  assert.deepEqual(parseReply("Sure, I'll send it after lunch.\nES: -", q), { text: "Sure, I'll send it after lunch." });
+  assert.deepEqual(parseReply("", q), { text: "" });
+});
+
+test("the meaning line is never taken for the sentence, and a quoted, prefixed sentence is cleaned", () => {
+  assert.deepEqual(parseReply("ES: Claro, lo envío hoy.\nSay this: \"Sure, I'll send it today.\"", "Can you send it?"), {
+    text: "Sure, I'll send it today.",
+    meaning: "Claro, lo envío hoy.",
+  });
+});
+
+test("Spanish is told from English by its marks and common words, not by an accented name", () => {
+  assert.equal(looksSpanish("¿Puedes tener el estimado para el jueves?"), true);
+  assert.equal(looksSpanish("puedes revisar el contrato que te mandé"), true);
+  assert.equal(looksSpanish("Andrés, can you have the estimate ready by Thursday?"), false);
+  assert.equal(looksSpanish("Can you send the deck?"), false);
 });
 
 test("the briefing schema limits sources to real meetings, or any string when there are none", () => {
