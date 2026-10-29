@@ -1,7 +1,7 @@
 // The auto lane. Picks the next ready node (one task group) from the OpenSpec graph, has a
 // headless Claude Code session build it in its own worktree, then holds it to the same gates as
-// CI, has a different model (Muse Code) review the diff, and only then commits and
-// fast-forwards main. Progress goes to data/auto/state.json, which `pnpm progress` shows live.
+// CI, has a fresh read-only Claude Code session review the diff, and only then commits and
+// fast-forwards main. Meta's models run inside Lente, not in the lane that builds it. Progress goes to data/auto/state.json, which `pnpm progress` shows live.
 //
 //   pnpm auto                  run until nothing is ready or the budget is spent
 //   pnpm auto --dry-run        show the bench and the ready nodes; change nothing
@@ -31,6 +31,7 @@ const LINKED_SECRETS = [".env", "firmware/lente-clip/secrets.h", "firmware/selft
 const FIX_ROUNDS = 2;
 const WATCH_MS = 10 * 60_000;
 const REVIEW_TIMEOUT_MS = 10 * 60_000;
+const REVIEW_BUDGET_USD = 1.5;
 const ACTIVITY_KEPT = 60;
 const HISTORY_KEPT = 50;
 const DIFF_MAX_CHARS = 120_000;
@@ -89,8 +90,8 @@ function note(text: string): void {
 // ---------- shell helpers ----------
 
 type Run = { ok: boolean; out: string; stdout: string };
-function sh(cmd: string, args: string[], cwd = LANE, timeoutMs = 10 * 60_000): Run {
-  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, FORCE_COLOR: "0" } });
+function sh(cmd: string, args: string[], cwd = LANE, timeoutMs = 10 * 60_000, input?: string, env: NodeJS.ProcessEnv = process.env): Run {
+  const r = spawnSync(cmd, args, { cwd, input, encoding: "utf8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: { ...env, FORCE_COLOR: "0" } });
   return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}${r.error ? `\n${r.error.message}` : ""}`, stdout: r.stdout ?? "" };
 }
 const tail = (s: string, n = TAIL_LINES) => s.trim().split("\n").slice(-n).join("\n");
@@ -279,13 +280,13 @@ function gates(change: string, base: string): { ok: boolean; failure?: string } 
   return { ok: true };
 }
 
-type Review = { verdict: "approve" | "changes" | "skipped"; blocking: { file?: string; line?: number; issue: string }[]; notes?: string[] | string };
+type Review = { verdict: "approve" | "changes" | "skipped"; blocking: { file?: string; line?: number; issue: string }[]; notes?: string[] | string; costUsd?: number };
 
-function review(node: Node, base: string, build: BuildResult | undefined): Review {
+function review(node: Node, base: string, build: BuildResult | undefined, env: NodeJS.ProcessEnv): Review {
   git(["add", "-A", "--intent-to-add"]);
   let diff = git(["diff", base]).out;
   if (diff.length > DIFF_MAX_CHARS) diff = `${git(["diff", "--stat", base]).out}\n(diff truncated)\n${diff.slice(0, DIFF_MAX_CHARS)}`;
-  const prompt = `You review a change another AI agent (Claude Code) made to Lente, a meeting assistant (clip on glasses → Node hub → phone). You are the second model: catch what the author missed. Read CLAUDE.md for the hard rules. You may open files in this workspace to check context.
+  const prompt = `You review a change another AI agent (Claude Code) made to Lente, a meeting assistant (clip on glasses → Node hub → phone). You are the second reviewer, with none of the author's context: catch what the author missed. Read CLAUDE.md for the hard rules. You may open files in this workspace to check context.
 
 Task group: \`${node.change}\` / "${node.group}":
 ${node.tasks.map((t) => `- ${t.id} ${t.text}`).join("\n")}
@@ -300,13 +301,15 @@ Reply with only this JSON, nothing else:
 
 The diff:
 ${diff}`;
-  const file = join(tmpdir(), `lente-review-${process.pid}.txt`);
-  writeFileSync(file, prompt);
-  note("review: Muse Code reads the diff");
-  const r = sh("muse", ["exec", "--contributor-mode", "off", "--prompt-file", file, "--workspace", LANE], LANE, REVIEW_TIMEOUT_MS);
-  const v = lastJsonWith<Review>(r.stdout, "verdict") ?? lastJsonWith<Review>(r.out, "verdict");
-  if (v && (v.verdict === "approve" || v.verdict === "changes")) return { ...v, blocking: v.blocking ?? [] };
-  return { verdict: "skipped", blocking: [], notes: [`Muse Code gave no verdict${r.ok ? "" : ` (exit: ${tail(r.out, 3)})`}`] };
+  note("review: a fresh Claude Code session reads the diff");
+  const args = ["-p", "--output-format", "json", "--permission-mode", "plan", "--max-budget-usd", String(REVIEW_BUDGET_USD)];
+  if (opt.model) args.push("--model", opt.model);
+  const r = sh("claude", args, LANE, REVIEW_TIMEOUT_MS, prompt, env); // the prompt goes in on stdin: a long diff can pass ARG_MAX
+  const final = lastJsonWith<{ result?: string; total_cost_usd?: number }>(r.stdout, "total_cost_usd");
+  const costUsd = Number(final?.total_cost_usd ?? 0);
+  const v = lastJsonWith<Review>(final?.result ?? "", "verdict");
+  if (v && (v.verdict === "approve" || v.verdict === "changes")) return { ...v, blocking: v.blocking ?? [], costUsd };
+  return { verdict: "skipped", blocking: [], notes: [`the reviewer gave no verdict${r.ok ? "" : ` (exit: ${tail(r.out, 3)})`}`], costUsd };
 }
 
 // ---------- one node, end to end ----------
@@ -340,10 +343,12 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
     let problem = g.failure;
     if (!problem) {
       save({ status: "review" });
-      lastReview = review(node, base, run.result);
+      lastReview = review(node, base, run.result, env);
+      costUsd += lastReview.costUsd ?? 0;
+      state.spentUsd += lastReview.costUsd ?? 0;
       note(`review: ${lastReview.verdict}${lastReview.blocking.length ? `, ${lastReview.blocking.length} blocking` : ""}`);
       if (lastReview.verdict === "changes" && lastReview.blocking.length) {
-        problem = `A second model (Muse Code) reviewed the diff and found blocking issues:\n${lastReview.blocking.map((b) => `- ${b.file ?? ""}${b.line ? `:${b.line}` : ""} ${b.issue}`).join("\n")}\nFix what is right; if an issue is wrong, explain why in your notes.`;
+        problem = `A second reviewer (a fresh Claude Code session) read the diff and found blocking issues:\n${lastReview.blocking.map((b) => `- ${b.file ?? ""}${b.line ? `:${b.line}` : ""} ${b.issue}`).join("\n")}\nFix what is right; if an issue is wrong, explain why in your notes.`;
       }
     }
     if (!problem) break;
@@ -362,7 +367,7 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
   const forbidden = staged.split("\n").filter((f) => /(^|\/)\.env(\.|$)(?!example)|secrets\.h$|^data\/|^recordings\/|\.(wav|pcm)$/.test(f));
   if (forbidden.length) return fail(`refused to commit protected files: ${forbidden.join(", ")}`);
 
-  const reviewLine = lastReview ? `Review (Muse Code): ${lastReview.verdict}${lastReview.notes ? ` · ${[lastReview.notes].flat().join(" · ")}` : ""}` : "";
+  const reviewLine = lastReview ? `Review (fresh Claude Code session): ${lastReview.verdict}${lastReview.notes ? ` · ${[lastReview.notes].flat().join(" · ")}` : ""}` : "";
   const message = commitMessage(run.result, `${node.change}: ${node.group}`, `Auto lane node: ${node.change} / ${node.group}`, reviewLine, CO_AUTHOR);
   const msgFile = join(tmpdir(), `lente-commit-${process.pid}.txt`);
   writeFileSync(msgFile, message);

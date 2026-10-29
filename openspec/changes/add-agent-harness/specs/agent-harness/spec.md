@@ -30,11 +30,11 @@ A session that changed files under `src/`, `test/` or `scripts/` SHALL NOT end w
 - **WHEN** the agent tries to finish with a failing test
 - **THEN** it receives the failing output and keeps working
 
-### Requirement: Every node is checked by CI's gates and a second model
-`pnpm auto` SHALL build one node at a time in its own worktree, then run typecheck, tests, OpenSpec validation, the end-to-end smoke test and, when firmware changed, the firmware builds. A different model (Muse Code, standard mode) SHALL then review the diff. Failed checks or blocking findings SHALL go back to the builder for at most two fix rounds.
+### Requirement: Every node is checked by CI's gates and a second reviewer
+`pnpm auto` SHALL build one node at a time in its own worktree, then run typecheck, tests, OpenSpec validation, the end-to-end smoke test and, when firmware changed, the firmware builds. A second reviewer SHALL then review the diff: a fresh, read-only Claude Code session with no context from the builder. Failed checks or blocking findings SHALL go back to the builder for at most two fix rounds.
 
 #### Scenario: The reviewer finds a bug
-- **WHEN** Muse Code reports a blocking issue
+- **WHEN** the reviewer reports a blocking issue
 - **THEN** the builder gets the issue in a fix round and the gates run again before any commit
 
 ### Requirement: Only checked work is merged
