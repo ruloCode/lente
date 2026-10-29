@@ -1,5 +1,7 @@
 // One live Muse Voice Transcribe stream in DIARIZATION mode. Reconnects on its
-// own until stopped, since sessions end at 60 minutes or on backend hiccups.
+// own until stopped, since sessions end at 60 minutes or on backend hiccups. A session
+// the service closes after a quiet spell (the silence gate sent nothing) stays closed
+// until `resume()`, so silence doesn't keep reopening it.
 
 import { StreamMap } from "./clip-protocol.ts";
 import { META_REALTIME_URL, TRANSCRIBE_MODEL } from "./providers.ts";
@@ -23,6 +25,8 @@ export interface AsrHandlers {
   onStatus(status: string): void;
   /** Labels are reassigned whenever a session (re)starts. */
   onSessionStart?(): void;
+  /** The service closed the session after nothing was sent for a while; it reopens on `resume()`. */
+  onIdleClose?(): void;
 }
 
 interface ServerMessage {
@@ -36,7 +40,10 @@ interface ServerMessage {
   message?: string;
 }
 
-const MAX_QUEUED_FRAMES = 25;
+/** Room for the gate's pre-roll plus the audio that arrives while a session opens. */
+const MAX_QUEUED_FRAMES = 50;
+/** A close this long after the last frame sent counts as the service closing an idle session. */
+const IDLE_CLOSE_MS = 1000;
 
 /** Spanish first: the wearer's language. A bias is only a hint, so English meetings stay English. */
 export const DEFAULT_LANGUAGE_BIAS = ["Spanish", "English"];
@@ -62,6 +69,7 @@ export class AsrSession {
   private ws: WebSocket | undefined;
   private ready = false;
   private stopped = false;
+  private lastSentAt = 0;
   private queue: { pcm: Buffer; sessionMs: number }[] = [];
   private streamMap = new StreamMap(FRAME_MS);
   private startedAt = new Map<string, number>();
@@ -96,6 +104,13 @@ export class AsrSession {
       this.ready = false;
       // A stopped session closing late must not overwrite the status of the one that replaced it.
       if (this.stopped || this.ws !== ws) return;
+      if (this.handlers.onIdleClose && Date.now() - this.lastSentAt >= IDLE_CLOSE_MS) {
+        this.ws = undefined;
+        this.queue = [];
+        this.handlers.onStatus("listening · nothing sent in silence");
+        this.handlers.onIdleClose();
+        return;
+      }
       this.handlers.onStatus(`transcription closed (${event.code}${event.reason ? ` ${event.reason}` : ""})`);
       // 1008 means bad config or pacing: retrying as-is won't help quickly, so back off.
       const delay = event.code === 1013 || event.code === 1008 ? 5000 : 1000;
@@ -106,6 +121,7 @@ export class AsrSession {
 
   /** `sessionMs` is where this frame starts in the session audio, so turns can be placed on it. */
   send(pcm: Buffer, sessionMs: number): void {
+    this.lastSentAt = Date.now();
     if (this.ready && this.ws?.readyState === WebSocket.OPEN) {
       this.deliver(pcm, sessionMs);
       return;
@@ -117,6 +133,13 @@ export class AsrSession {
   private deliver(pcm: Buffer, sessionMs: number): void {
     this.streamMap.record(sessionMs);
     this.ws?.send(pcm);
+  }
+
+  /** Opens a session if none is open or opening (the first speech, or speech after an idle close). */
+  resume(): void {
+    if (this.stopped || this.ws) return;
+    this.lastSentAt = Date.now();
+    this.start();
   }
 
   stop(): void {

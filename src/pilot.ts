@@ -6,8 +6,11 @@
 // http://<laptop>:8080 and can read everything out loud.
 //
 // Modes: camera + mic, or mic only (the clip powers the camera down to save battery).
-// Listening can be paused. Solo grabar records without cues and splits the day into episodes
-// that get notes like meetings. The day is kept as text in data/days/ (git-ignored).
+// Listening can be paused, and starts paused: the wearer starts it from the phone. While listening,
+// a silence gate sends audio to transcription only around speech, and Lente pauses itself when the
+// wearer has been silent for a while with no meeting open. Today's spend is kept in data/usage.json.
+// Solo grabar records without cues and splits the day into episodes that get notes like meetings.
+// The day is kept as text in data/days/ (git-ignored).
 //
 // Usage: pnpm pilot   (MODEL_API_KEY in .env; ELEVENLABS_API_KEY optional for a natural voice)
 
@@ -36,6 +39,9 @@ import { chatTargets } from "./providers.ts";
 import { ArrivalClock, type Stages, formatStages } from "./stages.ts";
 import { SessionClock, connectEvents } from "./live-session.ts";
 import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
+import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
+import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
+import { type UsageSnapshot, UsageMeter } from "./usage-meter.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
 const WEB_PORT = Number(process.env.PILOT_WEB_PORT ?? 8080);
@@ -61,6 +67,17 @@ const recorded = new RecordedToday(readRecorded());
 /** How often the phone hears the recorded time while audio arrives, and how often it is saved. */
 const RECORDED_PUSH_MS = 1000;
 const RECORDED_SAVE_MS = 10_000;
+/** Lente pauses itself after this long without the wearer speaking (no meeting open). */
+const IDLE_MS = Number(process.env.PILOT_IDLE_MIN ?? IDLE_PAUSE_MIN) * 60_000;
+const IDLE_CHECK_MS = 5000;
+/** The silence gate's speech level and hangover; the rest are GATE_DEFAULTS. */
+const GATE = {
+  minSpeechRms: Number(process.env.PILOT_SPEECH_RMS ?? GATE_DEFAULTS.minSpeechRms),
+  hangoverMs: Number(process.env.PILOT_GATE_HANGOVER_MS ?? GATE_DEFAULTS.hangoverMs),
+};
+const USAGE_FILE = join(DATA_DIR, "usage.json");
+const usage = new UsageMeter(readJson<UsageSnapshot>(USAGE_FILE, "usage"));
+const USAGE_PUSH_MS = 5000;
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
@@ -81,11 +98,15 @@ const SUMMARY_PROMPT =
   "say so in a few words. No preamble, no lists.";
 
 function readRecorded(): Partial<RecordedSnapshot> | undefined {
-  if (!existsSync(RECORDED_FILE)) return undefined;
+  return readJson<RecordedSnapshot>(RECORDED_FILE, "recorded");
+}
+
+function readJson<T>(file: string, tag: string): Partial<T> | undefined {
+  if (!existsSync(file)) return undefined;
   try {
-    return JSON.parse(readFileSync(RECORDED_FILE, "utf8")) as Partial<RecordedSnapshot>;
+    return JSON.parse(readFileSync(file, "utf8")) as Partial<T>;
   } catch (error) {
-    console.error(`[recorded] could not read ${RECORDED_FILE}: ${(error as Error).message}`);
+    console.error(`[${tag}] could not read ${file}: ${(error as Error).message}`);
     return undefined;
   }
 }
@@ -103,14 +124,39 @@ function saveRecorded(): void {
 
 const recordedEvent = () => ({ kind: "recorded", ms: recorded.total() });
 
+let usageSavedAt = 0;
+let usageChanged = false;
+function saveUsage(): void {
+  usageSavedAt = Date.now();
+  usageChanged = false;
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(USAGE_FILE, JSON.stringify(usage.snapshot()) + "\n");
+  } catch (error) {
+    console.error(`[usage] could not save ${USAGE_FILE}: ${(error as Error).message}`);
+  }
+}
+
+/** Today's seconds sent, tokens per model and approximate US$, for "Hoy" on the phone. */
+const spendEvent = () => ({ kind: "spend", ...usage.today() });
+
+setInterval(() => {
+  if (!usageChanged) return;
+  broadcast(spendEvent());
+  if (Date.now() - usageSavedAt >= RECORDED_SAVE_MS) saveUsage();
+}, USAGE_PUSH_MS);
+
 // --- State shared with the phone ----------------------------------------------------------
 
 type Mode = "camera" | "mic";
+/** Why listening is off: not started since boot, paused or stopped from the phone, or idle. */
+type Pause = { reason: "start" | "manual" } | { reason: "idle"; at: number; basis: "wearer" | "anyone"; /** The idle time that ran out. */ min: number };
 let status = {
   kind: "status",
   clip: false,
   mode: "mic" as Mode,
-  listening: true,
+  listening: false,
+  pause: { reason: "start" } as Pause | null,
   live: false,
   voice: elevenKey ? "elevenlabs" : "device",
   audioLost: 0,
@@ -215,6 +261,9 @@ async function callSpark(messages: ChatMessage[], opts: { label: string; extra?:
       const done = opts.stream ? await streamResponse(target, messages, { maxTokens }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
       sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
       broadcast({ kind: "usage", label: opts.label, model: target.id, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
+      usage.addCall(target.model, { input: done.promptTokens, cached: done.cachedTokens, output: done.completionTokens });
+      usageChanged = true;
+      broadcast(spendEvent());
       return { text: done.text, askedAt, firstTokenAt: done.ttftMs === undefined ? undefined : askedAt + Math.round(done.ttftMs) };
     } catch (error) {
       lastError = error;
@@ -638,12 +687,15 @@ function setEveryQuestion(on: boolean): void {
   setStatus({ everyQuestion: on });
 }
 
-function setListening(on: boolean): void {
-  setStatus({ listening: on });
+function setListening(on: boolean, pause: Pause = { reason: "manual" }): void {
+  if (on && !status.listening) idle.start(Date.now());
+  setStatus({ listening: on, pause: on ? null : pause });
   device?.write(on ? "M" : "m");
   if (!on) {
     saveRecorded();
     broadcast(recordedEvent());
+    saveUsage();
+    broadcast(spendEvent());
   }
   if (on) startAsr();
   else {
@@ -658,6 +710,26 @@ function stopSession(): void {
   setListening(false);
   void endMeeting("manual");
 }
+
+// --- Idle auto-pause: the wearer silent for IDLE_MS with no meeting open --------------------------
+
+const idle = new IdleWatch(IDLE_MS);
+/** When each speaker label of this transcription session last spoke, for a wearer identified late. */
+const lastSpokeBy = new Map<string, number>();
+
+function heard(speaker: string | undefined, at: number): void {
+  if (speaker !== undefined) lastSpokeBy.set(speaker, Math.max(lastSpokeBy.get(speaker) ?? 0, at));
+  idle.heard(at, speaker !== undefined && speaker === wearerTracker.wearer());
+}
+
+setInterval(() => {
+  if (!status.listening || !device) return;
+  const why = idle.check(Date.now(), { wearerKnown: wearerTracker.wearer() !== undefined, meetingOpen: current !== undefined && !current.auto });
+  if (!why) return;
+  const min = IDLE_MS / 60_000;
+  console.log(`[idle] paused: ${Math.round(why.silentMs / 1000)} s without ${why.basis === "wearer" ? "the wearer speaking" : "anyone speaking"}`);
+  setListening(false, { reason: "idle", at: Date.now(), basis: why.basis, min });
+}, IDLE_CHECK_MS);
 
 // --- The clip ------------------------------------------------------------------------------------
 
@@ -678,6 +750,9 @@ const BYTES_PER_MS = FRAME_BYTES / FRAME_MS;
 function syncWearer(): void {
   const label = wearerTracker.wearer() ?? "";
   if (label !== status.wearer) {
+    if (label) idle.wearerIdentified();
+    const spoke = lastSpokeBy.get(label);
+    if (spoke !== undefined) idle.heard(spoke, true);
     setStatus({ wearer: label });
     console.log(`[wearer] ${label ? `speaker ${label} is the wearer` : "not identified"}`);
   }
@@ -685,15 +760,18 @@ function syncWearer(): void {
 
 function startAsr(): void {
   if (!key || !device || !status.listening || asr) return;
-  setStatus({ asr: "connecting to Muse Voice Transcribe…" });
+  setStatus({ asr: "listening · nothing sent in silence" });
+  const gate = new SilenceGate<{ pcm: Buffer; sessionMs: number }>({ frameMs: FRAME_MS, ...GATE });
   const session = new AsrSession(key, {
     onStatus: (s) => setStatus({ asr: s }),
+    onIdleClose: () => gate.closed(),
     onPartial: (text) => {
       latestPartial = text;
       broadcast({ kind: "partial", text });
     },
     onSessionStart: () => {
       speakerOfTurn.clear();
+      lastSpokeBy.clear();
       meetingTurns.clear();
       wearerTracker.reset();
       syncWearer();
@@ -703,6 +781,7 @@ function startAsr(): void {
       broadcast({ kind: "speaker", turnId, speaker });
       wearerTracker.noteSpeaker(turnId, speaker);
       syncWearer();
+      heard(speaker, Date.now());
     },
     onTurn: (turn) => {
       latestPartial = "";
@@ -712,6 +791,7 @@ function startAsr(): void {
       if (isEnrollment(turn.text, profile.names)) wearerTracker.noteEnrollment(turn.turnId);
       if (turn.speaker !== undefined) wearerTracker.noteSpeaker(turn.turnId, turn.speaker);
       syncWearer();
+      heard(turn.speaker ?? speakerOfTurn.get(turn.turnId), Date.now());
       const question = isQuestion(turn.text);
       if (profile.assistMode === "record" && !current) startMeeting("", true);
       const anchor =
@@ -732,11 +812,18 @@ function startAsr(): void {
     },
   });
   asr = session;
-  session.start();
-  // Feed transcription on a steady clock so Wi-Fi bursts never look like a stall.
+  // Take audio on a steady clock so Wi-Fi bursts never look like a stall; the gate passes only
+  // what is around speech, and opens a session on the first speech (again after an idle close).
   pacer = setInterval(() => {
-    const startMs = jitter.consumedMs;
-    session.send(jitter.take(), startMs);
+    const sessionMs = jitter.consumedMs;
+    const pcm = jitter.take();
+    const step = gate.push({ pcm, sessionMs }, rms(pcm));
+    if (step.reopen) session.resume();
+    for (const f of step.send) session.send(f.pcm, f.sessionMs);
+    if (step.send.length) {
+      usage.addAudio((step.send.length * FRAME_MS) / 1000);
+      usageChanged = true;
+    }
   }, FRAME_MS);
 }
 
@@ -841,6 +928,7 @@ const tcp = createTcpServer((socket) => {
     device = undefined;
     liveBusySince = 0;
     saveRecorded();
+    saveUsage();
     setStatus({ clip: false, asr: key ? "waiting for the clip…" : status.asr });
     console.log("[clip] disconnected");
   });
@@ -913,7 +1001,7 @@ const web = createHttpServer(async (req, res) => {
       res.end(PILOT_PAGE);
     } else if (req.method === "GET" && req.url === "/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), recordedEvent()] });
+      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), recordedEvent(), spendEvent()] });
       for (const event of events) res.write(`data: ${JSON.stringify(event)}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));

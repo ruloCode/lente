@@ -1,5 +1,7 @@
 // End-to-end smoke test, no keys needed: clip emulator → real hub → stubbed Meta API, with this
-// script as the phone. Passes when the phone sees the clip connect, the turn, and a DILO with
+// script as the phone. The hub starts paused: the clip connects, nothing reaches transcription,
+// and the phone starts listening; after a silence long enough for the service to close the session,
+// speech opens a new one and is transcribed again. Passes when the phone sees the clip connect, the turn, and a DILO with
 // every stage timed (delivery included); a second phone that connects mid-sentence catches up on
 // the session and the partial; and help on demand answers in Asistir and is refused in Solo
 // grabar. Runs in CI on every push.
@@ -16,14 +18,22 @@ import { STUB_QUESTION, STUB_REPLY, startStubMeta } from "./stub-meta.ts";
 
 const DEVICE_PORT = 7074;
 const WEB_PORT = 8084;
-const AUDIO_S = 4;
+/** Syllables, then silence long enough for the stub to close the idle session, then syllables again. */
+const AUDIO_S = 6;
+const SILENCE_S = 6;
+const AGAIN_S = 4;
+/** How long the clip stays connected and paused before the phone starts listening. */
+const PAUSED_MS = 1000;
 const TIMEOUT_MS = 45_000;
 const started = performance.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A quiet 220 Hz tone: the stub transcribes the same question whatever it hears. */
-function writeToneWav(path: string, seconds: number): void {
-  const samples = 16000 * seconds;
+/**
+ * A quiet 220 Hz tone in 250 ms syllables: the stub transcribes the same question whatever it hears,
+ * and the gaps let the silence gate tell it from a steady noise such as a fan.
+ */
+function writeToneWav(path: string, voicedS: number, silentS: number, againS: number): void {
+  const samples = 16000 * (voicedS + silentS + againS);
   const wav = Buffer.alloc(44 + samples * 2);
   wav.write("RIFF", 0);
   wav.writeUInt32LE(36 + samples * 2, 4);
@@ -37,7 +47,11 @@ function writeToneWav(path: string, seconds: number): void {
   wav.writeUInt16LE(16, 34);
   wav.write("data", 36);
   wav.writeUInt32LE(samples * 2, 40);
-  for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(800 * Math.sin((2 * Math.PI * 220 * i) / 16000)), 44 + i * 2);
+  const syllable = 16000 / 4;
+  for (let i = 0; i < samples; i++) {
+    const voiced = i % (2 * syllable) < syllable && (i < 16000 * voicedS || i >= 16000 * (voicedS + silentS));
+    wav.writeInt16LE(voiced ? Math.round(800 * Math.sin((2 * Math.PI * 220 * i) / 16000)) : 0, 44 + i * 2);
+  }
   writeFileSync(path, wav);
 }
 
@@ -58,7 +72,7 @@ function finish(failure?: string): never {
   process.exit(0);
 }
 
-const timeout = setTimeout(() => finish(`no DILO with every stage within ${TIMEOUT_MS / 1000} s`), TIMEOUT_MS);
+const timeout = setTimeout(() => finish(`not every check passed within ${TIMEOUT_MS / 1000} s`), TIMEOUT_MS);
 
 // Only stub addresses and a dummy key: the smoke test must never reach a real API.
 const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME };
@@ -137,7 +151,18 @@ async function checkHelp(): Promise<void> {
   if (stub.requests.length !== calls) finish("help in Solo grabar called the model");
 }
 
-const seen = { clip: false, turn: false, cue: false, catchUp: false, helpCard: false };
+/** The silence closed the session; the next speech opened a new one and was transcribed. */
+async function reopened(): Promise<void> {
+  for (let waited = 0; seen.turns < 2; waited += 100) {
+    if (waited > 20_000) finish(`no turn after the silence (session closed in silence: ${seen.idleClosed})`);
+    await sleep(100);
+  }
+  if (!seen.idleClosed) finish("the second turn came without the idle session closing first");
+  const sessions = stub.requests.filter((r) => r.startsWith("UPGRADE")).length;
+  if (sessions !== 2) finish(`expected 2 transcription sessions (one per stretch of speech), the stub saw ${sessions}`);
+}
+
+const seen = { clip: false, turn: false, cue: false, catchUp: false, helpCard: false, spend: false, idleClosed: false, turns: 0 };
 let catchingUp: Promise<void> | undefined;
 
 /** After the DILO's stages: the second phone caught up, then help on demand. */
@@ -146,15 +171,34 @@ async function finale(): Promise<never> {
   const missing = (["clip", "turn", "cue", "catchUp"] as const).filter((k) => !seen[k]);
   if (missing.length) finish(`stages arrived before ${missing.join(", ")}`);
   await checkHelp();
+  if (!seen.spend) finish("the phone never saw today's spend with audio sent and the DILO's tokens");
+  await reopened();
   clearTimeout(timeout);
   finish();
 }
 
+/** Started paused, the clip on: no transcription session until the phone starts listening. */
+async function startFromPhone(first: Record<string, any>): Promise<void> {
+  if (first.listening || first.pause?.reason !== "start") finish(`the hub booted with listening=${first.listening}, pause=${JSON.stringify(first.pause)}`);
+  await sleep(PAUSED_MS);
+  if (stub.requests.some((r) => r.startsWith("UPGRADE"))) finish("a clip connecting started transcription while paused");
+  await fetch(`${web}/listen/on`, { method: "POST" });
+}
+
 void (async () => {
   for await (const m of events()) {
-    if (m.kind === "status" && m.clip) seen.clip = true;
+    if (m.kind === "status" && m.clip && !seen.clip) {
+      seen.clip = true;
+      void startFromPhone(m);
+    }
+    // Today's spend: the audio the gate sent and the DILO call's tokens, priced.
+    if (m.kind === "spend" && m.audioSeconds > 0 && m.models?.["muse-spark-1.3"]?.output > 0 && m.usd > 0) seen.spend = true;
     if (m.kind === "partial" && !catchingUp) catchingUp = catchUp(m.text).then(() => void (seen.catchUp = true));
-    if (m.kind === "turn" && m.text === STUB_QUESTION) seen.turn = true;
+    if (m.kind === "turn" && m.text === STUB_QUESTION) {
+      seen.turn = true;
+      seen.turns++;
+    }
+    if (m.kind === "status" && seen.turn && m.asr === "listening · nothing sent in silence") seen.idleClosed = true;
     if (m.kind === "cue" && m.label === "Pregunta") seen.helpCard = true;
     if (m.kind === "cue" && m.label === "DILO") {
       if (m.text !== STUB_REPLY) finish(`the DILO says "${m.text}", expected the stub's reply`);
@@ -171,6 +215,6 @@ void (async () => {
 })().catch((error) => finish(`event stream: ${(error as Error).message}`));
 
 const wav = join(scratch, "tone.wav");
-writeToneWav(wav, AUDIO_S);
+writeToneWav(wav, AUDIO_S, SILENCE_S, AGAIN_S);
 const clip = spawn(process.execPath, ["scripts/fake-clip.ts", wav, "--port", String(DEVICE_PORT), "--linger-ms", "20000"], { env, stdio: "ignore" });
 children.push(clip);

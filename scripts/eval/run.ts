@@ -152,6 +152,8 @@ async function replay(d: Dialogue): Promise<DialogueRun> {
   try {
     await post("/profile", { names: d.names.join(", ") });
     if (values["record-only"]) await post("/assist-mode/record");
+    // The hub starts paused; the phone starts listening before the clip connects.
+    await post("/listen/on");
     const clip = runClip(hub, wav);
     const t0 = await clip.connectedAt;
     await clip.done;

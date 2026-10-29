@@ -1,6 +1,7 @@
 // A stand-in for the Meta API, for the CI smoke test: no key, no network, same wire formats as
 // the real one (docs/kb/meta-api.md). Realtime transcription hears one scripted question once
-// enough audio has arrived, whatever the audio is; Spark answers with a fixed streamed line.
+// enough audio has arrived, whatever the audio is, and closes a session that stops getting audio
+// (the real one closes below real time with 1008); Spark answers with a fixed streamed line.
 
 import { type IncomingMessage, type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -12,6 +13,8 @@ export const STUB_REPLY = "Yes, Friday works if QA signs off Thursday.";
 const BYTES_PER_MS = 32; // 16 kHz PCM16 mono
 const SPEECH_START_MS = 400;
 const SPEECH_END_MS = 2400;
+/** A session with no audio for this long is closed with 1008, as the real service does below real time. */
+const IDLE_CLOSE_MS = 2000;
 
 function sse(res: import("node:http").ServerResponse, events: object[]): void {
   res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -26,6 +29,9 @@ function transcribe(socket: Duplex): void {
   let configured = false;
   let processedMs = 0;
   let stage = 0;
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  const closeIdle = () => socket.end(encodeFrame(OPCODE.close, Buffer.from([0x03, 0xf0])));
+  socket.on("close", () => clearTimeout(idle));
   socket.on("data", (chunk: Buffer) => {
     let messages;
     try {
@@ -45,6 +51,8 @@ function transcribe(socket: Duplex): void {
         } else if (msg.type === "endStream") socket.end(encodeFrame(OPCODE.close, Buffer.from([0x03, 0xe8])));
       }
       if (m.opcode === OPCODE.binary && configured) {
+        clearTimeout(idle);
+        idle = setTimeout(closeIdle, IDLE_CLOSE_MS);
         processedMs += m.payload.length / BYTES_PER_MS;
         if (stage === 0 && processedMs >= SPEECH_START_MS) {
           stage = 1;

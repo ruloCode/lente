@@ -25,15 +25,23 @@ While listening, the hub SHALL send audio to transcription only around speech: i
 - **THEN** the first words are transcribed, including the pre-roll before the level rose
 
 ### Requirement: Idle auto-pause
-With no meeting open, when the wearer has not spoken for the idle time (default 20 minutes, configurable), the hub SHALL pause listening and record why. When the hub does not know which speaker is the wearer, it SHALL use the time since anything was said.
+With no meeting started by hand open, when the wearer has not spoken for the idle time (default 20 minutes, configurable), the hub SHALL pause listening and record why in its status. When the hub has not identified the wearer during this listening run, it SHALL use the time since anything was said.
 
 #### Scenario: TV in the background
 - **WHEN** a TV talks for 20 minutes and the wearer says nothing, with no meeting open
 - **THEN** Lente pauses itself and the status says it paused for inactivity
 
+#### Scenario: TV after a pause in the transcription session
+- **WHEN** the wearer was identified, a silence closed the transcription session, and only a TV talks for the next 20 minutes
+- **THEN** Lente still goes by the wearer's silence and pauses itself
+
 #### Scenario: Meeting open
 - **WHEN** a meeting is open and the wearer has been silent for 30 minutes
 - **THEN** Lente keeps listening
+
+#### Scenario: Solo grabar episode
+- **WHEN** Solo grabar opened an episode on its own because a TV talks, and the wearer has been silent for 20 minutes
+- **THEN** Lente pauses itself, since only a meeting started by hand keeps it listening
 
 ### Requirement: Usage meter
 The hub SHALL count, per local day, the seconds of audio sent to transcription and the input, cached and output tokens per model, SHALL price them with the list prices recorded in `docs/kb/meta-api.md`, and SHALL keep the totals in `data/usage.json` as numbers only.
