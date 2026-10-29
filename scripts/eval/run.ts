@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { TRANSCRIBE_MODEL, chatTargets } from "../../src/providers.ts";
 import { SseParser } from "../../src/sse.ts";
+import type { StageName, Stages } from "../../src/stages.ts";
 import { type RawCue, type RawTurn, type RawUsage, type Summary, matchLines, spread, summarize, type LineResult, type Spread } from "./metrics.ts";
 import { SET_FILE, labelCounts, validateSet, type Dialogue, type LineTiming } from "./set.ts";
 
@@ -79,7 +80,10 @@ async function startHub(name: string): Promise<Hub> {
     for await (const chunk of res.body!) {
       for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
         try {
-          events.push({ at: performance.now(), msg: JSON.parse(payload) });
+          const msg = JSON.parse(payload);
+          events.push({ at: performance.now(), msg });
+          // Acknowledge cards like the phone does, so the hub times delivery.
+          if ((msg.kind === "cue" || msg.kind === "live") && typeof msg.id === "string") void post("/seen", { id: msg.id });
         } catch {
           // keep-alive or partial payload
         }
@@ -132,6 +136,8 @@ interface DialogueRun {
   turns: number;
   cues: number;
   models: string[];
+  /** Stage timings of the cards, with the phone stage from the acknowledgement. */
+  stages: Stages[];
 }
 
 async function replay(d: Dialogue): Promise<DialogueRun> {
@@ -150,11 +156,14 @@ async function replay(d: Dialogue): Promise<DialogueRun> {
     const cues: RawCue[] = [];
     const usage: RawUsage[] = [];
     const models = new Set<string>();
+    const stages: Stages[] = [];
+    const acknowledged = new Map(hub.events.filter((e) => e.msg.kind === "stages").map((e) => [e.msg.id, e.msg.stages as Stages]));
     for (const { at, msg } of hub.events) {
       if (msg.kind === "turn" && msg.turnId !== undefined && typeof msg.audioStartMs === "number") {
         turns.push({ turnId: String(msg.turnId), startMs: msg.audioStartMs, endMs: msg.audioEndMs, atMs: at - t0, text: msg.text, speaker: msg.speaker });
       } else if (msg.kind === "cue" && msg.label === "DILO" && msg.turnId !== undefined) {
         cues.push({ turnId: String(msg.turnId), atMs: at - t0, modelMs: msg.ms });
+        if (msg.stages) stages.push(acknowledged.get(msg.id) ?? msg.stages);
       } else if (msg.kind === "usage") {
         usage.push({ label: msg.label, ms: msg.ms, promptTokens: msg.promptTokens, cachedTokens: msg.cachedTokens, completionTokens: msg.completionTokens });
         models.add(msg.model);
@@ -162,7 +171,7 @@ async function replay(d: Dialogue): Promise<DialogueRun> {
     }
     writeFileSync(join(outDir, `${d.id}.events.jsonl`), hub.events.map((e) => JSON.stringify({ atMs: Math.round(e.at - t0), ...e.msg, photo: undefined })).join("\n") + "\n");
     const { lines: results, mergedTurns } = matchLines(d, timings, turns, cues);
-    return { id: d.id, results, mergedTurns, usage, turns: turns.length, cues: cues.length, models: [...models] };
+    return { id: d.id, results, mergedTurns, usage, turns: turns.length, cues: cues.length, models: [...models], stages };
   } finally {
     await hub.stop();
   }
@@ -238,6 +247,15 @@ function markdown(date: string, set: Dialogue[], s: Summary, vision: VisionRun |
     ["Vision (Look → card)", vision ? `${sec(vision.roundTrip.p50)} / ${sec(vision.roundTrip.p95)}` : "not run", vision ? `${vision.answered} of ${vision.requests}; model ${sec(vision.modelMs.p50)} / ${sec(vision.modelMs.p95)}` : ""],
     ["Tokens per meeting", `${s.tokensPerMeeting.prompt} in (${s.tokensPerMeeting.cached} cached) / ${s.tokensPerMeeting.completion} out`, `${s.tokensPerMeeting.calls} model calls`],
   ];
+  const STAGE_ROWS: [StageName, string][] = [
+    ["turn", "Transcription (last audio at the hub → turn)"],
+    ["asked", "Speaker label and addressing (turn → reply requested)"],
+    ["firstToken", "Model first token"],
+    ["done", "Rest of the reply"],
+    ["sent", "Hub (reply → event stream)"],
+    ["phone", "Delivery (event stream → phone's acknowledgement at the hub)"],
+  ];
+  const stageRows = STAGE_ROWS.filter(([k]) => s.stages[k]).map(([k, name]) => `| ${name} | ${sec(s.stages[k]!.p50)} / ${sec(s.stages[k]!.p95)} | n=${s.stages[k]!.n} |`);
   return [
     `### Eval run ${date}`,
     "",
@@ -248,6 +266,7 @@ function markdown(date: string, set: Dialogue[], s: Summary, vision: VisionRun |
     "|---|---|---|",
     ...rows.map((r) => `| ${r.join(" | ")} |`),
     "",
+    ...(stageRows.length ? ["Where the cue time goes, stage by stage:", "", "| Stage | p50 / p95 | Cues |", "|---|---|---|", ...stageRows, ""] : []),
   ].join("\n");
 }
 
@@ -267,7 +286,7 @@ const vision = await measureVision(values.only ? 0 : Number(values.vision));
 const summary = summarize(runs);
 const models = [...new Set(runs.flatMap((r) => r.models))];
 const date = new Date().toISOString().slice(0, 10);
-writeFileSync(join(outDir, "summary.json"), JSON.stringify({ date, models, summary, vision, dialogues: runs.map(({ id, results, mergedTurns, usage }) => ({ id, results, mergedTurns, usage })) }, null, 1) + "\n");
+writeFileSync(join(outDir, "summary.json"), JSON.stringify({ date, models, summary, vision, dialogues: runs.map(({ id, results, mergedTurns, usage, stages }) => ({ id, results, mergedTurns, usage, stages })) }, null, 1) + "\n");
 const md = markdown(date, set, summary, vision, models);
 writeFileSync(join(outDir, "summary.md"), md);
 console.log("\n" + md);

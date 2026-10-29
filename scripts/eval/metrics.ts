@@ -1,6 +1,7 @@
 // Turning what a replay recorded into numbers. Pure: the runner collects the events, this
 // matches them to the labelled lines and computes latencies and addressing scores.
 
+import { STAGE_ORDER, type StageName, type Stages, stageGaps } from "../../src/stages.ts";
 import type { Dialogue, LineTiming } from "./set.ts";
 
 /** A turn the hub reported. `atMs` is when the runner received it, counted from the clip's audio start. */
@@ -152,6 +153,17 @@ export function sumUsage(usage: RawUsage[]): Tokens {
   );
 }
 
+/** Time spent reaching each stage, pooled over cues, so the slow stage of a run stands out. */
+export function stageSpreads(all: Stages[]): Partial<Record<StageName, Spread>> {
+  const gaps = all.flatMap(stageGaps);
+  const out: Partial<Record<StageName, Spread>> = {};
+  for (const stage of STAGE_ORDER) {
+    const values = gaps.filter((g) => g.stage === stage).map((g) => g.ms);
+    if (values.length) out[stage] = spread(values);
+  }
+  return out;
+}
+
 export interface Summary {
   dialogues: number;
   scores: Scores;
@@ -160,10 +172,12 @@ export interface Summary {
   modelMs: Spread;
   mergedTurns: number;
   tokensPerMeeting: Tokens;
+  /** Per-stage time of the cues (see src/stages.ts). */
+  stages: Partial<Record<StageName, Spread>>;
 }
 
 /** Everything from several dialogues at once; latencies are pooled, tokens are averaged per meeting. */
-export function summarize(runs: { results: LineResult[]; mergedTurns: number; usage: RawUsage[] }[]): Summary {
+export function summarize(runs: { results: LineResult[]; mergedTurns: number; usage: RawUsage[]; stages?: Stages[] }[]): Summary {
   const all = runs.flatMap((r) => r.results);
   const total = sumUsage(runs.flatMap((r) => r.usage));
   const per = (n: number) => (runs.length ? Math.round(n / runs.length) : 0);
@@ -175,5 +189,6 @@ export function summarize(runs: { results: LineResult[]; mergedTurns: number; us
     modelMs: spread(all.flatMap((r) => (r.modelMs === undefined ? [] : [r.modelMs]))),
     mergedTurns: runs.reduce((n, r) => n + r.mergedTurns, 0),
     tokensPerMeeting: { prompt: per(total.prompt), cached: per(total.cached), completion: per(total.completion), calls: per(total.calls) },
+    stages: stageSpreads(runs.flatMap((r) => r.stages ?? [])),
   };
 }

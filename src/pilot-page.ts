@@ -267,6 +267,7 @@ export const PILOT_PAGE = `<!doctype html>
           <span class="label" id="cue-label">DILO</span>
           <div class="text" id="cue-text"></div>
           <span class="meta" id="cue-meta"></span>
+          <span class="meta" id="cue-stages"></span>
         </section>
         <div class="meet" id="meet" data-running="false">
           <input id="meet-title" autocomplete="off" placeholder="Título (opcional)" aria-label="Título de la reunión">
@@ -288,6 +289,7 @@ export const PILOT_PAGE = `<!doctype html>
           <div class="caption" id="caption" hidden>
             <p id="view-text"></p>
             <span class="meta" id="view-meta"></span>
+            <span class="meta" id="view-stages"></span>
           </div>
           <div class="camoff" id="camoff">
             <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l18 18M9 5h6l2 3h3v9M4 8v11h13"/></svg>
@@ -619,13 +621,26 @@ export const PILOT_PAGE = `<!doctype html>
     img.src = src;
   }
 
+  // --- Stage timings: where a card's time went. The phone acknowledges each card so the hub times delivery too.
+  const STAGE_ORDER = ["heard", "turn", "asked", "firstToken", "done", "sent", "phone"];
+  const STAGE_NAME = { turn: "transcribir", asked: "decidir", firstToken: "primer token", done: "respuesta", sent: "hub", phone: "wifi" };
+  function stagesLine(st) {
+    const present = st ? STAGE_ORDER.filter((s) => st[s] != null) : [];
+    if (present.length < 2) return "";
+    const gaps = present.slice(1).map((s, i) => STAGE_NAME[s] + " " + Math.max(0, st[s] - st[present[i]]));
+    return "total " + (st[present[present.length - 1]] - st[present[0]]) + " ms · " + gaps.join(" · ");
+  }
+  const seen = (id) => fetch("/seen", { method: "POST", body: JSON.stringify({ id }) }).catch(() => {});
+  let cueId, viewId;
+
   const BADGE = { LIVE: "EN VIVO", LOOK: "EN PANTALLA", PHOTO: "FOTO" };
-  function showView(label, text, ms, photo) {
+  function showView(label, text, ms, photo, stages) {
     if (photo) drawFrame(photo);
     $("badge").textContent = BADGE[label] || label;
     $("badge").classList.toggle("live", label === "LIVE");
     if (text) { $("view-text").textContent = text; $("caption").hidden = false; }
     $("view-meta").textContent = ms != null ? "descrito en " + ms + " ms" : "";
+    $("view-stages").textContent = stagesLine(stages);
   }
 
   // --- Timeline of the day
@@ -910,18 +925,26 @@ export const PILOT_PAGE = `<!doctype html>
     else if (m.kind === "turn") addItem(m);
     else if (m.kind === "speaker") { const r = rows.get(String(m.turnId)); if (r) { r.dataset.speaker = m.speaker; r.querySelector(".chip").textContent = speakerChip(m.speaker); } }
     else if (m.kind === "summary") { addItem(m); showSummary(m); say(m.text, "normal"); }
-    else if (m.kind === "live") {
-      showView("LIVE", m.text, m.ms, m.photo);
+    else if (m.kind === "stages") {
+      if (m.id === cueId) $("cue-stages").textContent = stagesLine(m.stages);
+      if (m.id === viewId) $("view-stages").textContent = stagesLine(m.stages);
+    } else if (m.kind === "live") {
+      if (m.id) { seen(m.id); viewId = m.id; }
+      showView("LIVE", m.text, m.ms, m.photo, m.stages);
       if (m.text) { addItem(m); say(m.text, "low"); }
     } else if (m.kind === "cue") {
+      if (m.id) seen(m.id);
       if (m.photo) {
-        showView(m.label === "ON SCREEN" ? "LOOK" : "PHOTO", m.text, m.ms, m.photo);
+        viewId = m.id;
+        showView(m.label === "ON SCREEN" ? "LOOK" : "PHOTO", m.text, m.ms, m.photo, m.stages);
         if (m.label === "ON SCREEN") { addItem(m); say(m.text, "normal"); }
       } else {
         $("cue").hidden = false;
         $("cue-label").textContent = isDilo(m.label) ? "DILO" : m.label;
         $("cue-text").textContent = m.text;
         $("cue-meta").textContent = [whyLine(m), m.ms != null ? "en " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
+        cueId = m.id;
+        $("cue-stages").textContent = stagesLine(m.stages);
         addItem(m);
         // The card matters more than wherever the wearer was: go back to Ahora.
         if ($("intro").hidden) { setMenu(false); if (document.body.dataset.screen !== "ahora") location.hash = "#ahora"; }

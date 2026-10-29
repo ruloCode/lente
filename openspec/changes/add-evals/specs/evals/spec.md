@@ -28,11 +28,15 @@ The runner SHALL report, per run: transcription finalize latency, cue latency p5
 - **THEN** a dated summary table is ready to paste into docs/benchmarks.md, and the raw events are in `results/`
 
 ### Requirement: Stage-level latency
-Every cue and scene description SHALL carry timestamps for each stage it went through (audio received by the hub, turn completed by transcription, first model token, reply finished, delivered to the phone), so a slow cue can be attributed to one stage.
+Every cue and scene description SHALL carry timestamps for each stage it went through (audio or photo received by the hub, turn completed by transcription, reply requested from the model, first model token, reply finished, sent to the phones, delivered to the phone), so a slow cue can be attributed to one stage. The timings SHALL reach the phone and the day record. Delivery SHALL be measured on the hub's clock, from the phone's acknowledgement of the card.
 
 #### Scenario: Slow cue
 - **WHEN** a cue takes longer than usual
 - **THEN** its stage timings show which stage took the time
+
+#### Scenario: Waiting on the addressing check
+- **WHEN** a cue waits for the speaker label or a model addressing check before the reply is requested
+- **THEN** that wait shows as its own stage, not as model time
 
 ### Requirement: Fast checks on every change
 On every push, without API keys, CI SHALL run the typecheck and unit tests, compile the clip firmware, and run an end-to-end smoke test in which the clip emulator streams to the hub with the Meta API stubbed and the expected events reach a phone client.

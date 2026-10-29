@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { responseEvent, toResponsesInput } from "../src/chat.ts";
 import { SseParser, deltaText } from "../src/sse.ts";
 import { percentile } from "../src/stats.ts";
 import { frameBytes, readPcm16Wav } from "../src/wav.ts";
@@ -63,4 +64,27 @@ test("readPcm16Wav rejects stereo with the ffmpeg fix in the message", () => {
     () => readPcm16Wav(wav({ rate: 24000, channels: 2, bits: 16, samples: 10 })),
     /ffmpeg/,
   );
+});
+
+test("chat messages become Responses input with typed parts", () => {
+  assert.deepEqual(
+    toResponsesInput([
+      { role: "system", content: "Be brief." },
+      { role: "user", content: [{ type: "text", text: "What is this?" }, { type: "image_url", image_url: { url: "data:image/jpeg;base64,AA==" } }] },
+    ]),
+    [
+      { role: "system", content: "Be brief." },
+      { role: "user", content: [{ type: "input_text", text: "What is this?" }, { type: "input_image", image_url: "data:image/jpeg;base64,AA==" }] },
+    ],
+  );
+});
+
+test("responseEvent reads text deltas, the final usage and failures", () => {
+  assert.deepEqual(responseEvent('{"type":"response.output_text.delta","delta":"Hi"}'), { delta: "Hi" });
+  const usage = { input_tokens: 2132, input_tokens_details: { cached_tokens: 2033 }, output_tokens: 171 };
+  assert.deepEqual(responseEvent(JSON.stringify({ type: "response.completed", response: { usage } })), { usage });
+  assert.deepEqual(responseEvent('{"type":"response.failed","response":{"error":{"message":"overloaded"}}}'), { error: "overloaded" });
+  assert.deepEqual(responseEvent('{"type":"error","message":"bad request"}'), { error: "bad request" });
+  assert.deepEqual(responseEvent('{"type":"response.output_item.added"}'), {});
+  assert.deepEqual(responseEvent("[DONE]"), {});
 });

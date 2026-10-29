@@ -31,6 +31,8 @@ Images over Chat Completions use the OpenAI shape, `{ "type": "image_url", "imag
 
 `POST /v1/responses` with `{ "model": "muse-spark-1.3", "input": "…" }`. The `output` array holds a `reasoning` item and a `message` item; the text is in the message's `output_text` content. `usage` has `input_tokens`, `output_tokens`, `total_tokens`, `output_tokens_details.reasoning_tokens`.
 
+Streaming (verified 2026-10-28): over Chat Completions, `stream: true` works but no `usage` ever arrives, even with `stream_options: { include_usage: true }` (accepted, ignored). Over the Responses API, `stream: true` sends typed events (`response.output_text.delta` with `delta`, then `response.completed` whose `response.usage` includes `input_tokens_details.cached_tokens`; a repeated 2,132-token prefix came back 2,033 cached). Effort is `reasoning: { effort }`, the cap is `max_output_tokens`, images are `{ "type": "input_image", "image_url": "data:image/jpeg;base64,…" }` and text parts are `input_text`.
+
 ### Prices and limits (standard mode)
 
 | Model | Input / 1M | Cached input / 1M | Output / 1M | RPM | TPM |

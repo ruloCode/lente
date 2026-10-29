@@ -13,7 +13,7 @@
 
 ## 3. Stage telemetry
 
-- [ ] 3.1 Stage timestamps on cues and scene descriptions, carried to the phone and the day record; verify one cue shows all five stages
+- [x] 3.1 Stage timestamps on cues and scene descriptions, carried to the phone and the day record (plus "reply requested", so addressing waits are not counted as model time); verify one cue shows all stages
 
 ## 4. CI
 

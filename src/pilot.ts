@@ -16,7 +16,7 @@ import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
-import { type ChatMessage, completeChat } from "./chat.ts";
+import { type ChatMessage, completeChat, streamResponse } from "./chat.ts";
 import { AudioConditioner, AudioTimeline, ClipFrameParser, JitterBuffer, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
@@ -30,6 +30,7 @@ import { type Meeting, type MeetingTurn, addTurn, extractionMessages, isTooShort
 import { ProfileStore } from "./profile.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
+import { ArrivalClock, type Stages, formatStages } from "./stages.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
 const WEB_PORT = Number(process.env.PILOT_WEB_PORT ?? 8080);
@@ -103,6 +104,37 @@ function record(entry: DayEntry, extra: object = {}): void {
   broadcast({ ...entry, ...extra });
 }
 
+/** How long a staged entry waits for a phone to acknowledge it before it is kept without `phone`. */
+const PHONE_ACK_WAIT_MS = 3000;
+const awaitingAck = new Map<string, { entry: Extract<DayEntry, { stages?: Stages }>; timer: ReturnType<typeof setTimeout> }>();
+let stagedSeq = 0;
+
+/**
+ * Like `record`, for a card with stage timings: stamps `sent`, and keeps it in the day's record once
+ * the first phone acknowledges it (POST /seen), so the record has the delivery stage too.
+ */
+function recordStaged(entry: Extract<DayEntry, { stages?: Stages }>, extra: object = {}): void {
+  const id = `s${++stagedSeq}`;
+  entry.stages = { ...entry.stages, sent: Date.now() };
+  broadcast({ ...entry, ...extra, id });
+  if (!clients.size) return void day.add(entry);
+  awaitingAck.set(id, { entry, timer: setTimeout(() => keepStaged(id), PHONE_ACK_WAIT_MS) });
+}
+
+function keepStaged(id: string, phoneAt?: number): void {
+  const waiting = awaitingAck.get(id);
+  if (!waiting) return;
+  awaitingAck.delete(id);
+  clearTimeout(waiting.timer);
+  const { entry } = waiting;
+  if (phoneAt !== undefined) {
+    entry.stages = { ...entry.stages, phone: phoneAt };
+    broadcast({ kind: "stages", id, stages: entry.stages });
+  }
+  day.add(entry);
+  if (entry.stages) console.log(`[stages] ${entry.kind}${"label" in entry ? ` ${entry.label}` : ""} · ${formatStages(entry.stages)} ms`);
+}
+
 function setStatus(patch: Partial<typeof status>): void {
   status = { ...status, ...patch };
   broadcast(status);
@@ -113,18 +145,28 @@ function setStatus(patch: Partial<typeof status>): void {
 
 let sparkTargets = chatTargets().filter((t) => t.id.startsWith("spark-1.3"));
 
+interface SparkReply {
+  text: string;
+  /** Wall-clock time the answering request was sent, and its first token if it was streamed. */
+  askedAt: number;
+  firstTokenAt?: number;
+}
+
 /**
- * One Spark call. Not streamed: every caller waits for the whole answer anyway, and only a
- * complete response reports `usage`, which the phone/eval see as a `usage` event per call.
+ * One Spark call; the phone/eval see a `usage` event per call. Cards (`stream`) stream over the
+ * Responses API so their first token is timed; structured calls (`extra` with a JSON schema) use
+ * Chat Completions and wait for the whole answer.
  */
-async function askSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number }): Promise<string> {
+async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean }): Promise<SparkReply> {
   let lastError: unknown;
   for (const target of sparkTargets) {
     try {
-      const done = await completeChat(target, messages, { maxTokens: opts.maxTokens ?? 400, extra: opts.extra });
+      const askedAt = Date.now();
+      const maxTokens = opts.maxTokens ?? 400;
+      const done = opts.stream ? await streamResponse(target, messages, { maxTokens }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
       sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
       broadcast({ kind: "usage", label: opts.label, model: target.id, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
-      return done.text;
+      return { text: done.text, askedAt, firstTokenAt: done.ttftMs === undefined ? undefined : askedAt + Math.round(done.ttftMs) };
     } catch (error) {
       lastError = error;
       console.error(`[spark] ${target.id} failed: ${(error as Error).message.slice(0, 200)}`);
@@ -132,6 +174,8 @@ async function askSpark(messages: ChatMessage[], opts: { label: string; extra?: 
   }
   throw lastError;
 }
+
+const askSpark = async (messages: ChatMessage[], opts: Parameters<typeof callSpark>[1]): Promise<string> => (await callSpark(messages, opts)).text;
 
 const recentTurns = () =>
   day.entries
@@ -142,16 +186,17 @@ const recentTurns = () =>
 
 let cueSeq = 0;
 
-async function sayThis(turn: AsrTurn, asker: string | undefined, why: string): Promise<void> {
+async function sayThis(turn: AsrTurn, asker: string | undefined, why: string, stages: Stages): Promise<void> {
   const seq = ++cueSeq;
   const started = performance.now();
   try {
-    const reply = await askSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue" });
+    const reply = await callSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue", stream: true });
     if (seq !== cueSeq) return; // a newer question already took the card
     const ms = Math.round(performance.now() - started);
-    const text = toCue(reply);
+    const text = toCue(reply.text);
     if (!text) return;
-    record({ at: Date.now(), kind: "cue", label: "DILO", text, ms, asker, why }, { turnId: turn.turnId });
+    const timed = { ...stages, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
+    recordStaged({ at: Date.now(), kind: "cue", label: "DILO", text, ms, asker, why, stages: timed }, { turnId: turn.turnId });
     device?.write("B");
     console.log(`[cue] ${ms} ms · ${text}`);
   } catch (error) {
@@ -178,14 +223,14 @@ async function labelOf(turn: AsrTurn): Promise<string | undefined> {
 }
 
 /** The cue is for the wearer only when the question was aimed at them (or the testing switch is on). */
-async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: number | undefined): Promise<void> {
+async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: number | undefined, stages: Stages): Promise<void> {
   const speaker = await labelOf(turn);
   const now = spokeAt ?? Date.now();
   const asked: AddressTurn = { speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
   if (profile.everyQuestion) {
     console.log("[address] addressed · testing (every question)");
     broadcast({ kind: "address", turnId: turn.turnId, verdict: "addressed", rule: "testing" });
-    return void sayThis(turn, speaker, "testing");
+    return void sayThis(turn, speaker, "testing", stages);
   }
   const d = await decideAddressed(asked, earlier);
   console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`);
@@ -196,7 +241,7 @@ async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: nu
       kept.addressed = true;
       meetings.save(current);
     }
-    void sayThis(turn, speaker, d.rule);
+    void sayThis(turn, speaker, d.rule, stages);
   }
 }
 
@@ -217,7 +262,7 @@ async function decideAddressed(turn: AddressTurn, history: AddressTurn[]): Promi
   }
 }
 
-async function onScreen(jpeg: Buffer): Promise<void> {
+async function onScreen(jpeg: Buffer, heardAt: number): Promise<void> {
   const photo = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
   if (!key) {
     broadcast({ kind: "cue", label: "PHOTO", text: `${Math.round(jpeg.length / 1024)} KB from the clip`, photo });
@@ -225,13 +270,14 @@ async function onScreen(jpeg: Buffer): Promise<void> {
   }
   const started = performance.now();
   try {
-    const reply = await askSpark([
+    const reply = await callSpark([
       { role: "system", content: ON_SCREEN_PROMPT },
       { role: "user", content: [{ type: "text", text: "What am I looking at?" }, { type: "image_url", image_url: { url: photo } }] },
-    ], { label: "look" });
+    ], { label: "look", stream: true });
     const ms = Math.round(performance.now() - started);
-    const text = toCue(reply, 110);
-    record({ at: Date.now(), kind: "cue", label: "ON SCREEN", text, ms }, { photo });
+    const text = toCue(reply.text, 110);
+    const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
+    recordStaged({ at: Date.now(), kind: "cue", label: "ON SCREEN", text, ms, stages }, { photo });
     device?.write("B");
     console.log(`[look] ${ms} ms · ${text}`);
   } catch (error) {
@@ -432,7 +478,7 @@ setInterval(() => {
   requestLiveFrame();
 }, 1000);
 
-async function describeLive(jpeg: Buffer): Promise<void> {
+async function describeLive(jpeg: Buffer, heardAt: number): Promise<void> {
   const photo = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
   const started = performance.now();
   try {
@@ -440,7 +486,7 @@ async function describeLive(jpeg: Buffer): Promise<void> {
       broadcast({ kind: "live", text: "", photo });
       return;
     }
-    const reply = await askSpark([
+    const reply = await callSpark([
       { role: "system", content: LIVE_PROMPT },
       {
         role: "user",
@@ -449,12 +495,13 @@ async function describeLive(jpeg: Buffer): Promise<void> {
           { type: "image_url", image_url: { url: photo } },
         ],
       },
-    ], { label: "live" });
+    ], { label: "live", stream: true });
     const ms = Math.round(performance.now() - started);
-    const text = toCue(reply, 120);
+    const text = toCue(reply.text, 120);
     if (text && text !== lastLive) {
       lastLive = text;
-      record({ at: Date.now(), kind: "live", text }, { ms, photo });
+      const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
+      recordStaged({ at: Date.now(), kind: "live", text, stages }, { ms, photo });
     } else {
       broadcast({ kind: "live", text: "", ms, photo });
     }
@@ -511,6 +558,9 @@ let timeline = new AudioTimeline(FRAME_BYTES);
 /** Wall-clock time of the first audio frame of this connection: session audio 0 ms. */
 let audioOrigin = 0;
 let loudness = new LoudnessRing(FRAME_MS);
+/** When each stretch of session audio reached the hub: a turn's `heard` stage. */
+let arrivals = new ArrivalClock();
+const BYTES_PER_MS = FRAME_BYTES / FRAME_MS;
 
 /** Announce the wearer's label to the phone whenever it changes. */
 function syncWearer(): void {
@@ -540,6 +590,7 @@ function startAsr(): void {
       syncWearer();
     },
     onTurn: (turn) => {
+      const stages: Stages = { heard: turn.endMs === undefined ? undefined : arrivals.at(turn.endMs), turn: Date.now() };
       const earlier = day.entries.filter((e): e is Extract<DayEntry, { kind: "turn" }> => e.kind === "turn").slice(-ADDRESS_HISTORY_TURNS).map(toAddressTurn);
       if (turn.startMs !== undefined && turn.endMs !== undefined) wearerTracker.noteLoudness(turn.turnId, loudness.medianBetween(turn.startMs, turn.endMs));
       if (isEnrollment(turn.text, profile.names)) wearerTracker.noteEnrollment(turn.turnId);
@@ -560,7 +611,7 @@ function startAsr(): void {
       record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question, ...anchor }, { turnId: turn.turnId });
       const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
       console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
-      if (question && key) void cueIfAddressed(turn, earlier, anchor.spokeAt);
+      if (question && key) void cueIfAddressed(turn, earlier, anchor.spokeAt, stages);
     },
   });
   asr = session;
@@ -589,6 +640,7 @@ const tcp = createTcpServer((socket) => {
   timeline = new AudioTimeline(FRAME_BYTES);
   audioOrigin = 0;
   loudness = new LoudnessRing(FRAME_MS);
+  arrivals = new ArrivalClock();
   let helloSeen = false;
   let lastLevel = 0;
   console.log(`[clip] connected from ${socket.remoteAddress}`);
@@ -641,16 +693,17 @@ const tcp = createTcpServer((socket) => {
         jitter.push(clean);
         loudness.push(rms(clean));
         const now = Date.now();
+        arrivals.note(jitter.consumedMs + jitter.bufferedBytes / BYTES_PER_MS, now);
         if (now - lastLevel > 200) {
           lastLevel = now;
           broadcast({ kind: "level", rms: Math.round(rms(clean)) });
         }
       } else if (frame.type === "J") {
         const jpeg = Buffer.from(frame.payload);
-        if (status.live) void describeLive(jpeg);
+        if (status.live) void describeLive(jpeg, Date.now());
         else {
           console.log(`[clip] photo ${Math.round(jpeg.length / 1024)} KB`);
-          void onScreen(jpeg);
+          void onScreen(jpeg, Date.now());
         }
       }
     }
@@ -769,6 +822,11 @@ const web = createHttpServer(async (req, res) => {
     } else if (req.method === "POST" && req.url === "/profile") {
       const { names } = JSON.parse((await readBody(req)) || "{}") as { names?: string };
       setStatus({ names: profile.setNames(typeof names === "string" ? names : "") });
+      res.writeHead(204).end();
+    } else if (req.method === "POST" && req.url === "/seen") {
+      const phoneAt = Date.now();
+      const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
+      if (typeof id === "string") keepStaged(id, phoneAt);
       res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/tts") {
       const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };

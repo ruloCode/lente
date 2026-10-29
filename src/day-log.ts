@@ -3,6 +3,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Stages } from "./stages.ts";
 
 export type DayEntry =
   | {
@@ -16,8 +17,8 @@ export type DayEntry =
       audioEndMs?: number;
       spokeAt?: number;
     }
-  | { at: number; kind: "cue"; label: string; text: string; ms?: number; /** Speaker label of who asked and the addressing rule that let the cue through. */ asker?: string; why?: string }
-  | { at: number; kind: "live"; text: string }
+  | { at: number; kind: "cue"; label: string; text: string; ms?: number; /** Speaker label of who asked and the addressing rule that let the cue through. */ asker?: string; why?: string; stages?: Stages }
+  | { at: number; kind: "live"; text: string; stages?: Stages }
   | { at: number; kind: "summary"; text: string };
 
 export function dayKey(at: number): string {

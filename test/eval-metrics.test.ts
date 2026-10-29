@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type RawCue, type RawTurn, type RawUsage, matchLines, percentile, scoreLines, spread, sumUsage, summarize, turnForLine } from "../scripts/eval/metrics.ts";
+import { type RawCue, type RawTurn, type RawUsage, matchLines, percentile, scoreLines, spread, stageSpreads, sumUsage, summarize, turnForLine } from "../scripts/eval/metrics.ts";
 import { type Dialogue } from "../scripts/eval/set.ts";
 
 const dialogue = (lines: Dialogue["lines"]): Dialogue => ({
@@ -110,4 +110,15 @@ test("a merged turn with no question gives its cue to the last line", () => {
   const tm = [{ startMs: 0, endMs: 2000 }, { startMs: 2500, endMs: 4500 }];
   const { lines: r } = matchLines(dialogue(ls), tm, [turn("t1", 0, 4500, 5000)], [{ turnId: "t1", atMs: 6000 }]);
   assert.deepEqual(r.map((x) => x.cued), [false, true]);
+});
+
+test("stage spreads pool each stage's time over cues and skip stages nobody reached", () => {
+  const s = stageSpreads([
+    { heard: 0, turn: 700, asked: 800, firstToken: 1600, done: 1650, sent: 1651, phone: 1680 },
+    { heard: 0, turn: 900, asked: 950, firstToken: 1950, done: 2000, sent: 2001 },
+  ]);
+  assert.deepEqual(s.turn, { n: 2, p50: 700, p95: 900 });
+  assert.deepEqual(s.firstToken, { n: 2, p50: 800, p95: 1000 });
+  assert.deepEqual(s.phone, { n: 1, p50: 29, p95: 29 });
+  assert.equal(s.heard, undefined);
 });

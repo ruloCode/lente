@@ -70,3 +70,7 @@ The phone page follows the layout system measured from the Meta AI app (`docs/kb
 
 When the clip is missing, the phone's microphone and camera feed the hub over the same clip protocol (WebSocket ingest shared with desktop mode); browsers require HTTPS or localhost for that. "Solo grabar" records the day and learns from automatic episodes without real-time cues; "recording" means the transcript as text, never audio, the same promise as the rest of Lente.
 
+
+### 2026-10-28 · Cards stream over the Responses API so every stage is timed
+
+A slow DILO has to be blamed on one stage (audio at the hub, transcription, speaker label and addressing, first token, rest of the reply, hub, delivery), so the reply must be streamed to time its first token. Streamed Chat Completions on the Meta API report no token usage, which the eval needs; streamed Responses calls report it, cache hits included. So the cue, Look and live calls stream over `/v1/responses`; notes and briefing keep Chat Completions with `response_format`, where the whole answer is needed anyway. Delivery is timed by the phone acknowledging each card (`POST /seen`): measured on the hub's clock, an upper bound by one Wi-Fi hop, with no clock sync between laptop and phone.
