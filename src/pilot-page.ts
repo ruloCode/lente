@@ -346,6 +346,7 @@ export const PILOT_PAGE = `<!doctype html>
           </button>
         </div>
         <div class="note" id="note" hidden></div>
+        <button class="btn" id="phone-use-ahora" type="button" hidden>Usar el teléfono</button>
         <div class="note" id="phone-note" hidden><span id="phone-note-text"></span><button class="btn" id="phone-resume" type="button" hidden>Reanudar</button></div>
         <div class="note" id="pause-note" hidden><span id="pause-text"></span><button class="btn" id="pause-go" type="button"></button></div>
         <section class="cue" id="cue" aria-live="assertive" hidden>
@@ -1330,6 +1331,8 @@ export const PILOT_PAGE = `<!doctype html>
     $("phone-use").setAttribute("aria-pressed", String(phone.on));
     $("phone-use-text").textContent = phone.on ? "Dejar de usar el teléfono" : "Usar el teléfono";
     $("phone-use-hint").textContent = phoneWords();
+    // On Ahora the offer shows only while nothing is listening and the browser could do it.
+    $("phone-use-ahora").hidden = clip || phone.on || !secureOk;
   }
   function releaseMic() {
     phone.sending = false;
@@ -1431,6 +1434,7 @@ export const PILOT_PAGE = `<!doctype html>
     phoneUi();
   }
   $("phone-use").addEventListener("click", () => { if (phone.on) stopPhone(""); else startPhone(); });
+  $("phone-use-ahora").addEventListener("click", () => startPhone());
   $("phone-resume").addEventListener("click", () => startPhone());
   // Browsers stop capture in a hidden page: let go of the microphone and say so on return.
   document.addEventListener("visibilitychange", () => {

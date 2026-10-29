@@ -21,4 +21,4 @@ Phone capture is verified on the bench through `http://localhost:8080` with `adb
 
 ## 4. Phone UI
 
-- [ ] 4.1 "Usar el teléfono" in Dispositivos and on Ahora when no clip; status row names the device; verify both states [phone]
+- [x] 4.1 "Usar el teléfono" in Dispositivos and on Ahora when no clip; status row names the device; verify both states [phone]
