@@ -17,7 +17,7 @@ Phone capture is verified on the bench through `http://localhost:8080` with `adb
 
 ## 3. Self-voice guard
 
-- [ ] 3.1 Mute phone capture while the phone speaks; hub drops turns that repeat recent narration (pure matcher with tests); verify with voice on that no turn of Lente's own voice appears, with the clip and with the phone [hw] [phone]
+- [ ] 3.1 Mute phone capture while the phone speaks; hub drops turns that repeat recent narration (pure matcher with tests); verify with voice on that no turn of Lente's own voice appears, with the clip and with the phone [hw] [phone] [human]
 
 ## 4. Phone UI
 
