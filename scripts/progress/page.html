@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lente progress</title>
+<style>
+  :root {
+    --bg: #0b1013; --surface: #121a1e; --raised: #1a2429; --line: #26323a; --ink: #e6edef; --muted: #8c9aa1; --faint: #56656d;
+    --cyan: #4fd0d8; --amber: #e8a052; --ok: #3ccf7a; --live: #ff6262;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; }
+  code { font: 0.88em var(--mono); background: var(--raised); padding: 1px 5px; border-radius: 4px; color: var(--cyan); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 16px 64px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 28px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font: 700 13px var(--mono); letter-spacing: 0.22em; color: var(--cyan); }
+  .brand span { color: var(--muted); font-size: 14px; }
+  .live { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); color: var(--muted); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .live.on i { background: var(--ok); box-shadow: 0 0 0 0 rgba(60, 207, 122, 0.6); animation: pulse 2s infinite; }
+  .live.off i { background: var(--live); }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(60, 207, 122, 0); } 100% { box-shadow: 0 0 0 0 rgba(60, 207, 122, 0); } }
+
+  .hero { display: grid; grid-template-columns: auto 1fr; gap: 8px 32px; align-items: end; margin-bottom: 20px; }
+  .pct { font: 600 64px/0.9 var(--mono); letter-spacing: -0.04em; }
+  .pct small { font-size: 0.4em; color: var(--muted); margin-left: 2px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 22px; color: var(--muted); font-size: 13px; padding-bottom: 6px; }
+  .stats b { color: var(--ink); font: 600 15px var(--mono); margin-right: 4px; }
+
+  .strip { display: flex; gap: 3px; height: 14px; margin-bottom: 28px; }
+  .seg { position: relative; background: var(--raised); border-radius: 3px; overflow: hidden; min-width: 6px; }
+  .seg > i { position: absolute; inset: 0 auto 0 0; background: var(--cyan); transition: width 0.6s ease; }
+  .seg.archived > i { background: var(--ok); }
+  .seg.current { outline: 1.5px solid var(--amber); outline-offset: 2px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 300px; gap: 28px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .hero { grid-template-columns: 1fr; } .pct { font-size: 52px; } }
+
+  .next { background: linear-gradient(90deg, rgba(232, 160, 82, 0.12), transparent 70%); border: 1px solid rgba(232, 160, 82, 0.35); border-radius: 12px; padding: 14px 16px; margin-bottom: 22px; }
+  .next .k { font: 600 11px var(--mono); letter-spacing: 0.16em; color: var(--amber); }
+  .next .where { color: var(--muted); font-size: 13px; margin: 4px 0 2px; }
+  .next .t { font-size: 16px; }
+  .next .t .id { font: 600 14px var(--mono); color: var(--amber); margin-right: 8px; }
+
+  .changes { list-style: none; margin: 0; padding: 0; position: relative; }
+  .changes::before { content: ""; position: absolute; left: 11px; top: 14px; bottom: 14px; width: 2px; background: var(--line); }
+  .change { position: relative; padding-left: 36px; margin-bottom: 10px; }
+  .dot { position: absolute; left: 4px; top: 16px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg); border: 2px solid var(--faint); display: grid; place-items: center; font-size: 10px; color: var(--bg); }
+  .archived .dot, .complete .dot { background: var(--ok); border-color: var(--ok); }
+  .progress .dot { border-color: var(--cyan); background: conic-gradient(var(--cyan) var(--p), var(--bg) 0); }
+  .current .dot { border-color: var(--amber); box-shadow: 0 0 0 4px rgba(232, 160, 82, 0.18); }
+
+  details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; transition: border-color 0.2s; }
+  .current details { border-color: rgba(232, 160, 82, 0.45); }
+  .queued details { background: transparent; }
+  summary { list-style: none; cursor: pointer; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; }
+  summary::-webkit-details-marker { display: none; }
+  .name { font: 600 14px var(--mono); }
+  .queued .name { color: var(--muted); }
+  .badge { font: 600 10px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 7px; border-radius: 99px; align-self: center; }
+  .archived .badge { color: var(--ok); background: rgba(60, 207, 122, 0.1); }
+  .complete .badge { color: var(--ok); border: 1px solid rgba(60, 207, 122, 0.4); }
+  .progress .badge { color: var(--cyan); background: rgba(79, 208, 216, 0.1); }
+  .queued .badge { color: var(--faint); border: 1px solid var(--line); }
+  .why { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+  .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .bar .track { flex: 1; height: 4px; background: var(--raised); border-radius: 2px; overflow: hidden; }
+  .bar .track i { display: block; height: 100%; background: var(--cyan); transition: width 0.6s ease; }
+  .archived .bar .track i, .complete .bar .track i { background: var(--ok); }
+  .bar span { font: 12px var(--mono); color: var(--muted); min-width: 42px; text-align: right; }
+
+  .groups { padding: 0 14px 12px; }
+  .group { margin-top: 10px; }
+  .group h4 { margin: 0 0 4px; font: 600 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+  .task { display: grid; grid-template-columns: 18px 34px 1fr; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 13.5px; }
+  .task .box { width: 14px; height: 14px; margin-top: 3px; border-radius: 4px; border: 1.5px solid var(--faint); display: grid; place-items: center; font-size: 10px; color: var(--bg); }
+  .task.done .box { background: var(--ok); border-color: var(--ok); }
+  .task .id { font: 12px/1.9 var(--mono); color: var(--faint); }
+  .task.done .text { color: var(--muted); }
+  .task.is-next { background: rgba(232, 160, 82, 0.1); }
+  .task.is-next .box { border-color: var(--amber); }
+  .task.flash { animation: flash 2.4s ease-out; }
+  @keyframes flash { 0% { background: rgba(60, 207, 122, 0.35); } 100% { background: transparent; } }
+
+  aside h3 { margin: 0 0 10px; font: 600 11px var(--mono); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
+  .commits { list-style: none; margin: 0 0 26px; padding: 0; }
+  .commits li { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .commits .meta { font: 11px var(--mono); color: var(--faint); display: flex; justify-content: space-between; }
+  .commits .meta b { color: var(--cyan); font-weight: 500; }
+  .legend { color: var(--muted); font-size: 12.5px; line-height: 1.9; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translate(-50%, 20px); opacity: 0; background: var(--raised); border: 1px solid rgba(60, 207, 122, 0.5); color: var(--ink); padding: 10px 16px; border-radius: 10px; font-size: 13.5px; transition: all 0.3s; max-width: calc(100vw - 32px); pointer-events: none; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast b { color: var(--ok); font-family: var(--mono); }
+
+  .lane { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 22px; }
+  .lane-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .lane-head .k { font: 600 11px var(--mono); letter-spacing: 0.16em; color: var(--muted); }
+  .pill { font: 600 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; color: var(--faint); border: 1px solid var(--line); }
+  .pill.run { color: var(--cyan); border-color: rgba(79, 208, 216, 0.5); }
+  .pill.ok { color: var(--ok); border-color: rgba(60, 207, 122, 0.5); }
+  .pill.bad { color: var(--live); border-color: rgba(255, 98, 98, 0.5); }
+  .lane-node { margin: 10px 0 4px; font-size: 15px; }
+  .lane-node .c { font: 600 13px var(--mono); color: var(--cyan); }
+  .lane-msg { color: var(--muted); font-size: 13px; }
+  .steps { display: flex; gap: 4px; margin: 12px 0 10px; }
+  .steps span { flex: 1; text-align: center; font: 11px var(--mono); padding: 5px 0; border-radius: 6px; background: var(--raised); color: var(--faint); }
+  .steps span.done { color: var(--ok); }
+  .steps span.now { background: rgba(79, 208, 216, 0.15); color: var(--cyan); }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 6px 16px; font: 12px var(--mono); color: var(--muted); }
+  .meta-row b { color: var(--ink); font-weight: 500; }
+  .chip { display: inline-block; font: 10.5px var(--mono); padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; border: 1px solid var(--line); color: var(--muted); }
+  .chip.human { color: var(--amber); border-color: rgba(232, 160, 82, 0.4); }
+  .chip.on { color: var(--ok); border-color: rgba(60, 207, 122, 0.4); }
+  .chip.off { color: var(--faint); }
+  .feed { list-style: none; margin: 10px 0 0; padding: 8px 10px; background: var(--bg); border-radius: 8px; max-height: 220px; overflow: auto; font: 11.5px/1.7 var(--mono); color: var(--muted); }
+  .feed li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed time { color: var(--faint); margin-right: 8px; }
+  .ready-chip { font: 600 10px var(--mono); color: var(--bg); background: var(--cyan); padding: 1px 6px; border-radius: 4px; margin-left: 8px; vertical-align: 2px; }
+  .needs { list-style: none; margin: 0 0 26px; padding: 0; }
+  .needs li { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .needs .why-held { font: 11px var(--mono); color: var(--amber); }
+  .needs .c { font: 11px var(--mono); color: var(--faint); }
+  .hist { list-style: none; margin: 0 0 26px; padding: 0; font-size: 12.5px; }
+  .hist li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .hist .ok { color: var(--ok); } .hist .bad { color: var(--live); }
+  .src { font: 11px var(--mono); color: var(--faint); margin: -18px 0 22px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><b>LENTE</b><span>build progress · OpenSpec</span></div>
+    <div class="live" id="live"><i></i><span id="live-text">connecting…</span></div>
+  </header>
+
+  <section class="hero">
+    <div class="pct" id="pct">–</div>
+    <div class="stats" id="stats"></div>
+  </section>
+  <div class="strip" id="strip"></div>
+  <div class="src" id="src"></div>
+
+  <div class="grid">
+    <main>
+      <div class="lane" id="lane"></div>
+      <div class="next" id="next" hidden></div>
+      <ol class="changes" id="changes"></ol>
+    </main>
+    <aside>
+      <h3 id="needs-h">Needs you</h3>
+      <ul class="needs" id="needs"></ul>
+      <h3>Auto lane history</h3>
+      <ul class="hist" id="hist"></ul>
+      <h3>Recent commits</h3>
+      <ul class="commits" id="commits"></ul>
+      <h3>Legend</h3>
+      <div class="legend">
+        <div><i style="background:var(--ok)"></i>Archived or ready to archive</div>
+        <div><i style="background:var(--cyan)"></i>In progress</div>
+        <div><i style="border:2px solid var(--amber)"></i>Where the next task is</div>
+        <div><i style="border:2px solid var(--faint)"></i>Queued</div>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const md = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+  const pctOf = (d, t) => (t ? Math.round((d / t) * 100) : 0);
+
+  // Which cards the viewer opened or closed by hand survive each live update.
+  const toggled = new Map();
+  let prevDone = null;
+  let toastTimer;
+
+  function status(c) {
+    if (c.archived) return ["archived", "Archived"];
+    if (c.total && c.done === c.total) return ["complete", "Ready to archive"];
+    if (c.done > 0) return ["progress", "In progress"];
+    return ["queued", "Queued"];
+  }
+
+  function ago(sec) {
+    const s = Math.max(0, Date.now() / 1000 - sec);
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return `${Math.floor(s / 86400)} d ago`;
+  }
+
+  function toast(html) {
+    $("toast").innerHTML = html;
+    $("toast").classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $("toast").classList.remove("show"), 3500);
+  }
+
+
+  const STEPS = [["working", "build"], ["gates", "gates"], ["review", "review"], ["fixing", "fix"], ["committing", "merge"]];
+  const RUNNING = new Set(["starting", "working", "gates", "review", "fixing", "committing"]);
+  const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const mins = (ms) => `${Math.max(0, Math.round(ms / 60000))} min`;
+
+  function renderLane(r) {
+    if (!r) {
+      $("lane").innerHTML = `<div class="lane-head"><span class="k">AUTO LANE</span><span class="pill">off</span></div><div class="lane-msg" style="margin-top:6px">Not started. Run <code>pnpm auto</code> (see <code>pnpm auto --dry-run</code> first).</div>`;
+      return;
+    }
+    const cls = RUNNING.has(r.status) ? "run" : r.status === "done" ? "ok" : r.status === "blocked" ? "bad" : "";
+    const at = STEPS.findIndex(([k]) => k === r.status);
+    const steps = r.node ? `<div class="steps">${STEPS.map(([k, l], i) => `<span class="${i === at ? "now" : i < at && k !== "fixing" ? "done" : ""}">${l}${k === "fixing" && r.node.round ? " " + r.node.round : ""}</span>`).join("")}</div>` : "";
+    const node = r.node ? `<div class="lane-node"><span class="c">${esc(r.node.change)}</span> › ${esc(r.node.group)} · ${esc(r.node.tasks.join(", "))} <span class="lane-msg">· ${mins(Date.now() - r.node.startedAt)}</span></div>` : "";
+    const b = r.bench || {};
+    $("lane").innerHTML = `<div class="lane-head"><span class="k">AUTO LANE</span><span class="pill ${cls}">${esc(r.status)}</span></div>
+      ${node}${steps}
+      ${r.message ? `<div class="lane-msg">${md(r.message)}</div>` : ""}
+      <div class="meta-row" style="margin-top:8px"><span>spent <b>US$${(r.spentUsd || 0).toFixed(2)}</b> / ${esc(r.budgetUsd)}</span>
+        <span>clip<span class="chip ${b.boardPort ? "on" : "off"}">${esc(b.boardPort || "none")}</span></span>
+        <span>phone<span class="chip ${b.phone ? "on" : "off"}">${esc(b.phone || "none")}</span></span>
+        <span>keys<span class="chip">${esc((b.keys || []).join(", ") || "none")}</span></span></div>
+      <ul class="feed">${(r.activity || []).slice(-14).reverse().map((a) => `<li><time>${clock(a.at)}</time>${esc(a.text)}</li>`).join("")}</ul>`;
+    $("hist").innerHTML = (r.history || []).slice().reverse().slice(0, 12).map((h) =>
+      `<li><span class="${h.outcome === "merged" ? "ok" : "bad"}">${h.outcome === "merged" ? "✓" : "✗"}</span> <code>${esc(h.change)}</code> ${esc(h.group)}<div class="c" style="font:11px var(--mono);color:var(--faint)">${h.commit ? esc(h.commit) + " · " : ""}US$${h.costUsd.toFixed(2)}${h.review ? " · review " + esc(h.review) : ""}${h.reason ? " · " + esc(h.reason).slice(0, 120) : ""}</div></li>`
+    ).join("") || '<li style="color:var(--faint)">Nothing yet.</li>';
+  }
+
+  function render(s) {
+    const done = s.changes.reduce((n, c) => n + c.done, 0);
+    const total = s.changes.reduce((n, c) => n + c.total, 0);
+    const kinds = s.changes.map((c) => status(c)[0]);
+    const count = (k) => kinds.filter((x) => x === k).length;
+    const current = s.next?.change;
+
+    $("pct").innerHTML = `${pctOf(done, total)}<small>%</small>`;
+    $("stats").innerHTML = [
+      [`${done}/${total}`, "tasks done"],
+      [count("archived"), "archived"],
+      [count("complete"), "ready to archive"],
+      [count("progress"), "in progress"],
+      [count("queued"), "queued"],
+      [s.specs, "living specs"],
+    ].map(([v, l]) => `<span><b>${esc(v)}</b>${l}</span>`).join("");
+
+    $("strip").innerHTML = s.changes.map((c) =>
+      `<div class="seg ${c.archived ? "archived" : ""} ${c.name === current ? "current" : ""}" style="flex:${Math.max(c.total, 1)}" title="${esc(c.name)} · ${c.done}/${c.total}"><i style="width:${pctOf(c.done, c.total)}%"></i></div>`
+    ).join("");
+
+    if (s.next) {
+      $("next").hidden = false;
+      $("next").innerHTML = `<div class="k">NEXT UP</div><div class="where">${esc(s.next.change)} › ${esc(s.next.group)}</div><div class="t"><span class="id">${esc(s.next.task.id)}</span>${md(s.next.task.text)}</div>`;
+    } else {
+      $("next").hidden = false;
+      $("next").innerHTML = `<div class="k">ALL DONE</div><div class="t">Every task in every change is ticked.</div>`;
+    }
+
+    const ready = new Set((s.ready || []).map((n) => n.change));
+    const flips = [];
+    const nowDone = new Set();
+    $("changes").innerHTML = s.changes.map((c) => {
+      const [kind, label] = status(c);
+      const isCurrent = c.name === current;
+      const open = toggled.has(c.name) ? toggled.get(c.name) : isCurrent;
+      const p = pctOf(c.done, c.total);
+      const groups = c.groups.map((g) => `<div class="group"><h4>${md(g.title)}</h4>${g.tasks.map((t) => {
+        const key = `${c.name}/${t.id}`;
+        if (t.done) nowDone.add(key);
+        const flipped = t.done && prevDone && !prevDone.has(key);
+        if (flipped) flips.push({ change: c.name, task: t });
+        const next = s.next && isCurrent && s.next.task.id === t.id;
+        return `<div class="task ${t.done ? "done" : ""} ${next ? "is-next" : ""} ${flipped ? "flash" : ""}"><span class="box">${t.done ? "✓" : ""}</span><span class="id">${esc(t.id)}</span><span class="text">${md(t.text)}${(t.tags || []).map((g) => `<span class="chip ${g === "human" ? "human" : ""}">${esc(g)}</span>`).join("")}</span></div>`;
+      }).join("")}</div>`).join("");
+      return `<li class="change ${kind} ${isCurrent ? "current" : ""}" style="--p:${p}%">
+        <span class="dot">${kind === "archived" || kind === "complete" ? "✓" : ""}</span>
+        <details data-name="${esc(c.name)}" ${open ? "open" : ""}>
+          <summary>
+            <span class="name">${esc(c.name)}${ready.has(c.name) ? '<span class="ready-chip">READY</span>' : ""}</span><span class="badge">${label}${c.archivedOn ? " · " + esc(c.archivedOn.slice(5)) : ""}</span>
+            ${c.why ? `<span class="why">${md(c.why)}</span>` : ""}
+            <span class="bar"><span class="track"><i style="width:${p}%"></i></span><span>${c.done}/${c.total}</span></span>
+          </summary>
+          <div class="groups">${groups || '<div class="group"><h4>No tasks.md</h4></div>'}</div>
+        </details>
+      </li>`;
+    }).join("");
+    document.querySelectorAll("details[data-name]").forEach((d) => d.addEventListener("toggle", () => toggled.set(d.dataset.name, d.open)));
+
+    if (flips.length === 1) toast(`<b>✓ ${esc(flips[0].task.id)}</b> ${esc(flips[0].change)} · ${md(flips[0].task.text.length > 140 ? flips[0].task.text.slice(0, 139) + "…" : flips[0].task.text)}`);
+    else if (flips.length > 1) toast(`<b>✓ ${flips.length} tasks</b> ticked`);
+    prevDone = nowDone;
+
+    renderLane(s.runner);
+    $("src").textContent = `tasks read from the ${s.source}`;
+    $("needs").innerHTML = s.held.map((h) => `<li><div class="why-held">${esc(h.reason)}</div><span class="c">${esc(h.change)} ${esc(h.id)}</span> ${md(h.text.length > 160 ? h.text.slice(0, 159) + "…" : h.text)}</li>`).join("") || '<li style="color:var(--faint)">Nothing. The lane can do the rest.</li>';
+    $("needs-h").textContent = `Needs you (${s.held.length})`;
+    $("commits").innerHTML = s.commits.map((c) => `<li><div class="meta"><b>${esc(c.hash)}</b><span data-at="${c.at}">${ago(c.at)}</span></div>${esc(c.subject)}</li>`).join("");
+    document.title = `${pctOf(done, total)}% · Lente progress`;
+  }
+
+  function connect() {
+    const es = new EventSource("/events");
+    es.onopen = () => { $("live").className = "live on"; };
+    es.onmessage = (e) => {
+      render(JSON.parse(e.data));
+      $("live-text").textContent = `live · ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+    };
+    es.onerror = () => { $("live").className = "live off"; $("live-text").textContent = "hub offline, retrying…"; };
+  }
+  setInterval(() => document.querySelectorAll("[data-at]").forEach((el) => { el.textContent = ago(Number(el.dataset.at)); }), 30_000);
+  connect();
+</script>
+</body>
+</html>

@@ -74,3 +74,8 @@ When the clip is missing, the phone's microphone and camera feed the hub over th
 ### 2026-10-28 · Cards stream over the Responses API so every stage is timed
 
 A slow DILO has to be blamed on one stage (audio at the hub, transcription, speaker label and addressing, first token, rest of the reply, hub, delivery), so the reply must be streamed to time its first token. Streamed Chat Completions on the Meta API report no token usage, which the eval needs; streamed Responses calls report it, cache hits included. So the cue, Look and live calls stream over `/v1/responses`; notes and briefing keep Chat Completions with `response_format`, where the whole answer is needed anyway. Delivery is timed by the phone acknowledging each card (`POST /seen`): measured on the hub's clock, an upper bound by one Wi-Fi hop, with no clock sync between laptop and phone.
+
+### 2026-10-28 · Lente is built by an auto lane, with brakes a model can't talk past
+
+Seven days remain and most tasks are agent work. One lane, not a fleet: almost every change touches `src/pilot.ts`, so parallel lanes would spend their gains on merge conflicts. The lane's brakes are deterministic: the runner (not the model) runs CI's checks, a guard hook enforces the hard rules, and only the runner commits. The second opinion is Muse Code, a different model from the builder and Meta's own coding agent, in standard mode. Hardware stays in the loop over USB (the clip via arduino-cli, the Android phone via adb and Chrome DevTools), and anything only a person can judge is tagged `[human]` and shown on the progress page instead of guessed. No dependency added: the runner shells out to `claude`, `muse`, `git`, `arduino-cli` and `adb`.
+

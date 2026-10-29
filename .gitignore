@@ -17,3 +17,6 @@ data/
 
 # Rendered eval set (audio, timelines)
 eval/audio/
+
+# The auto lane's worktree (its state and run logs live in data/auto/)
+.claude/worktrees/

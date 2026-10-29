@@ -8,7 +8,7 @@
 
 ## 2. Installable
 
-- [ ] 2.1 Web app manifest and icon served by the hub; verify "Add to Home Screen" launches full screen on iOS and Android
+- [ ] 2.1 Web app manifest and icon served by the hub; verify "Add to Home Screen" launches full screen on iOS and Android [phone] [human]
 
 ## 3. Layout system (from `docs/kb/ui-reference.md`)
 

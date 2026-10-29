@@ -31,17 +31,25 @@ Run OpenSpec as `pnpm exec openspec …` (pinned dev dependency). The OpenSpec s
 
 Build order (status 2026-10-28): done `harden-clip-protocol`, `add-meeting-memory`, `add-evals` (archived) · finishing `apply-dilo-identity` (2.1 install check), `add-addressed-to-you` (3.3 motor, hardware 2026-10-30), `add-app-navigation` (1.2, needs the clip) · in progress `add-record-only-mode` (hub done; phone next) · next `add-closing-agent` → `add-phone-capture` (builds the WebSocket ingest) → `add-fast-reply-lane` (needs `BASETEN_API_KEY`) → `add-glasses-mcp` → `add-desktop-mode` (reuses that ingest) / `add-cloud-hub`.
 
+## Auto lane
+
+`pnpm auto` builds ready task groups unattended: a headless Claude Code session per group in the worktree `.claude/worktrees/auto` (branch `auto/lente`), then CI's checks, a Muse Code review, and a commit fast-forwarded onto `main`. Hooks in `.claude/settings.json` enforce the hard rules in every session. To keep the graph honest:
+
+- Tag open tasks with what they need: `[hw]` clip board, `[phone]` Android phone over adb, `[human]` a person, `[key:NAME]` a key in `.env`. Untagged tasks are fair game for the lane.
+- A change that needs another first says so under its title: ``Depends on: `add-phone-capture` ``.
+- The bench (clip, phone, test speech) is described in the `lente-hardware` skill.
+
 ## Map
 
 - `src/pilot.ts` hub (TCP clip link, SSE + HTTP routes, model calls) · `src/pilot-page.ts` phone page · `src/clip-protocol.ts` frames, pacing, audio cleanup (pure) · `src/asr-session.ts` realtime transcription · `src/day-log.ts` text-only day record · `src/chat.ts`, `src/providers.ts` model clients
 - `firmware/lente-clip/` clip firmware · `firmware/selftest/` hardware self-test
 - `hardware/clip-v1/` parametric case (`clip.py` → STL, GLB) and 3D viewer
-- `scripts/` benchmarks · `test/` unit tests (`node --test`)
+- `scripts/` benchmarks · `scripts/auto/` auto lane (runner, guard, stop gate) · `scripts/progress/` progress page · `test/` unit tests (`node --test`)
 
 ## Commands
 
-- `pnpm pilot` hub (prints the phone URL) · `pnpm test` · `pnpm typecheck` · `pnpm ping` · `pnpm bench:llm` · `pnpm bench:asr <wav>` · `pnpm smoke` (end to end, stubbed Meta API, no keys)
-- Clip: `arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p /dev/cu.usbmodem* firmware/lente-clip`
+- `pnpm pilot` hub (prints the phone URL) · `pnpm test` · `pnpm typecheck` · `pnpm ping` · `pnpm bench:llm` · `pnpm bench:asr <wav>` · `pnpm smoke` (end to end, stubbed Meta API, no keys) · `pnpm progress` (live progress, port 7171) · `pnpm auto` (auto lane; `--dry-run` first)
+- Clip: `arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p "$LENTE_BOARD_PORT" firmware/lente-clip`. Name the port exactly (`arduino-cli board list`, the "ESP32 Family Device" row): the Android phone is a `/dev/cu.usbmodem…` too, and the guard refuses a glob.
 
 ## Conventions
 

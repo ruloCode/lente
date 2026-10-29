@@ -17,4 +17,4 @@
 
 - [x] 3.1 Cues fire only when addressed, with an "every question" testing switch; verify both paths with the simulated clip
 - [x] 3.2 Card and timeline show who asked and why; verify on a 390 px phone screenshot
-- [ ] 3.3 Firmware drives the motor on D0 for ~300 ms on `B` (when fitted); verify by feel and with the LED-only clip that nothing breaks (firmware written and flashed, LED path checked; motor feel pending hardware, arrives 2026-10-30)
+- [ ] 3.3 Firmware drives the motor on D0 for ~300 ms on `B` (when fitted); verify by feel and with the LED-only clip that nothing breaks (firmware written and flashed, LED path checked; motor feel pending hardware, arrives 2026-10-30) [hw] [human]
