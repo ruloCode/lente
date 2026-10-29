@@ -9,6 +9,7 @@ Lente: a clip on any glasses (XIAO ESP32-S3 Sense) streams to a Node hub that us
 - `docs/kb/hackathon.md`: rules that can disqualify the project.
 - `docs/kb/meta-api.md`: the real API surface. Don't invent endpoints or fields; if something isn't there, check the docs at dev.meta.ai and add it.
 - `docs/kb/decisions.md`: why things are the way they are.
+- `docs/kb/claude-managed-agents.md`: before touching the cloud auto lane. The Claude Platform key lives in `~/.config/lente/anthropic-cloud.key`, never in `.env` or any environment.
 - `openspec/specs/`: what Lente does today. `openspec/changes/<name>/`: the next pieces of work.
 
 ## Hard rules
@@ -38,6 +39,7 @@ Build order (status 2026-10-28): done `harden-clip-protocol`, `add-meeting-memor
 - Tag open tasks with what they need: `[hw]` clip board, `[phone]` Android phone over adb, `[human]` a person, `[key:NAME]` a key in `.env`. Untagged tasks are fair game for the lane.
 - A change that needs another first says so under its title: ``Depends on: `add-phone-capture` ``.
 - The bench (clip, phone, test speech) is described in the `lente-hardware` skill.
+- Cloud builds (`add-cloud-auto-lane`, in progress): `pnpm auto --cloud` sends code-only nodes to Claude Managed Agents, read-only, and merges their patch through the same gates.
 
 ## Map
 
