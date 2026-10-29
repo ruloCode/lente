@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { ActionStore, decide, parseDecision } from "../src/action-store.ts";
 import { TraceWriter, traceLine } from "../src/agent-trace.ts";
+import { planActions, PROPOSE_TOOL, type ModelStep } from "../src/agent-loop.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "lente-actions-"));
 const proposals = [
@@ -88,4 +89,26 @@ test("approving with emptied due or note leaves those fields out, not as empty s
   const [task] = store.addAll("m20261028100000", [{ tool: "create_task", args: { title: "Send deck", due: "viernes" }, evidence: ["t1"] }], 1);
   const r = decide(task, parsed!.decision, 2);
   assert.ok(r.ok && !("due" in r.action.args) && !("note" in r.action.args));
+});
+
+test("every step of a planActions run shows up in the trace viewer lines, in order", async () => {
+  const steps: ModelStep[] = [
+    { toolCalls: [{ id: "1", name: "get_meeting", args: {} }], usage: { inputTokens: 500, outputTokens: 20 } },
+    { toolCalls: [{ id: "2", name: PROPOSE_TOOL, args: { actions: [{ tool: "create_task", args: { text: "x" }, evidence: ["t1"] }] } }] },
+  ];
+  let i = 0;
+  const r = await planActions({
+    model: async () => steps[i++],
+    tools: [{ name: "get_meeting", description: "m", parameters: { type: "object" }, effect: "none", handler: () => ({ turns: ["t1"] }) }],
+    system: "plan",
+    context: "meeting",
+  });
+  const w = new TraceWriter(join(tmp(), "traces"));
+  const id = "m20261028120000";
+  w.appendRun(id, r.trace, 1);
+  const lines = w.read(id).map((e) => traceLine(e).label);
+  assert.equal(lines.length, r.trace.length);
+  assert.deepEqual(w.read(id).map((e) => e.kind), r.trace.map((t) => t.kind));
+  assert.equal(r.trace.at(-1)?.kind, "end");
+  assert.ok(lines.some((l) => l.includes("get_meeting")));
 });
