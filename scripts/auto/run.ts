@@ -11,7 +11,7 @@
 //   pnpm auto --budget 40 --node-budget 6 --model opus
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, lstatSync, mkdirSync, openSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, lstatSync, mkdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
@@ -30,6 +30,8 @@ const FQBN = "esp32:esp32:XIAO_ESP32S3:PSRAM=opi";
 // Wi-Fi only: the lane gets no model keys (.env), so building Lente spends no Meta or Baseten credit.
 const LINKED_SECRETS = ["firmware/lente-clip/secrets.h", "firmware/selftest/secrets.h"];
 const UNLINKED = [".env"];
+// Blanked in the builder's and reviewer's environment (names only; keyNames() also returns PATH and friends).
+const MODEL_KEYS = ["MODEL_API_KEY", "BASETEN_API_KEY", "ELEVENLABS_API_KEY", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET", "FIREWORKS_API_KEY"];
 const FIX_ROUNDS = 2;
 const WATCH_MS = 10 * 60_000;
 const REVIEW_TIMEOUT_MS = 10 * 60_000;
@@ -201,7 +203,7 @@ How:
 1. Read CLAUDE.md, then the change's proposal.md, design.md (if any), specs/ and tasks.md. Read docs/kb files only as the tasks need them. If the code must differ from the spec, update the change first.
 2. Implement each task, run the verification it names, and tick it (\`- [x]\`) in tasks.md only once that verification passed. If a task can't be finished (missing hardware behaviour, unclear spec, a step only a person can do), leave it unticked and report it blocked with the reason. Don't fake a verification and don't write a number you didn't measure.
 3. Bench: clip board ${boardPort ? `on ${boardPort} ($LENTE_BOARD_PORT)` : "not connected"}; Android phone ${phone ? `adb serial ${phone} ($LENTE_PHONE_SERIAL)` : "not connected"}. The lente-hardware skill says how to flash the clip, read its serial log, drive the phone page over adb and play test speech.
-4. Building Lente spends no model credit: this worktree has no .env and no Meta or Baseten key, and you must not load one from elsewhere. For live checks run the stubbed Meta API (\`pnpm stub\`, in the background; it prints the env that points a hub at it) and this checkout's hub with that env; the stub transcribes a fixed question whatever it hears, which is enough to check the page, the cards and the clip link. If a verification needs real model output (quality, real latency, a real transcript), leave that task unticked and report it blocked as "needs a real model run". The human's hub may be running on ports 7070/8080 from the main checkout; you may stop it for live checks (the clip connects to 7070). Stop your hub and the stub when done; the runner starts the human's hub again after the node.
+4. Building Lente spends no model credit: this worktree has no .env and no Meta or Baseten key, and you must not load one from elsewhere. For live checks run the stubbed Meta API (\`pnpm stub\`, in the background; it prints the env that points a hub at it) and this checkout's hub with that env; the stub transcribes a fixed question whatever it hears, which is enough to check the page, the cards and the clip link. If a verification needs real model output (quality, real latency, a real transcript), leave that task unticked and report it blocked as "needs a real model run". The human's hub may be running on ports 7070/8080 from the main checkout; you may stop it for live checks (the clip connects to 7070). Stop your hub and the stub when done, and leave the human's hub stopped: a hub left listening spends credit.
 5. Finish green: \`pnpm typecheck && pnpm test && pnpm exec openspec validate ${node.change} --strict\`. If every task of the change is now ticked, run \`pnpm exec openspec archive ${node.change} --yes\`. Add or update today's row in README.md "What was built during the hackathon".
 6. Don't commit, push, merge or rebase: the runner reviews, commits and merges. Stay inside this worktree.
 
@@ -328,7 +330,7 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
   const logPath = join(RUNS_DIR, `${new Date(started).toISOString().replace(/[:.]/g, "-")}-${node.change}.jsonl`);
   mkdirSync(RUNS_DIR, { recursive: true });
   save({ status: "working", message: `building ${node.change} / ${node.group}`, node: { change: node.change, group: node.group, tasks: node.tasks.map((t) => t.id), startedAt: started, round: 0 } });
-  const noKeys = Object.fromEntries([...keyNames(ROOT), "MODEL_API_KEY", "BASETEN_API_KEY"].map((k) => [k, ""]));
+  const noKeys = Object.fromEntries(MODEL_KEYS.map((k) => [k, ""]));
   const env = { ...process.env, ...noKeys, LENTE_AUTO: "1", LENTE_LANE_ROOT: LANE, LENTE_BOARD_PORT: boardPort ?? "", LENTE_PHONE_SERIAL: phone ?? "", LENTE_HUB_URL: "http://localhost:8080" };
 
   let costUsd = 0;
@@ -403,12 +405,9 @@ function hubPid(): number | null {
   return pid || null;
 }
 
-/** A node may stop the human's hub for live checks; start it again from the main checkout. */
-function restoreHub(wasUp: boolean): void {
-  if (!wasUp || hubPid() !== null) return;
-  const log = openSync(join(STATE_DIR, "hub.log"), "a");
-  spawn("node", ["--env-file-if-exists=.env", "src/pilot.ts"], { cwd: ROOT, detached: true, stdio: ["ignore", log, log] }).unref();
-  note(`restarted the human's hub from the main checkout (it was on ${HUB_PORT} before the node; log in data/auto/hub.log)`);
+/** A node may stop the human's hub for live checks. It stays off: a hub left listening spends transcription credit. */
+function noteHub(wasUp: boolean): void {
+  if (wasUp && hubPid() === null) note(`the human's hub was stopped for a live check and left off so it spends nothing; start it with \`pnpm pilot\` when needed`);
 }
 
 // ---------- main loop ----------
@@ -456,7 +455,7 @@ async function main(): Promise<void> {
     note(`▶ ${node.change} / ${node.group} (${node.tasks.map((t) => t.id).join(", ")})`);
     const hubWasUp = hubPid() !== null;
     const outcome = await runNode(node, boardPort, phone);
-    restoreHub(hubWasUp);
+    noteHub(hubWasUp);
     state.history.push(outcome);
     if (state.history.length > HISTORY_KEPT) state.history.shift();
     if (outcome.outcome === "failed") failed.add(`${node.change}/${node.group}`);
