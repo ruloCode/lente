@@ -7,6 +7,10 @@ export const MEETING_SILENCE_MS = 10 * 60_000;
 /** Fewer turns than this and the meeting is kept without notes. */
 export const MIN_TURNS = 3;
 const MAX_TITLE_CHARS = 80;
+/** Generated titles are shorter than the ones the wearer types. */
+export const MAX_GENERATED_TITLE_CHARS = 60;
+export const TOPICS = ["Proyecto", "Cliente", "Equipo", "Entrevista", "Clase", "Personal", "Otro"] as const;
+export type Topic = (typeof TOPICS)[number];
 
 export interface MeetingTurn {
   /** `t1`, `t2`… in order within the meeting; notes cite these. */
@@ -43,6 +47,9 @@ export interface GlossaryItem {
 }
 
 export interface Notes {
+  /** Generated Spanish title; the meeting only takes it when the wearer typed none. */
+  title?: string;
+  topic?: Topic;
   summary: string;
   glossary?: GlossaryItem[];
   decisions: Evidenced[];
@@ -62,6 +69,9 @@ export type EndReason = "manual" | "silence" | "restart" | "max-length" | "mode"
 export interface Meeting {
   id: string;
   title: string;
+  /** The title came from the notes, not from the wearer. */
+  titleGenerated?: boolean;
+  topic?: Topic;
   /** Opened by Solo grabar, not by the wearer. */
   auto?: boolean;
   startedAt: number;
@@ -127,8 +137,10 @@ export function notesSchema(turnIds: string[]) {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["summary", "decisions", "commitments", "openQuestions", "glossary"],
+    required: ["title", "topic", "summary", "decisions", "commitments", "openQuestions", "glossary"],
     properties: {
+      title: { type: "string", maxLength: MAX_GENERATED_TITLE_CHARS },
+      topic: { type: "string", enum: [...TOPICS] },
       summary: { type: "string" },
       decisions: { type: "array", items: evidenced(turnIds) },
       commitments: {
@@ -155,7 +167,7 @@ export function notesSchema(turnIds: string[]) {
 }
 
 export const NOTES_PROMPT =
-  "You write the notes of a meeting from its transcript. Lines look like `t3 YOU: text` or `t4 B: text`; " +
+  "You write the notes of a meeting from its transcript. Give it a short title in Spanish (at most 60 characters, no quotes) and one topic from the list in the schema. Lines look like `t3 YOU: text` or `t4 B: text`; " +
   "YOU is the person who wears the glasses. Write the summary, decisions, commitments and open questions in Spanish, " +
   "whatever language the meeting was held in; keep names, product terms and quoted words exactly as they were said. Give a summary of at most " +
   "two sentences, the decisions made, the commitments (what, owner, due date if one was said, else an empty string) " +
@@ -205,7 +217,11 @@ export function validateNotes(raw: unknown, turnIds: string[]): { notes: Notes; 
     }
     return out;
   };
+  const title = text(input.title).replace(/\s+/g, " ").slice(0, MAX_GENERATED_TITLE_CHARS).trim();
+  const topic = TOPICS.find((t) => t === text(input.topic));
   const notes: Notes = {
+    ...(title ? { title } : {}),
+    ...(topic ? { topic } : {}),
     summary: text(input.summary).slice(0, 400),
     decisions: list(input.decisions, (o, evidence) => (text(o.text) ? { text: text(o.text), evidence } : undefined)),
     commitments: list(input.commitments, (o, evidence) =>
@@ -215,4 +231,56 @@ export function validateNotes(raw: unknown, turnIds: string[]): { notes: Notes; 
     openQuestions: list(input.openQuestions, (o, evidence) => (text(o.text) ? { text: text(o.text), evidence } : undefined)),
   };
   return { notes, dropped };
+}
+
+/** Takes the topic always and the generated title only when the wearer typed none. */
+export function applyTitleAndTopic(meeting: Meeting, notes: Notes): void {
+  if (notes.topic) meeting.topic = notes.topic;
+  if (!meeting.title && notes.title) {
+    meeting.title = notes.title;
+    meeting.titleGenerated = true;
+  }
+}
+
+// --- Search ---------------------------------------------------------------------------------------
+
+export interface SearchMatch {
+  where: "title" | "summary" | "notes" | "transcript";
+  /** The turn a transcript line came from, or the first turn an item cites. */
+  turnId?: string;
+  line: string;
+}
+
+export interface SearchResult {
+  id: string;
+  title: string;
+  startedAt: number;
+  matches: SearchMatch[];
+}
+
+/** Lower case with accents removed, so "Presupuesto" finds "presupuesto" and "reunión" finds "reunion". */
+export const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+const MAX_MATCHES_PER_MEETING = 5;
+
+/** Plain-text search over titles, notes and transcripts; newest meeting first, no model call. */
+export function searchMeetings(meetings: Meeting[], query: string): SearchResult[] {
+  const needle = fold(query.trim().replace(/\s+/g, " "));
+  if (!needle) return [];
+  const results: SearchResult[] = [];
+  for (const m of meetings) {
+    const lines: SearchMatch[] = [{ where: "title", line: m.title }];
+    const n = m.notes;
+    if (n) {
+      lines.push({ where: "summary", line: n.summary });
+      for (const d of n.decisions) lines.push({ where: "notes", turnId: d.evidence[0], line: d.text });
+      for (const c of n.commitments) lines.push({ where: "notes", turnId: c.evidence[0], line: c.what });
+      for (const q of n.openQuestions) lines.push({ where: "notes", turnId: q.evidence[0], line: q.text });
+      for (const g of n.glossary ?? []) lines.push({ where: "notes", turnId: g.evidence[0], line: `${g.term}: ${g.meaning}` });
+    }
+    for (const t of m.turns) lines.push({ where: "transcript", turnId: t.id, line: t.text });
+    const matches = lines.filter((l) => l.line && fold(l.line).includes(needle));
+    if (matches.length) results.push({ id: m.id, title: m.title, startedAt: m.startedAt, matches: matches.slice(0, MAX_MATCHES_PER_MEETING) });
+  }
+  return results.sort((a, b) => b.startedAt - a.startedAt);
 }

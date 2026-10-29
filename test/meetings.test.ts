@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { MeetingStore } from "../src/meeting-store.ts";
-import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, MEETING_SILENCE_MS, addTurn, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "../src/meetings.ts";
+import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, MEETING_SILENCE_MS, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, searchMeetings, silenceExpired, validateNotes } from "../src/meetings.ts";
 
 const AT = Date.UTC(2026, 9, 28, 15, 7, 12);
 
@@ -134,4 +134,54 @@ test("an automatic episode ends on a silence gap or at its maximum length", () =
   assert.equal(episodeEnd({ startedAt: start, lastSpeechAt: start }, start + EPISODE_MAX_MS), "silence", "silence wins when both apply");
   assert.equal(episodeEnd({ startedAt: 0, lastSpeechAt: 9000 }, 12_000, { silenceMs: 3000, maxMs: 60_000 }), "silence");
   assert.equal(episodeEnd({ startedAt: 0, lastSpeechAt: 9500 }, 12_000, { silenceMs: 3000, maxMs: 10_000 }), "max-length");
+});
+
+test("validateNotes parses the title and topic, trims the title and drops a topic outside the list", () => {
+  const long = "Revisión   del presupuesto " + "x".repeat(80);
+  const { notes } = validateNotes({ title: long, topic: "Cliente", summary: "s" }, ["t1"]);
+  assert.ok(notes.title && notes.title.length <= 60 && !notes.title.includes("  "));
+  assert.equal(notes.topic, "Cliente");
+  const odd = validateNotes({ title: 5, topic: "Deportes", summary: "s" }, ["t1"]).notes;
+  assert.equal(odd.title, undefined);
+  assert.equal(odd.topic, undefined);
+  const schema = notesSchema(["t1"]) as { required: string[]; properties: { topic: { enum: string[] } } };
+  assert.ok(schema.required.includes("title") && schema.required.includes("topic"));
+  assert.ok(schema.properties.topic.enum.includes("Otro"));
+});
+
+test("the generated title fills an untitled meeting, the wearer's title always wins", () => {
+  const untitled = newMeeting("", AT);
+  applyTitleAndTopic(untitled, { title: "Plan del trimestre", topic: "Equipo", summary: "", decisions: [], commitments: [], openQuestions: [] });
+  assert.equal(untitled.title, "Plan del trimestre");
+  assert.equal(untitled.titleGenerated, true);
+  assert.equal(untitled.topic, "Equipo");
+  const typed = newMeeting("Sprint review", AT);
+  applyTitleAndTopic(typed, { title: "Otro título", topic: "Proyecto", summary: "", decisions: [], commitments: [], openQuestions: [] });
+  assert.equal(typed.title, "Sprint review");
+  assert.equal(typed.titleGenerated, undefined);
+  assert.equal(typed.topic, "Proyecto");
+});
+
+test("searchMeetings ignores case and accents, returns matching lines and lists the newest first", () => {
+  const old = newMeeting("Cliente", AT);
+  addTurn(old, { at: AT, speaker: "A", text: "El Presupuesto sube un diez por ciento" });
+  addTurn(old, { at: AT, speaker: "B", text: "Nada más" });
+  const recent = newMeeting("Reunión semanal", AT + 86_400_000);
+  addTurn(recent, { at: AT, speaker: "A", text: "hablemos del presupuesto" });
+  recent.notes = { summary: "Se revisó el PRESUPUESTO.", decisions: [{ text: "Congelar gastos", evidence: ["t1"] }], commitments: [], openQuestions: [] };
+  const other = newMeeting("Otra", AT + 2 * 86_400_000);
+  addTurn(other, { at: AT, speaker: "A", text: "nada relevante" });
+  const found = searchMeetings([old, recent, other], "presupuesto");
+  assert.deepEqual(found.map((r) => r.id), [recent.id, old.id]);
+  assert.deepEqual(found[1].matches, [{ where: "transcript", turnId: "t1", line: "El Presupuesto sube un diez por ciento" }]);
+  assert.equal(found[0].matches.length, 2);
+  assert.equal(searchMeetings([recent], "reunion")[0].matches[0].where, "title");
+  assert.equal(searchMeetings([old, recent], "  PRESUPUESTO ").length, 2);
+});
+
+test("searchMeetings returns an empty list for no match or a blank query", () => {
+  const m = newMeeting("Sprint", AT);
+  addTurn(m, { at: AT, speaker: "A", text: "hola" });
+  assert.deepEqual(searchMeetings([m], "zzz"), []);
+  assert.deepEqual(searchMeetings([m], "   "), []);
 });

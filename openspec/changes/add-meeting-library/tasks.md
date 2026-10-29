@@ -2,8 +2,8 @@
 
 ## 1. Hub
 
-- [ ] 1.1 Title and topic in the notes schema and prompt (same call), the wearer's title kept; unit tests for parsing and precedence (`pnpm test`)
-- [ ] 1.2 Search as a pure function over stored meetings (case and accents ignored, matching lines, newest first) and a GET route; unit tests (`pnpm test`)
+- [x] 1.1 Title and topic in the notes schema and prompt (same call), the wearer's title kept; unit tests for parsing and precedence (`pnpm test`)
+- [x] 1.2 Search as a pure function over stored meetings (case and accents ignored, matching lines, newest first) and a GET route; unit tests (`pnpm test`)
 - [ ] 1.3 One real extraction of a synthetic dialogue shows the generated title and topic [key:MODEL_API_KEY]
 
 ## 2. Phone
