@@ -1,5 +1,6 @@
 // A meeting is an episode: it starts and ends on the phone (or after a long silence),
 // keeps the turns heard meanwhile and, once over, gets structured notes from a model.
+// In Solo grabar the hub opens and closes episodes on its own (`auto`).
 // Pure logic: the hub keeps the clock, the store and the model call.
 
 export const MEETING_SILENCE_MS = 10 * 60_000;
@@ -56,12 +57,16 @@ export interface AskedAnswered {
   answered: number;
 }
 
+export type EndReason = "manual" | "silence" | "restart" | "max-length" | "mode";
+
 export interface Meeting {
   id: string;
   title: string;
+  /** Opened by Solo grabar, not by the wearer. */
+  auto?: boolean;
   startedAt: number;
   endedAt?: number;
-  endReason?: "manual" | "silence" | "restart";
+  endReason?: EndReason;
   status: MeetingStatus;
   turns: MeetingTurn[];
   notes?: Notes;
@@ -86,6 +91,26 @@ export function addTurn(meeting: Meeting, turn: Omit<MeetingTurn, "id">): Meetin
 export const isTooShort = (meeting: Meeting): boolean => meeting.turns.length < MIN_TURNS;
 
 export const silenceExpired = (lastSpeechAt: number, now: number, timeoutMs = MEETING_SILENCE_MS): boolean => now - lastSpeechAt >= timeoutMs;
+
+/** Solo grabar: a pause this long closes the episode; no episode runs longer than the maximum. */
+export const EPISODE_SILENCE_MS = 5 * 60_000;
+export const EPISODE_MAX_MS = 60 * 60_000;
+
+export interface EpisodePolicy {
+  silenceMs: number;
+  maxMs: number;
+}
+
+/** Why an automatic episode should end now, or undefined to keep it open. Silence wins when both apply. */
+export function episodeEnd(
+  episode: { startedAt: number; lastSpeechAt: number },
+  now: number,
+  policy: EpisodePolicy = { silenceMs: EPISODE_SILENCE_MS, maxMs: EPISODE_MAX_MS },
+): "silence" | "max-length" | undefined {
+  if (silenceExpired(episode.lastSpeechAt, now, policy.silenceMs)) return "silence";
+  if (now - episode.startedAt >= policy.maxMs) return "max-length";
+  return undefined;
+}
 
 // --- Extraction: schema, prompt and validation --------------------------------------------------
 

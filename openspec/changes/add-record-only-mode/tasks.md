@@ -2,9 +2,9 @@
 
 ## 1. Hub
 
-- [ ] 1.1 Assist mode in the status and the profile, set with POST routes from the phone, persisted; tests for the profile round trip
-- [ ] 1.2 Gate the cue pipeline on the mode (no detection, addressing or reply calls, no cue, buzz or voice in Solo grabar); verify with the eval runner replaying one dialogue in Solo grabar: zero chat calls in its `usage` events, turns still recorded
-- [ ] 1.3 Automatic episodes in Solo grabar: split policy (silence gap, maximum length) as a pure function with tests; notes per episode with the meeting extraction; verify on a replayed dialogue that an episode closes and Memoria gains its words
+- [x] 1.1 Assist mode in the status and the profile, set with POST routes from the phone, persisted; tests for the profile round trip
+- [x] 1.2 Gate the cue pipeline on the mode (no detection, addressing or reply calls, no cue, buzz or voice in Solo grabar); verify with the eval runner replaying one dialogue in Solo grabar: zero chat calls in its `usage` events, turns still recorded
+- [x] 1.3 Automatic episodes in Solo grabar: split policy (silence gap, maximum length) as a pure function with tests; notes per episode with the meeting extraction; verify on a replayed dialogue that an episode closes and Memoria gains its words
 
 ## 2. Phone
 

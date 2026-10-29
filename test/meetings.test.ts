@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { MeetingStore } from "../src/meeting-store.ts";
-import { MEETING_SILENCE_MS, addTurn, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "../src/meetings.ts";
+import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, MEETING_SILENCE_MS, addTurn, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "../src/meetings.ts";
 
 const AT = Date.UTC(2026, 9, 28, 15, 7, 12);
 
@@ -116,4 +116,14 @@ test("store gives a new id when two meetings start in the same second", () => {
   const first = newMeeting("a", AT);
   store.save(first);
   assert.equal(store.uniqueId(first.id), `${first.id}-2`);
+});
+
+test("an automatic episode ends on a silence gap or at its maximum length", () => {
+  const start = 1_000_000;
+  assert.equal(episodeEnd({ startedAt: start, lastSpeechAt: start + 60_000 }, start + 60_000 + EPISODE_SILENCE_MS - 1), undefined);
+  assert.equal(episodeEnd({ startedAt: start, lastSpeechAt: start + 60_000 }, start + 60_000 + EPISODE_SILENCE_MS), "silence");
+  assert.equal(episodeEnd({ startedAt: start, lastSpeechAt: start + EPISODE_MAX_MS - 1000 }, start + EPISODE_MAX_MS), "max-length");
+  assert.equal(episodeEnd({ startedAt: start, lastSpeechAt: start }, start + EPISODE_MAX_MS), "silence", "silence wins when both apply");
+  assert.equal(episodeEnd({ startedAt: 0, lastSpeechAt: 9000 }, 12_000, { silenceMs: 3000, maxMs: 60_000 }), "silence");
+  assert.equal(episodeEnd({ startedAt: 0, lastSpeechAt: 9500 }, 12_000, { silenceMs: 3000, maxMs: 10_000 }), "max-length");
 });

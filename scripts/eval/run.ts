@@ -3,7 +3,10 @@
 // the audio at real-time pace over the real protocol; Muse Voice Transcribe and Muse Spark are the
 // real ones. The runner listens to the hub's event stream like a phone would.
 //
-//   pnpm eval [--only d01-standup] [--vision 5] [--out results/eval-<stamp>]
+//   pnpm eval [--only d01-standup] [--vision 5] [--record-only] [--out results/eval-<stamp>]
+//
+// `--record-only` replays in Solo grabar: turns are recorded, and the model calls per label show
+// that no addressing or reply call was made.
 //
 // Needs MODEL_API_KEY (.env) and `pnpm eval:render` done first. A full pass takes under ten minutes.
 
@@ -26,7 +29,7 @@ const LOOK_TIMEOUT_MS = 20_000;
 const AUDIO_DIR = "eval/audio";
 
 const { values } = parseArgs({
-  options: { only: { type: "string" }, vision: { type: "string", default: "5" }, out: { type: "string" } },
+  options: { only: { type: "string" }, vision: { type: "string", default: "5" }, out: { type: "string" }, "record-only": { type: "boolean", default: false } },
 });
 const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 13);
 const outDir = values.out ?? join("results", `eval-${stamp}`);
@@ -148,6 +151,7 @@ async function replay(d: Dialogue): Promise<DialogueRun> {
   const hub = await startHub(d.id);
   try {
     await post("/profile", { names: d.names.join(", ") });
+    if (values["record-only"]) await post("/assist-mode/record");
     const clip = runClip(hub, wav);
     const t0 = await clip.connectedAt;
     await clip.done;
@@ -260,7 +264,7 @@ function markdown(date: string, set: Dialogue[], s: Summary, vision: VisionRun |
     `### Eval run ${date}`,
     "",
     `Set: ${set.length} synthetic dialogues, ${c.lines} lines, ${c.questions} questions (${c.addressed} aimed at the wearer). Replayed at real time through the hub with the clip emulator.`,
-    `Models: ${models.join(", ") || "n/a"} (reasoning effort ${effort}); transcription \`${TRANSCRIBE_MODEL}\` in DIARIZATION mode; wearer name "${set[0].names.join(", ")}"; cues only when addressed.`,
+    `Models: ${models.join(", ") || "n/a"} (reasoning effort ${effort}); transcription \`${TRANSCRIBE_MODEL}\` in DIARIZATION mode; wearer name "${set[0].names.join(", ")}"; ${values["record-only"] ? "Solo grabar (no cues)" : "cues only when addressed"}.`,
     "",
     "| Metric | p50 / p95 or value | Detail |",
     "|---|---|---|",
@@ -280,7 +284,10 @@ for (const d of set) {
   const run = await replay(d);
   runs.push(run);
   const q = run.results.filter((r) => r.question);
-  console.log(`${d.id}: ${run.turns} turns, ${q.filter((r) => r.turnId).length}/${q.length} questions heard, ${run.cues} cue(s), ${((performance.now() - started) / 1000).toFixed(0)} s`);
+  const perLabel = new Map<string, number>();
+  for (const u of run.usage) perLabel.set(u.label, (perLabel.get(u.label) ?? 0) + 1);
+  const calls = [...perLabel].map(([label, n]) => `${label} ${n}`).join(", ") || "none";
+  console.log(`${d.id}: ${run.turns} turns, ${q.filter((r) => r.turnId).length}/${q.length} questions heard, ${run.cues} cue(s), model calls: ${calls}, ${((performance.now() - started) / 1000).toFixed(0)} s`);
 }
 const vision = await measureVision(values.only ? 0 : Number(values.vision));
 const summary = summarize(runs);

@@ -6,7 +6,8 @@
 // http://<laptop>:8080 and can read everything out loud.
 //
 // Modes: camera + mic, or mic only (the clip powers the camera down to save battery).
-// Listening can be paused. The day is kept as text in data/days/ (git-ignored).
+// Listening can be paused. Solo grabar records without cues and splits the day into episodes
+// that get notes like meetings. The day is kept as text in data/days/ (git-ignored).
 //
 // Usage: pnpm pilot   (MODEL_API_KEY in .env; ELEVENLABS_API_KEY optional for a natural voice)
 
@@ -26,8 +27,8 @@ import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
 import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
 import { MeetingStore } from "./meeting-store.ts";
-import { type Meeting, type MeetingTurn, addTurn, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
-import { ProfileStore } from "./profile.ts";
+import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, silenceExpired, validateNotes } from "./meetings.ts";
+import { type AssistMode, ProfileStore } from "./profile.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
 import { ArrivalClock, type Stages, formatStages } from "./stages.ts";
@@ -41,6 +42,11 @@ const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_GAP_MS = 400;
 const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
+/** Solo grabar's automatic episodes; the eval and the checks shorten them. */
+const EPISODES: EpisodePolicy = {
+  silenceMs: process.env.PILOT_EPISODE_SILENCE_S ? Number(process.env.PILOT_EPISODE_SILENCE_S) * 1000 : EPISODE_SILENCE_MS,
+  maxMs: process.env.PILOT_EPISODE_MAX_MIN ? Number(process.env.PILOT_EPISODE_MAX_MIN) * 60_000 : EPISODE_MAX_MS,
+};
 /** Where the day, meetings and profile are kept; the eval runner points it at a scratch folder. */
 const DATA_DIR = process.env.PILOT_DATA_DIR ?? fileURLToPath(new URL("../data/", import.meta.url));
 const meetings = new MeetingStore(join(DATA_DIR, "meetings"));
@@ -77,12 +83,14 @@ let status = {
   voice: elevenKey ? "elevenlabs" : "device",
   audioLost: 0,
   audioLate: 0,
-  /** The meeting in progress, if any. */
-  meeting: null as null | { id: string; title: string; startedAt: number; turns: number },
+  /** The meeting in progress, if any; `auto` for a Solo grabar episode. */
+  meeting: null as null | { id: string; title: string; startedAt: number; turns: number; auto?: boolean },
   /** Name and aliases other people use for the wearer (set on the phone). */
   names: profile.names,
   /** Testing: cue on every question, not only those aimed at the wearer. */
   everyQuestion: profile.everyQuestion,
+  /** Asistir (cues) or Solo grabar (record and learn, no cues). */
+  assistMode: profile.assistMode,
   /** Speaker label of the wearer in this transcription session, once known. */
   wearer: "",
   /** Why the last clip was refused (old firmware, bad hello); cleared by the next good hello. */
@@ -192,6 +200,7 @@ async function sayThis(turn: AsrTurn, asker: string | undefined, why: string, st
   try {
     const reply = await callSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue", stream: true });
     if (seq !== cueSeq) return; // a newer question already took the card
+    if (profile.assistMode !== "assist") return; // switched to Solo grabar while the reply was on its way
     const ms = Math.round(performance.now() - started);
     const text = toCue(reply.text);
     if (!text) return;
@@ -222,11 +231,29 @@ async function labelOf(turn: AsrTurn): Promise<string | undefined> {
   return turn.speaker ?? speakerOfTurn.get(turn.turnId);
 }
 
+/** Mark the meeting turn as a question aimed at the wearer, for asked versus answered. */
+function flagAddressed(turnId: string): void {
+  const kept = meetingTurns.get(turnId);
+  if (kept && current?.turns.includes(kept)) {
+    kept.addressed = true;
+    meetings.save(current);
+  }
+}
+
 /** The cue is for the wearer only when the question was aimed at them (or the testing switch is on). */
 async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: number | undefined, stages: Stages): Promise<void> {
   const speaker = await labelOf(turn);
   const now = spokeAt ?? Date.now();
   const asked: AddressTurn = { speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
+  if (profile.assistMode === "record") {
+    // Solo grabar: the free rules still mark questions for the wearer; no model check, no cue.
+    const d = isAddressed(asked, earlier, wearerTracker.wearer(), profile.names);
+    const verdict = d.verdict === "addressed" ? "addressed" : "not-addressed";
+    console.log(`[address] ${verdict} · ${d.rule} · record only`);
+    broadcast({ kind: "address", turnId: turn.turnId, verdict, rule: d.rule });
+    if (verdict === "addressed") flagAddressed(turn.turnId);
+    return;
+  }
   if (profile.everyQuestion) {
     console.log("[address] addressed · testing (every question)");
     broadcast({ kind: "address", turnId: turn.turnId, verdict: "addressed", rule: "testing" });
@@ -236,11 +263,7 @@ async function cueIfAddressed(turn: AsrTurn, earlier: AddressTurn[], spokeAt: nu
   console.log(`[address] ${d.verdict} · ${d.rule}${d.ms ? ` · ${d.ms} ms` : ""}`);
   broadcast({ kind: "address", turnId: turn.turnId, verdict: d.verdict, rule: d.rule, ms: d.ms });
   if (d.verdict === "addressed") {
-    const kept = meetingTurns.get(turn.turnId);
-    if (kept && current?.turns.includes(kept)) {
-      kept.addressed = true;
-      meetings.save(current);
-    }
+    flagAddressed(turn.turnId);
     void sayThis(turn, speaker, d.rule, stages);
   }
 }
@@ -300,6 +323,7 @@ let lastSpeechAt = 0;
 const meetingSummary = (m: Meeting) => ({
   id: m.id,
   title: m.title,
+  auto: m.auto === true,
   startedAt: m.startedAt,
   endedAt: m.endedAt,
   status: m.status,
@@ -333,21 +357,23 @@ function broadcastMeetings(): void {
 
 function syncMeeting(): void {
   const m = current;
-  setStatus({ meeting: m ? { id: m.id, title: m.title, startedAt: m.startedAt, turns: m.turns.length } : null });
+  setStatus({ meeting: m ? { id: m.id, title: m.title, startedAt: m.startedAt, turns: m.turns.length, auto: m.auto === true } : null });
 }
 
-function startMeeting(title: string): void {
+/** `auto`: an episode Solo grabar opened on its own. A meeting started by hand while one runs replaces it. */
+function startMeeting(title: string, auto = false): void {
+  if (current?.auto && !auto) void endMeeting("manual");
   if (current) return;
   const draft = newMeeting(title, Date.now());
-  current = { ...draft, id: meetings.uniqueId(draft.id) };
+  current = { ...draft, id: meetings.uniqueId(draft.id), ...(auto ? { auto: true } : {}) };
   lastSpeechAt = Date.now();
   meetings.save(current);
   syncMeeting();
   broadcastMeetings();
-  console.log(`[meeting] started ${current.id}${current.title ? ` "${current.title}"` : ""}`);
+  console.log(`[meeting] started ${current.id}${current.title ? ` "${current.title}"` : ""}${auto ? " (episode)" : ""}`);
 }
 
-async function endMeeting(reason: "manual" | "silence" | "restart"): Promise<void> {
+async function endMeeting(reason: EndReason): Promise<void> {
   const m = current;
   if (!m) return;
   current = undefined;
@@ -419,7 +445,9 @@ for (const m of meetings.list().filter((x) => x.status === "running" || x.status
 }
 
 setInterval(() => {
-  if (current && silenceExpired(lastSpeechAt, Date.now(), MEETING_SILENCE_MS)) void endMeeting("silence");
+  if (!current) return;
+  const why = current.auto ? episodeEnd({ startedAt: current.startedAt, lastSpeechAt }, Date.now(), EPISODES) : silenceExpired(lastSpeechAt, Date.now(), MEETING_SILENCE_MS) ? "silence" : undefined;
+  if (why) void endMeeting(why);
 }, 5000);
 
 // --- What is happening: periodic and on-demand summaries ---------------------------------------
@@ -459,7 +487,8 @@ async function summarize(asked: boolean): Promise<void> {
 setInterval(() => {
   const due = Date.now() - lastSummaryAt >= SUMMARY_EVERY_MS;
   const heardSomething = day.since(lastSummaryAt).some((e) => e.kind === "turn");
-  if (due && heardSomething && status.listening && device) void summarize(false);
+  // Solo grabar is quiet: no unasked summaries (Resumen still works on demand).
+  if (due && heardSomething && status.listening && device && profile.assistMode === "assist") void summarize(false);
 }, 30_000);
 
 // --- Live view: photo → description → next photo, paced by the model itself --------------------
@@ -532,6 +561,14 @@ function setLive(on: boolean): void {
   if (on) requestLiveFrame();
 }
 
+function setAssistMode(mode: AssistMode): void {
+  if (mode === profile.assistMode) return;
+  profile.setAssistMode(mode);
+  setStatus({ assistMode: mode });
+  if (mode === "assist" && current?.auto) void endMeeting("mode");
+  console.log(`[mode] ${mode === "assist" ? "Asistir" : "Solo grabar"}`);
+}
+
 function setEveryQuestion(on: boolean): void {
   profile.setEveryQuestion(on);
   setStatus({ everyQuestion: on });
@@ -597,6 +634,7 @@ function startAsr(): void {
       if (turn.speaker !== undefined) wearerTracker.noteSpeaker(turn.turnId, turn.speaker);
       syncWearer();
       const question = isQuestion(turn.text);
+      if (profile.assistMode === "record" && !current) startMeeting("", true);
       const anchor =
         turn.startMs === undefined || turn.endMs === undefined || !audioOrigin
           ? {}
@@ -760,6 +798,8 @@ const ACTIONS: Record<string, () => void> = {
   "/summary": () => void summarize(true),
   "/cues/all": () => setEveryQuestion(true),
   "/cues/addressed": () => setEveryQuestion(false),
+  "/assist-mode/assist": () => setAssistMode("assist"),
+  "/assist-mode/record": () => setAssistMode("record"),
 };
 
 // What makes the phone page installable: manifest and icons, drawn in src/brand.ts.

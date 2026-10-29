@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -93,4 +93,16 @@ test("profile names survive a restart", () => {
   const again = new ProfileStore(file);
   assert.equal(again.everyQuestion, true);
   assert.deepEqual(again.names, ["Rulo", "Raúl"], "the switch does not drop the names");
+});
+
+test("assist mode survives a restart and defaults to Asistir", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "lente-profile-")), "profile.json");
+  assert.equal(new ProfileStore(file).assistMode, "assist");
+  new ProfileStore(file).setNames("Rulo");
+  new ProfileStore(file).setAssistMode("record");
+  const again = new ProfileStore(file);
+  assert.equal(again.assistMode, "record");
+  assert.deepEqual(again.names, ["Rulo"], "the mode does not drop the names");
+  writeFileSync(file, JSON.stringify({ assistMode: "loud" }));
+  assert.equal(new ProfileStore(file).assistMode, "assist", "an unknown mode falls back to Asistir");
 });
