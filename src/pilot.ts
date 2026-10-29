@@ -34,6 +34,8 @@ import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
 import { chatTargets } from "./providers.ts";
 import { ArrivalClock, type Stages, formatStages } from "./stages.ts";
+import { SessionClock, connectEvents } from "./live-session.ts";
+import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
 const WEB_PORT = Number(process.env.PILOT_WEB_PORT ?? 8080);
@@ -130,6 +132,13 @@ let status = {
 
 const clients = new Set<ServerResponse>();
 const day = new DayLog(join(DATA_DIR, "days"));
+/** The listening session behind the phone's elapsed time; it runs while listening with the clip on. */
+const sessionClock = new SessionClock();
+/** Text of the turn in progress, for a phone that connects mid-sentence; cleared on turn and on pause. */
+let latestPartial = "";
+
+/** The status as sent: the session view is taken at send time so every phone shows the same elapsed time. */
+const statusEvent = () => ({ ...status, session: sessionClock.view(Date.now()) });
 
 function broadcast(event: object): void {
   const line = `data: ${JSON.stringify(event)}\n\n`;
@@ -175,7 +184,9 @@ function keepStaged(id: string, phoneAt?: number): void {
 
 function setStatus(patch: Partial<typeof status>): void {
   status = { ...status, ...patch };
-  broadcast(status);
+  if (status.listening && status.clip) sessionClock.run(Date.now());
+  else sessionClock.hold(Date.now());
+  broadcast(statusEvent());
   console.log(`[status] clip=${status.clip ? "on" : "off"} · ${status.mode} · ${status.listening ? "listening" : "paused"} · ${status.asr}`);
 }
 
@@ -337,6 +348,29 @@ async function onScreen(jpeg: Buffer, heardAt: number): Promise<void> {
     broadcast({ kind: "cue", label: "PHOTO", text: "Could not read the photo", photo });
     console.error(`[look] failed: ${(error as Error).message.slice(0, 200)}`);
   }
+}
+
+// --- Help on demand: Aportar, Pregunta, ¿De qué hablan? ----------------------------------------------
+
+/** One Spark call on the turns of this listening session; the card goes to every phone, the outcome back to the asker. */
+async function help(kind: unknown): Promise<HelpOutcome> {
+  const since = sessionClock.view(Date.now())?.startedAt;
+  const turns = since === undefined ? [] : day.entries.filter((e): e is Extract<DayEntry, { kind: "turn" }> => e.kind === "turn" && e.at >= since);
+  let reply: SparkReply | undefined;
+  const out = await requestHelp({ kind, assistMode: profile.assistMode, turns, memory: memoryText() }, async (messages) => {
+    reply = await callSpark(messages, { label: "help", stream: true });
+    return reply.text;
+  });
+  if (!out.ok) {
+    console.log(`[help] ${String(kind)} refused: ${out.reason}`);
+    return out;
+  }
+  // Switched to Solo grabar while the answer was on its way: no card.
+  if (profile.assistMode !== "assist") return { ok: false, reason: "record-only", message: HELP_REFUSALS["record-only"] };
+  const stages = reply && { asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
+  recordStaged({ at: Date.now(), kind: "cue", label: out.label, text: out.text, meaning: out.meaning, ms: out.ms, stages });
+  console.log(`[help] ${out.label} · ${out.ms} ms · ${out.text}${out.meaning ? ` (${out.meaning})` : ""}`);
+  return out;
 }
 
 // --- Meetings: start and end from the phone, notes extracted at the end ----------------------------
@@ -618,6 +652,13 @@ function setListening(on: boolean): void {
   }
 }
 
+/** Stop on the phone: listening pauses, an open meeting ends with its notes, the next start is a new session. */
+function stopSession(): void {
+  sessionClock.end(Date.now());
+  setListening(false);
+  void endMeeting("manual");
+}
+
 // --- The clip ------------------------------------------------------------------------------------
 
 let device: Socket | undefined;
@@ -647,7 +688,10 @@ function startAsr(): void {
   setStatus({ asr: "connecting to Muse Voice Transcribe…" });
   const session = new AsrSession(key, {
     onStatus: (s) => setStatus({ asr: s }),
-    onPartial: (text) => broadcast({ kind: "partial", text }),
+    onPartial: (text) => {
+      latestPartial = text;
+      broadcast({ kind: "partial", text });
+    },
     onSessionStart: () => {
       speakerOfTurn.clear();
       meetingTurns.clear();
@@ -661,6 +705,7 @@ function startAsr(): void {
       syncWearer();
     },
     onTurn: (turn) => {
+      latestPartial = "";
       const stages: Stages = { heard: turn.endMs === undefined ? undefined : arrivals.at(turn.endMs), turn: Date.now() };
       const earlier = day.entries.filter((e): e is Extract<DayEntry, { kind: "turn" }> => e.kind === "turn").slice(-ADDRESS_HISTORY_TURNS).map(toAddressTurn);
       if (turn.startMs !== undefined && turn.endMs !== undefined) wearerTracker.noteLoudness(turn.turnId, loudness.medianBetween(turn.startMs, turn.endMs));
@@ -680,7 +725,7 @@ function startAsr(): void {
         meetings.save(current);
         syncMeeting();
       }
-      record({ at: Date.now(), kind: "turn", speaker: turn.speaker, text: turn.text, question, ...anchor }, { turnId: turn.turnId });
+      record({ at: Date.now(), kind: "turn", turnId: turn.turnId, speaker: turn.speaker, text: turn.text, question, ...anchor });
       const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
       console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
       if (question && key) void cueIfAddressed(turn, earlier, anchor.spokeAt, stages);
@@ -700,6 +745,7 @@ function stopAsr(): void {
   pacer = undefined;
   asr?.stop();
   asr = undefined;
+  latestPartial = "";
 }
 
 const tcp = createTcpServer((socket) => {
@@ -838,6 +884,7 @@ const ACTIONS: Record<string, () => void> = {
   "/mode/mic": () => setMode("mic"),
   "/listen/on": () => setListening(true),
   "/listen/off": () => setListening(false),
+  "/session/stop": () => stopSession(),
   "/summary": () => void summarize(true),
   "/cues/all": () => setEveryQuestion(true),
   "/cues/addressed": () => setEveryQuestion(false),
@@ -866,10 +913,8 @@ const web = createHttpServer(async (req, res) => {
       res.end(PILOT_PAGE);
     } else if (req.method === "GET" && req.url === "/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-      res.write(`data: ${JSON.stringify(status)}\n\n`);
-      res.write(`data: ${JSON.stringify({ kind: "history", items: day.entries.slice(-80) })}\n\n`);
-      res.write(`data: ${JSON.stringify(meetingsEvent())}\n\n`);
-      res.write(`data: ${JSON.stringify(recordedEvent())}\n\n`);
+      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), recordedEvent()] });
+      for (const event of events) res.write(`data: ${JSON.stringify(event)}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
     } else if (req.method === "POST" && req.url === "/meeting/start") {
@@ -912,6 +957,15 @@ const web = createHttpServer(async (req, res) => {
       const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
       if (typeof id === "string") keepStaged(id, phoneAt);
       res.writeHead(204).end();
+    } else if (req.method === "POST" && req.url === "/help") {
+      const { kind } = JSON.parse((await readBody(req)) || "{}") as { kind?: unknown };
+      const out = await help(kind).catch((error: Error) => {
+        console.error(`[help] failed: ${error.message.slice(0, 200)}`);
+        return { ok: false as const, reason: "failed", message: "No se pudo pedir la ayuda; prueba otra vez." };
+      });
+      const code = out.ok ? 200 : out.reason === "unknown-kind" ? 400 : out.reason === "record-only" || out.reason === "no-turns" ? 409 : 502;
+      res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(out));
     } else if (req.method === "POST" && req.url === "/tts") {
       const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };
       await speak(res, text ?? "");

@@ -107,3 +107,19 @@ What the runs showed:
 - The cue got about 0.3 s slower at the median and stayed the same at p90. Most of the median gap is in the first token (+0.30 s), not in the extra line (+0.05 s): the longer instruction costs more than writing the meaning. One run each, so a 0.3 s difference is within what two runs of the same code can differ by; it is a cost to watch, not a settled one.
 - Every English card carried a meaning, including the English question in the code-switching meeting (d10). The two Spanish cards (d09, three Spanish questions, two of them merged into one turn) came back as a sentence alone. Example: "I can share an estimate by tomorrow morning." / "Puedo dar la estimación mañana por la mañana."
 - Addressing differs between the runs (19 vs 17 cues) because the addressing call is a model call too; it does not use the reply prompt.
+
+## Help on demand — 2026-10-28
+
+One real call per kind with `pnpm bench:help` (`add-live-transcript`, task 1.3): the hub's own prompts, parsing and streamed Responses call (`requestHelp` in `src/help.ts`), on a synthetic six-turn English meeting about a deadline (invented, no real meeting) and an empty memory. Model: spark-1.3-minimal (reasoning effort minimal). Time is from the request to the parsed card on the laptop; the phone and the Wi-Fi hop are not in it.
+
+| Kind | Model first token | Card ready | Card |
+|---|---|---|---|
+| Aportar | 1.69 s | 2.02 s | "We can update the client about the CSV issue now." / "Podemos avisar al cliente del problema CSV ahora." |
+| Pregunta | 1.34 s | 1.64 s | "What if we tell the client about the CSV delay now?" / "¿Avisamos al cliente ahora del retraso del CSV?" |
+| ¿De qué hablan? | 1.00 s | 1.34 s | "Están hablando de la exportación de facturación. El CSV falla y la entrega del viernes está apretada." |
+
+What the runs showed:
+
+- One call each, so these are single samples, not percentiles; they sit in the same range as the DILO reply above (first token 1.0–1.7 s).
+- Two earlier runs shaped the prompts: in the first, Aportar offered to "deliver PDF now", a deliverable nobody mentioned, so Aportar and Pregunta now say to use only what the conversation says; in the second, Aportar came back as a question, so it now asks for a statement. The table is the third run, with the prompts as committed.
+- Both English cards carried a Spanish meaning; the topic came back in Spanish, in two sentences, 101 characters (cap 160).

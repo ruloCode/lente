@@ -111,6 +111,45 @@ export function parseReply(raw: string, question: string): Reply {
   return usable ? { text, meaning } : { text };
 }
 
+// --- Help on demand -------------------------------------------------------------------------------
+
+/** What the wearer can ask for in Asistir, and the label its card carries. */
+export const HELP_LABELS = { aportar: "Aportar", pregunta: "Pregunta", tema: "¿De qué hablan?" } as const;
+export type HelpKind = keyof typeof HELP_LABELS;
+/** ¿De qué hablan? is two short sentences, not one line to say. */
+export const TOPIC_MAX_CHARS = 160;
+
+const HELP_MEANING =
+  "Only use what the conversation says; never add facts, names or deliverables it does not mention. " +
+  `Under 90 characters, in the language of the conversation, no quotes, no preamble. If the conversation is not in Spanish, add a second line ` +
+  `starting with "${MEANING_MARK} " and what the sentence means in Spanish, under 90 characters. If it is in Spanish, write only the sentence.`;
+
+export const HELP_PROMPTS: Record<HelpKind, string> = {
+  aportar:
+    "You help a Spanish speaker take part in a live meeting. Given the conversation so far, write ONE natural sentence " +
+    "they could add right now: a useful point, a confirmation or a next step that fits what was just said; a statement, not a question. " + HELP_MEANING,
+  pregunta:
+    "You help a Spanish speaker take part in a live meeting. Given the conversation so far, write ONE good question " +
+    "they could ask right now to clear up something left open or move the discussion forward. " + HELP_MEANING,
+  tema:
+    "You help a Spanish speaker follow a live meeting. Given the conversation so far, say in Spanish what is being " +
+    `discussed right now, in at most two short sentences, under ${TOPIC_MAX_CHARS} characters in all. No preamble, no lists.`,
+};
+
+/** Same layout as the reply: memory first (cacheable), then the task, then what was said. */
+export function helpMessages(memory: string, conversation: string, kind: HelpKind) {
+  return [
+    { role: "system" as const, content: withMemory(memory, HELP_PROMPTS[kind] + (memory && kind !== "tema" ? MEMORY_HINT : "")) },
+    { role: "user" as const, content: `Conversation so far:\n${conversation}` },
+  ];
+}
+
+/** Aportar and Pregunta parse like the reply, judged against what was said last; the topic is Spanish, on one line. */
+export function parseHelp(kind: HelpKind, raw: string, lastSaid: string): Reply {
+  if (kind === "tema") return { text: toCue(raw.replace(/\s*\n\s*/g, " "), TOPIC_MAX_CHARS) };
+  return parseReply(raw, lastSaid);
+}
+
 // --- Briefing -------------------------------------------------------------------------------------
 
 export type BriefingKind = "owed" | "open" | "term" | "phrase";

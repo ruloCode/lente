@@ -9,6 +9,8 @@ export type DayEntry =
   | {
       at: number;
       kind: "turn";
+      /** The transcription's id for the turn, which a late speaker label refers to. */
+      turnId?: string;
       speaker?: string;
       text: string;
       question?: boolean;

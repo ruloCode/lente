@@ -2,9 +2,9 @@
 
 ## 1. Hub and model
 
-- [ ] 1.1 Transcript reducer as a pure module (`src/transcript-view.ts`): snapshot, partial, turn, speaker revision and pause in; rows and the live row out; no duplicates when a turn completes or a snapshot repeats a turn; unit tests (`pnpm test`)
-- [ ] 1.2 The hub keeps the latest partial (cleared on turn and on pause) and sends it after the history on connect; the status carries the session start and listening time without pauses; unit tests and a check with `pnpm smoke`
-- [ ] 1.3 Help on demand: a POST route with the kind (Aportar, Pregunta, ¿De qué hablan?), refused in Solo grabar and with no turns; prompts and parsing reuse the reply's (meaning in Spanish, 90-character cap); unit tests with a fake model; one real call per kind on a synthetic dialogue, times recorded in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [x] 1.1 Transcript reducer as a pure module (`src/transcript-view.ts`): snapshot, partial, turn, speaker revision and pause in; rows and the live row out; no duplicates when a turn completes or a snapshot repeats a turn; unit tests (`pnpm test`)
+- [x] 1.2 The hub keeps the latest partial (cleared on turn and on pause) and sends it after the history on connect; the status carries the session start and listening time without pauses; unit tests and a check with `pnpm smoke`
+- [x] 1.3 Help on demand: a POST route with the kind (Aportar, Pregunta, ¿De qué hablan?), refused in Solo grabar and with no turns; prompts and parsing reuse the reply's (meaning in Spanish, 90-character cap); unit tests with a fake model; one real call per kind on a synthetic dialogue, times recorded in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
 ## 2. Phone
 

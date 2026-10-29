@@ -1,6 +1,8 @@
 // End-to-end smoke test, no keys needed: clip emulator → real hub → stubbed Meta API, with this
 // script as the phone. Passes when the phone sees the clip connect, the turn, and a DILO with
-// every stage timed (delivery included). Runs in CI on every push.
+// every stage timed (delivery included); a second phone that connects mid-sentence catches up on
+// the session and the partial; and help on demand answers in Asistir and is refused in Solo
+// grabar. Runs in CI on every push.
 //
 //   pnpm smoke
 
@@ -89,29 +91,81 @@ for (let waited = 0; ; waited += 100) {
 }
 await fetch(`${web}/profile`, { method: "POST", body: JSON.stringify({ names: "Rulo" }) });
 
-const seen = { clip: false, turn: false, cue: false };
-const res = await fetch(`${web}/events`);
-const parser = new SseParser();
-const decoder = new TextDecoder();
+/** The messages of a phone's event stream, as they arrive. */
+async function* events(): AsyncGenerator<Record<string, any>> {
+  const res = await fetch(`${web}/events`);
+  const parser = new SseParser();
+  const decoder = new TextDecoder();
+  for await (const chunk of res.body!) for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) yield JSON.parse(payload);
+}
+
+/** A phone opened mid-sentence: the status with the session, then the history, then the partial. */
+async function catchUp(partial: string): Promise<void> {
+  const kinds: string[] = [];
+  for await (const m of events()) {
+    kinds.push(m.kind);
+    if (kinds.length === 1) {
+      if (m.kind !== "status") finish(`a phone that connects first gets "${m.kind}", expected the status`);
+      if (typeof m.session?.startedAt !== "number" || typeof m.session?.listenedMs !== "number" || !m.session.running) finish(`the status carries no running session: ${JSON.stringify(m.session)}`);
+    }
+    if (m.kind === "partial") {
+      if (kinds.join(",") !== "status,history,partial") finish(`connect order was ${kinds.join(",")}, expected status,history,partial`);
+      if (m.text !== partial) finish(`the connect partial says "${m.text}", expected "${partial}"`);
+      return;
+    }
+    if (m.kind === "turn") finish("a phone that connected mid-sentence got no partial before the turn completed");
+  }
+}
+
+async function postHelp(kind: string): Promise<{ status: number; body: Record<string, any> }> {
+  const r = await fetch(`${web}/help`, { method: "POST", body: JSON.stringify({ kind }) });
+  return { status: r.status, body: await r.json() };
+}
+
+/** Pregunta answers with a labelled, timed card; in Solo grabar the hub refuses without a model call. */
+async function checkHelp(): Promise<void> {
+  const asked = await postHelp("pregunta");
+  if (asked.status !== 200 || asked.body.label !== "Pregunta" || asked.body.text !== STUB_REPLY || typeof asked.body.ms !== "number") finish(`help answered ${asked.status} ${JSON.stringify(asked.body)}`);
+  for (let waited = 0; !seen.helpCard; waited += 50) {
+    if (waited > 2000) finish("the Pregunta card did not reach the phone");
+    await sleep(50);
+  }
+  await fetch(`${web}/assist-mode/record`, { method: "POST" });
+  const calls = stub.requests.length;
+  const refused = await postHelp("aportar");
+  if (refused.status !== 409 || refused.body.reason !== "record-only") finish(`help in Solo grabar answered ${refused.status} ${JSON.stringify(refused.body)}`);
+  if (stub.requests.length !== calls) finish("help in Solo grabar called the model");
+}
+
+const seen = { clip: false, turn: false, cue: false, catchUp: false, helpCard: false };
+let catchingUp: Promise<void> | undefined;
+
+/** After the DILO's stages: the second phone caught up, then help on demand. */
+async function finale(): Promise<never> {
+  await catchingUp;
+  const missing = (["clip", "turn", "cue", "catchUp"] as const).filter((k) => !seen[k]);
+  if (missing.length) finish(`stages arrived before ${missing.join(", ")}`);
+  await checkHelp();
+  clearTimeout(timeout);
+  finish();
+}
+
 void (async () => {
-  for await (const chunk of res.body!) {
-    for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
-      const m = JSON.parse(payload);
-      if (m.kind === "status" && m.clip) seen.clip = true;
-      if (m.kind === "turn" && m.text === STUB_QUESTION) seen.turn = true;
-      if (m.kind === "cue" && m.label === "DILO") {
-        if (m.text !== STUB_REPLY) finish(`the DILO says "${m.text}", expected the stub's reply`);
-        if (m.why !== "name") finish(`the DILO went through the "${m.why}" rule, expected "name"`);
-        seen.cue = true;
-        await fetch(`${web}/seen`, { method: "POST", body: JSON.stringify({ id: m.id }) });
-      }
-      if (m.kind === "stages") {
-        const missing = STAGE_ORDER.filter((s) => typeof m.stages[s] !== "number");
-        if (missing.length) finish(`the DILO is missing stage(s) ${missing.join(", ")}`);
-        if (!seen.clip || !seen.turn || !seen.cue) finish(`stages arrived before ${Object.entries(seen).filter(([, v]) => !v).map(([k]) => k).join(", ")}`);
-        clearTimeout(timeout);
-        finish();
-      }
+  for await (const m of events()) {
+    if (m.kind === "status" && m.clip) seen.clip = true;
+    if (m.kind === "partial" && !catchingUp) catchingUp = catchUp(m.text).then(() => void (seen.catchUp = true));
+    if (m.kind === "turn" && m.text === STUB_QUESTION) seen.turn = true;
+    if (m.kind === "cue" && m.label === "Pregunta") seen.helpCard = true;
+    if (m.kind === "cue" && m.label === "DILO") {
+      if (m.text !== STUB_REPLY) finish(`the DILO says "${m.text}", expected the stub's reply`);
+      if (m.why !== "name") finish(`the DILO went through the "${m.why}" rule, expected "name"`);
+      seen.cue = true;
+      await fetch(`${web}/seen`, { method: "POST", body: JSON.stringify({ id: m.id }) });
+    }
+    if (m.kind === "stages") {
+      const missing = STAGE_ORDER.filter((s) => typeof m.stages[s] !== "number");
+      if (missing.length) finish(`the DILO is missing stage(s) ${missing.join(", ")}`);
+      void finale();
     }
   }
 })().catch((error) => finish(`event stream: ${(error as Error).message}`));
