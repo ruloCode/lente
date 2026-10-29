@@ -31,7 +31,7 @@ import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
 import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, parseReply, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
 import { MeetingStore } from "./meeting-store.ts";
-import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
+import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
@@ -1011,6 +1011,11 @@ const web = createHttpServer(async (req, res) => {
       const q = new URL(req.url, "http://hub").searchParams.get("q") ?? "";
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ results: searchMeetings(meetings.list(), q.slice(0, 200)) }));
+    } else if (req.method === "GET" && req.url?.startsWith("/meetings/get")) {
+      const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
+      const m = meetings.list().find((x) => x.id === id);
+      res.writeHead(m ? 200 : 404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(m ? { ...meetingSummary(m), share: notesAsText(m, new Date(m.startedAt).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })), turnList: m.turns.map((t) => ({ id: t.id, at: t.at, speaker: t.speaker, wearer: t.wearer === true, text: t.text })) } : { error: "no such meeting" }));
     } else if (req.method === "POST" && req.url === "/meeting/start") {
       const { title } = JSON.parse((await readBody(req)) || "{}") as { title?: string };
       startMeeting(typeof title === "string" ? title : "");

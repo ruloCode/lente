@@ -284,3 +284,17 @@ export function searchMeetings(meetings: Meeting[], query: string): SearchResult
   }
   return results.sort((a, b) => b.startedAt - a.startedAt);
 }
+
+/** The notes as plain text for sharing: title, date and notes, never the transcript. */
+export function notesAsText(m: Meeting, date: string): string {
+  const n = m.notes;
+  const out = [m.title || "Reunión sin título", date];
+  if (!n) return out.join("\n");
+  if (n.summary) out.push("", n.summary);
+  const section = (label: string, lines: string[]) => { if (lines.length) out.push("", `${label}:`, ...lines.map((l) => `- ${l}`)); };
+  section("Decisiones", n.decisions.map((d) => d.text));
+  section("Compromisos", n.commitments.map((c) => `${c.owner === "you" ? "Yo" : c.owner}: ${c.what}${c.due ? ` (${c.due})` : ""}`));
+  section("Preguntas abiertas", n.openQuestions.map((q) => q.text));
+  section("Glosario", (n.glossary ?? []).map((g) => `${g.term}: ${g.meaning}`));
+  return out.join("\n");
+}

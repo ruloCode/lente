@@ -8,6 +8,6 @@
 
 ## 2. Phone
 
-- [ ] 2.1 Meeting cards with title, topic, date, time range, duration and summary, and the search field; verify on the phone with at least two meetings recorded from test speech [hw] [phone]
-- [ ] 2.2 Meeting detail with the note sections, the Transcripción tab, items that open their turn, Compartir and two-tap Borrar; verify each on the phone [phone]
-- [ ] 2.3 README "What was built during the hackathon" row for the day the change lands
+- [x] 2.1 Meeting cards with title, topic, date, time range, duration and summary, and the search field; verify on the phone with at least two meetings recorded from test speech [hw] [phone]
+- [x] 2.2 Meeting detail with the note sections, the Transcripción tab, items that open their turn, Compartir and two-tap Borrar; verify each on the phone [phone]
+- [x] 2.3 README "What was built during the hackathon" row for the day the change lands

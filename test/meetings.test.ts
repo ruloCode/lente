@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { MeetingStore } from "../src/meeting-store.ts";
-import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, MEETING_SILENCE_MS, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesSchema, searchMeetings, silenceExpired, validateNotes } from "../src/meetings.ts";
+import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, MEETING_SILENCE_MS, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "../src/meetings.ts";
 
 const AT = Date.UTC(2026, 9, 28, 15, 7, 12);
 
@@ -184,4 +184,15 @@ test("searchMeetings returns an empty list for no match or a blank query", () =>
   addTurn(m, { at: AT, speaker: "A", text: "hola" });
   assert.deepEqual(searchMeetings([m], "zzz"), []);
   assert.deepEqual(searchMeetings([m], "   "), []);
+});
+
+test("notesAsText has title, date and notes but no transcript", () => {
+  const m = meetingWith(["hola uno", "hola dos", "hola tres"]);
+  m.notes = { summary: "Se acordó el plan.", decisions: [{ text: "Lanzar el lunes", evidence: ["t1"] }], commitments: [{ what: "Mandar el correo", owner: "you", due: "viernes", evidence: ["t2"] }], openQuestions: [], glossary: [{ term: "SLA", meaning: "acuerdo de servicio", evidence: ["t3"] }] };
+  const text = notesAsText(m, "28 oct");
+  assert.match(text, /^Sprint review\n28 oct\n\nSe acordó el plan\./);
+  assert.match(text, /Decisiones:\n- Lanzar el lunes/);
+  assert.match(text, /- Yo: Mandar el correo \(viernes\)/);
+  assert.match(text, /- SLA: acuerdo de servicio/);
+  assert.doesNotMatch(text, /hola uno|Preguntas abiertas/);
 });

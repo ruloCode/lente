@@ -168,6 +168,19 @@ export const PILOT_PAGE = `<!doctype html>
   .m .when { color: var(--muted); font: 12px var(--mono); }
   .m p { margin: 0; color: var(--ink); font-size: 15px; }
   .m .btn { justify-self: start; }
+  a.card { display: grid; gap: 4px; padding: 14px 16px; color: inherit; text-decoration: none; }
+  .card b { font-size: 16px; }
+  .card .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+  .card p { margin: 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+  .card mark, .lv-line mark { background: none; font-weight: 700; }
+  .mtag { display: inline-block; border-radius: 999px; background: var(--raised); color: var(--ink); padding: 2px 10px; font-size: 12px; font-weight: 700; }
+  .tabs { display: flex; gap: 8px; }
+  .tabs .btn[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+  .md-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .md .pad li { cursor: pointer; }
+  .tl-turn { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 8px 16px; align-items: start; border-radius: 12px; }
+  .tl-turn p { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+  .tl-turn.hit { background: var(--raised); }
   .empty { text-align: center; color: var(--muted); font-size: 15px; padding: 32px 16px; display: grid; gap: 16px; justify-items: center; }
   .empty .btn { color: var(--ink); }
   .switch { appearance: none; -webkit-appearance: none; flex: none; width: 52px; height: 32px; margin: 0; border-radius: 999px; background: var(--raised); position: relative; cursor: pointer; transition: background .15s; }
@@ -375,8 +388,29 @@ export const PILOT_PAGE = `<!doctype html>
         </div>
         <div class="section">
           <span class="cap">Anteriores</span>
+          <input class="field" id="search" type="search" autocomplete="off" placeholder="Buscar en reuniones" aria-label="Buscar en reuniones">
           <div class="group" id="past-list" hidden></div>
           <div class="empty" id="past-empty">Aún no hay reuniones guardadas. Inicia una desde Ahora y aquí verás sus notas.<a class="btn" href="#ahora">Ir a Ahora</a></div>
+        </div>
+      </section>
+
+      <section class="screen md" data-screen="reunion">
+        <div class="section">
+          <a class="btn" href="#reuniones" id="md-back" style="justify-self:start">&larr; Reuniones</a>
+          <div class="group"><div class="pad" style="padding-top:16px">
+            <b id="md-title" style="font-size:20px"></b>
+            <div class="meta card" id="md-meta" style="padding:0"></div>
+            <div class="md-actions">
+              <button class="btn" id="md-share" type="button">Compartir</button>
+              <button class="btn danger" id="md-del" type="button">Borrar</button>
+            </div>
+          </div></div>
+          <div class="tabs" role="tablist">
+            <button class="btn" id="md-tab-notes" role="tab" aria-selected="true" type="button">Notas</button>
+            <button class="btn" id="md-tab-tr" role="tab" aria-selected="false" type="button">Transcripción</button>
+          </div>
+          <div class="group" id="md-notes"><div class="pad" id="md-notes-pad" style="padding-top:16px"></div></div>
+          <div class="group" id="md-tr" hidden></div>
         </div>
       </section>
 
@@ -606,7 +640,7 @@ export const PILOT_PAGE = `<!doctype html>
   const isDilo = (label) => label === "DILO" || label === "SAY THIS"; // older day records say SAY THIS
 
   // --- Sections and the side menu. The hash names the section, so the back button works.
-  const TITLES = { ahora: "Lente", reuniones: "Reuniones", memoria: "Memoria", dispositivos: "Dispositivos", ajustes: "Ajustes" };
+  const TITLES = { ahora: "Lente", reuniones: "Reuniones", reunion: "Reunión", memoria: "Memoria", dispositivos: "Dispositivos", ajustes: "Ajustes" };
   // Planned, not built: each says what it will do and when it comes.
   const PLANNED = {
     acciones: { title: "Acciones", when: "Llega con add-closing-agent", icon: '<path d="M8.5 12l2.5 2.5 4.5-5"/><rect x="4" y="4" width="16" height="16" rx="4"/>',
@@ -635,12 +669,13 @@ export const PILOT_PAGE = `<!doctype html>
   drawer.addEventListener("click", (ev) => { if (ev.target.closest("a")) setMenu(false); });
 
   function route() {
-    const name = (location.hash || "#ahora").slice(1);
+    const hash = (location.hash || "#ahora").slice(1);
+    const name = hash.startsWith("m/") ? "reunion" : hash;
     const planned = PLANNED[name];
     const screen = planned ? "pronto" : TITLES[name] ? name : "ahora";
     document.body.dataset.screen = screen;
     for (const s of document.querySelectorAll(".screen")) s.classList.toggle("on", s.dataset.screen === screen);
-    for (const a of drawer.querySelectorAll("[data-nav]")) a.toggleAttribute("aria-current", a.dataset.nav === name || (name === "" && a.dataset.nav === "ahora"));
+    for (const a of drawer.querySelectorAll("[data-nav]")) a.toggleAttribute("aria-current", a.dataset.nav === (name === "reunion" ? "reuniones" : name) || (name === "" && a.dataset.nav === "ahora"));
     for (const a of drawer.querySelectorAll("[aria-current]")) a.setAttribute("aria-current", "page");
     $("screen-title").textContent = planned ? planned.title : TITLES[screen];
     if (planned) {
@@ -650,6 +685,7 @@ export const PILOT_PAGE = `<!doctype html>
       $("soon-icon").innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + planned.icon + "</svg>";
     }
     $("main").scrollTop = 0;
+    if (screen === "reunion") openDetail(hash.split("/")[1], hash.split("/")[2]);
   }
   addEventListener("hashchange", route);
   route();
@@ -933,47 +969,141 @@ export const PILOT_PAGE = `<!doctype html>
   }
 
   // --- Past meetings: one row each in Reuniones, the latest three in the menu
+  let pastItems = [];
+  const minutes = (m) => Math.max(1, Math.round(((m.endedAt || Date.now()) - m.startedAt) / 60000));
+  function card(m, matches) {
+    const a = document.createElement("a"); a.className = "card"; a.href = "#m/" + m.id + (matches && matches.find((x) => x.turnId) ? "/" + matches.find((x) => x.turnId).turnId : "");
+    const t = document.createElement("b"); t.textContent = m.title || "Reunión sin título";
+    const meta = document.createElement("div"); meta.className = "meta";
+    if (m.topic) { const tag = document.createElement("span"); tag.className = "mtag"; tag.textContent = m.topic; meta.append(tag); }
+    const when = document.createElement("span");
+    when.textContent = day(m.startedAt) + " · " + fmt(m.startedAt) + (m.endedAt ? "–" + fmt(m.endedAt) + " · " + minutes(m) + " min" : "") + (MEETING_STATE[m.status] ? " · " + MEETING_STATE[m.status] : "");
+    meta.append(when);
+    a.append(t, meta);
+    const line = matches ? matches[0] && matches[0].line : m.notes && m.notes.summary;
+    if (line) { const p = document.createElement("p"); p.textContent = line; a.append(p); }
+    return a;
+  }
   function showPast(items) {
+    pastItems = items;
     const sorted = [...items].sort((a, b) => b.startedAt - a.startedAt);
     const box = $("past-list");
     box.textContent = "";
     box.hidden = !sorted.length;
     $("past-empty").hidden = !!sorted.length;
-    for (const m of sorted) {
-      const d = document.createElement("details"); d.id = "m-" + m.id;
-      const s = document.createElement("summary");
-      const rl = document.createElement("span"); rl.className = "rl"; rl.textContent = m.title || "Reunión sin título";
-      const sm = document.createElement("small");
-      sm.textContent = [day(m.startedAt) + " " + fmt(m.startedAt), m.turns + " turnos", MEETING_STATE[m.status]].filter(Boolean).join(" · ");
-      rl.append(sm);
-      s.append(rl);
-      s.insertAdjacentHTML("beforeend", '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>');
-      const pad = document.createElement("div"); pad.className = "pad m";
-      if (m.notes) {
-        if (m.notes.summary) { const p = document.createElement("p"); p.textContent = m.notes.summary; pad.append(p); }
-        list(pad, "Decisiones", m.notes.decisions, (x) => x.text);
-        list(pad, "Compromisos", m.notes.commitments, (c) => (c.owner === "you" ? "Tú" : c.owner) + ": " + c.what + (c.due ? " (" + c.due + ")" : ""));
-        list(pad, "Pendientes", m.notes.openQuestions, (q) => q.text);
-      } else { const p = document.createElement("p"); p.className = "when"; p.textContent = "Sin notas."; pad.append(p); }
-      if (m.status !== "running") {
-        const del = document.createElement("button"); del.type = "button"; del.className = "btn danger"; del.textContent = "Borrar";
-        del.addEventListener("click", () => sendJson("/meetings/delete", { id: m.id }));
-        pad.append(del);
-      }
-      d.append(s, pad);
-      box.append(d);
-    }
+    $("past-empty").firstChild.textContent = "Aún no hay reuniones guardadas. Inicia una desde Ahora y aquí verás sus notas.";
+    for (const m of sorted) box.append(card(m));
+    if (openId) renderDetail();
     const recent = $("recent-list");
     recent.textContent = "";
     $("recent-cap").hidden = !sorted.length;
     for (const m of sorted.slice(0, 3)) {
-      const a = document.createElement("a"); a.href = "#reuniones"; a.className = "recent";
+      const a = document.createElement("a"); a.href = "#m/" + m.id; a.className = "recent";
       const span = document.createElement("span"); span.textContent = m.title || "Reunión del " + day(m.startedAt);
       a.append(span);
-      a.addEventListener("click", () => setTimeout(() => { const d = $("m-" + m.id); if (d) { d.open = true; d.scrollIntoView({ block: "start" }); } }, 0));
       recent.append(a);
     }
   }
+
+  // --- Search and meeting detail
+  let searchTimer = 0;
+  $("search").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const q = $("search").value.trim();
+    if (!q) { showPast(pastItems); return; }
+    searchTimer = setTimeout(async () => {
+      try {
+        const { results } = await (await fetch("/meetings/search?q=" + encodeURIComponent(q))).json();
+        if ($("search").value.trim() !== q) return;
+        const box = $("past-list");
+        box.textContent = "";
+        box.hidden = !results.length;
+        $("past-empty").hidden = true;
+        for (const r of results) { const m = pastItems.find((x) => x.id === r.id) || r; box.append(card(m, r.matches)); }
+        if (!results.length) { $("past-empty").hidden = false; $("past-empty").firstChild.textContent = "Nada coincide con “" + q + "”."; }
+      } catch {}
+    }, 250);
+  });
+  let openId = "", openTurns = [], pendingTurn = "", openShare = "";
+  const MD_NOTES = "md-notes";
+  function setTab(tr) {
+    $("md-notes").hidden = tr; $("md-tr").hidden = !tr;
+    $("md-tab-notes").setAttribute("aria-selected", String(!tr)); $("md-tab-tr").setAttribute("aria-selected", String(tr));
+  }
+  $("md-tab-notes").addEventListener("click", () => setTab(false));
+  $("md-tab-tr").addEventListener("click", () => setTab(true));
+  async function openDetail(id, turnId) {
+    openId = id || ""; pendingTurn = turnId || ""; openTurns = []; openShare = "";
+    $("md-del").dataset.armed = ""; $("md-del").textContent = "Borrar";
+    setTab(false);
+    renderDetail();
+    try {
+      const r = await fetch("/meetings/get?id=" + encodeURIComponent(openId));
+      if (!r.ok) return;
+      const m = await r.json();
+      if (m.id !== openId) return;
+      openTurns = m.turnList; openShare = m.share;
+      renderDetail();
+    } catch {}
+  }
+  function showTurn(turnId) {
+    setTab(true);
+    for (const el of $("md-tr").children) el.classList.toggle("hit", el.dataset.turn === turnId);
+    const el = $("md-tr").querySelector(".hit");
+    if (el) el.scrollIntoView({ block: "center" });
+  }
+  function renderDetail() {
+    const m = pastItems.find((x) => x.id === openId);
+    if (!m) { $("md-title").textContent = "Reunión no encontrada"; $("md-meta").textContent = ""; $(MD_NOTES + "-pad").textContent = ""; $("md-tr").textContent = ""; return; }
+    $("md-title").textContent = m.title || "Reunión sin título";
+    const meta = $("md-meta"); meta.textContent = "";
+    const chips = [m.topic, day(m.startedAt), fmt(m.startedAt) + (m.endedAt ? "–" + fmt(m.endedAt) : ""), m.endedAt ? minutes(m) + " min" : ""].filter(Boolean);
+    for (const c of chips) { const t = document.createElement("span"); t.className = "mtag"; t.textContent = c; meta.append(t); }
+    const pad = $(MD_NOTES + "-pad"); pad.textContent = "";
+    const n = m.notes;
+    const cite = (ev) => (ev && ev[0]) || "";
+    function items(label, arr, line, ev) {
+      if (!arr || !arr.length) return;
+      const h = document.createElement("div"); h.className = "sec"; h.textContent = label; pad.append(h);
+      const ul = document.createElement("ul");
+      for (const it of arr) {
+        const li = document.createElement("li"); li.textContent = line(it);
+        const id = cite(ev(it));
+        if (id) { li.tabIndex = 0; li.setAttribute("role", "link"); const go = () => showTurn(id); li.addEventListener("click", go); li.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); }); }
+        ul.append(li);
+      }
+      pad.append(ul);
+    }
+    if (n) {
+      if (n.summary) { const h = document.createElement("div"); h.className = "sec"; h.textContent = "Resumen"; const p = document.createElement("p"); p.textContent = n.summary; pad.append(h, p); }
+      items("Decisiones", n.decisions, (x) => x.text, (x) => x.evidence);
+      items("Compromisos", n.commitments, (c) => (c.owner === "you" ? "Tú" : c.owner) + ": " + c.what + (c.due ? " (" + c.due + ")" : ""), (c) => c.evidence);
+      items("Preguntas abiertas", n.openQuestions, (q) => q.text, (q) => q.evidence);
+      items("Glosario", n.glossary, (g) => g.term + ": " + g.meaning, (g) => g.evidence);
+    } else { const p = document.createElement("p"); p.className = "when"; p.textContent = MEETING_STATE[m.status] || "Sin notas."; pad.append(p); }
+    const tr = $("md-tr"); tr.textContent = "";
+    for (const t of openTurns) {
+      const row = document.createElement("div"); row.className = "tl-turn"; row.dataset.turn = t.id;
+      const chip = document.createElement("span"); chip.className = "chip"; chip.textContent = t.wearer ? "Tú" : t.speaker || "·";
+      const p = document.createElement("p"); p.textContent = t.text;
+      row.append(chip, p); tr.append(row);
+    }
+    if (!openTurns.length) { const p = document.createElement("p"); p.className = "help"; p.textContent = "Cargando la transcripción…"; tr.append(p); }
+    if (pendingTurn && openTurns.length) { const id = pendingTurn; pendingTurn = ""; showTurn(id); }
+  }
+  $("md-del").addEventListener("click", () => {
+    const b = $("md-del");
+    if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = "¿Seguro?"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Borrar"; }, 4000); return; }
+    const id = openId; location.hash = "#reuniones"; sendJson("/meetings/delete", { id });
+  });
+  $("md-share").addEventListener("click", async () => {
+    const m = pastItems.find((x) => x.id === openId); if (!m) return;
+    const text = openShare || m.title || "Reunión";
+    try {
+      if (navigator.share) await navigator.share({ title: m.title || "Reunión", text });
+      else { await navigator.clipboard.writeText(text); $("md-share").textContent = "Copiado"; setTimeout(() => { $("md-share").textContent = "Compartir"; }, 2000); }
+    } catch {}
+  });
 
   function asrNote(asr) {
     if (/^connecting/.test(asr)) return "Conectando la transcripción…";
