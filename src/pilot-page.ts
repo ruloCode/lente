@@ -4,6 +4,7 @@
 // introduction sets the wearer up. Served by src/pilot.ts and fed by Server-Sent Events.
 
 import { logoSvg } from "./brand.ts";
+import { TRANSCRIPT_PAGE_SCRIPT } from "./transcript-view.ts";
 
 export const PILOT_PAGE = `<!doctype html>
 <html lang="es">
@@ -227,7 +228,46 @@ export const PILOT_PAGE = `<!doctype html>
   .intro .bottom { display: flex; gap: 8px; }
   .intro .bottom .btn { flex: 1; min-height: 56px; font-size: 17px; }
   .intro .bottom .back { flex: none; }
-  @media (prefers-reduced-motion: reduce) { .bars i, .chev, .drawer, .scrim, .switch, .switch::after { transition: none; } .listen .rec, .meet .live-title::before { animation: none !important; } }
+  /* Live view: full screen on Ahora while a listening session runs, laid out from the owner's sketch. */
+  .lv { position: fixed; inset: 0; z-index: 15; background: var(--bg); display: flex; flex-direction: column; }
+  .lv-strip { background: var(--live); color: #1c0606; padding-top: env(safe-area-inset-top); }
+  .lv-strip .wrap { display: flex; align-items: center; gap: 10px; min-height: 56px; }
+  .lv-strip .rec { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; animation: pulse 1.6s ease-in-out infinite; }
+  .lv-state { flex: 1; min-width: 0; font: 600 14px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lv-strip .bars i { background: rgba(28,6,6,.3); }
+  .lv-strip .btn { min-height: 40px; background: #1c0606; color: var(--ink); padding: 0 16px; }
+  .lv[data-state="paused"] .lv-strip, .lv[data-state="idle"] .lv-strip { background: var(--surface); color: var(--muted); }
+  .lv[data-state="paused"] .lv-strip .rec, .lv[data-state="idle"] .lv-strip .rec { animation: none; background: transparent; border: 2px solid currentColor; }
+  .lv[data-state="paused"] .lv-strip .btn, .lv[data-state="idle"] .lv-strip .btn { background: var(--raised); }
+  .lv-top { display: flex; align-items: center; gap: 12px; min-height: 64px; }
+  .lv-mode { flex: 1; min-width: 0; font-weight: 700; }
+  .lv-clip { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .lv-card { padding: 14px 18px 16px; gap: 6px; }
+  .lv-card .text { font-size: 28px; }
+  .lv-card .meaning { font-size: 15px; }
+  .lv-wait { margin: 0; color: var(--muted); font-size: 15px; }
+  .lv-mid { flex: 1; min-height: 0; position: relative; margin-top: 12px; }
+  .lv-tx { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; align-content: start; gap: 14px; padding-bottom: 12px; overscroll-behavior: contain; }
+  .lv-line { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .lv-line p { margin: 0; padding-top: 4px; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; }
+  .lv-line.live p { color: var(--muted); }
+  .lv-line.live p::after { content: ""; display: inline-block; width: 2px; height: 1em; margin-left: 3px; vertical-align: -2px; background: var(--muted); animation: pulse 1s steps(2) infinite; }
+  .lv-empty { padding: 16px 0 0; }
+  .lv-new { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); min-height: 40px; border: 0; border-radius: 999px; background: var(--ink); color: var(--bg); padding: 0 18px; font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .lv-help { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; padding-block: 8px 4px; }
+  .lv-help .btn { padding: 0 8px; font-size: 15px; }
+  .lv-help .btn[aria-busy="true"] { opacity: .6; }
+  .lv-foot { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .lv-foot .wrap { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
+  .lv-foot p { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 1.3; color: var(--muted); text-align: center; }
+  .lv-foot p.confirm { color: var(--live); font-weight: 700; }
+  .round.lv-end { background: var(--live); color: #1c0606; }
+  .lv-bar { display: flex; align-items: center; gap: 10px; min-height: var(--tap); padding: 0 8px 0 16px; border: 0; border-radius: 999px; background: var(--live); color: #1c0606; font: 600 13px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .lv-bar span:first-child { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
+  .lv-bar span:nth-child(2) { flex: 1; text-align: left; }
+  .lv-bar b { background: #1c0606; color: var(--ink); border-radius: 999px; padding: 10px 14px; font: 700 14px/1 var(--body); text-transform: none; letter-spacing: 0; }
+  body[data-state="paused"] .lv-bar, body[data-state="idle"] .lv-bar { background: var(--surface); color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .bars i, .chev, .drawer, .scrim, .switch, .switch::after { transition: none; } .listen .rec, .meet .live-title::before, .lv-strip .rec, .lv-line.live p::after { animation: none !important; } }
 </style>
 </head>
 <body data-state="idle" data-screen="ahora">
@@ -264,6 +304,7 @@ export const PILOT_PAGE = `<!doctype html>
     <div class="wrap">
 
       <section class="screen on" data-screen="ahora">
+        <button class="lv-bar" id="lv-bar" type="button" hidden><span></span><span id="lv-bar-text">Escuchando · 0:00</span><b>Abrir</b></button>
         <button class="statusrow" id="status-row" aria-label="Ver dispositivos"><span class="dot" id="dot"></span><span id="clip">Sin clip</span><span id="mode-text"></span><span class="bars" aria-hidden="true" id="bars"><i></i><i></i><i></i><i></i><i></i></span></button>
         <div class="modes" role="group" aria-label="Modo de Lente" id="assist">
           <button data-assist="assist" aria-pressed="true">
@@ -465,6 +506,51 @@ export const PILOT_PAGE = `<!doctype html>
       </button>
     </div>
   </footer>
+
+  <section class="lv" id="lv" aria-label="En vivo" data-state="listening" hidden>
+    <div class="lv-strip">
+      <div class="wrap">
+        <span class="rec"></span><span class="lv-state" id="lv-state" role="timer">Escuchando · 0:00</span>
+        <span class="bars" aria-hidden="true" id="lv-bars"><i></i><i></i><i></i><i></i><i></i></span>
+        <button class="btn" id="lv-detener" type="button">Detener</button>
+      </div>
+    </div>
+    <div class="wrap lv-top">
+      <button class="round" id="lv-collapse" type="button" aria-label="Minimizar la vista en vivo">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <span class="lv-mode" id="lv-mode">Asistir</span>
+      <span class="lv-clip"><span class="dot" id="lv-dot"></span><span id="lv-clip">Sin clip</span></span>
+    </div>
+    <div class="wrap" id="lv-slot">
+      <section class="cue lv-card" aria-live="polite">
+        <p class="lv-wait" id="lv-wait">Cuando te pregunten algo, aquí aparece qué decir.</p>
+        <span class="label" id="lv-card-label" hidden></span>
+        <div class="text" id="lv-card-text" hidden></div>
+        <div class="meaning" id="lv-card-meaning" lang="es" hidden></div>
+        <span class="meta" id="lv-card-meta" hidden></span>
+      </section>
+    </div>
+    <div class="wrap lv-mid">
+      <div class="lv-tx" id="lv-tx">
+        <p class="hint lv-empty" id="lv-empty">Escuchando… lo que se diga aparece aquí.</p>
+        <div class="lv-line live" id="lv-live" hidden><span class="chip">…</span><p></p></div>
+      </div>
+      <button class="lv-new" id="lv-new" type="button" hidden>Nuevo ↓</button>
+    </div>
+    <div class="wrap lv-help" id="lv-help" role="group" aria-label="Ayuda">
+      <button class="btn" type="button" data-help="aportar">Aportar</button>
+      <button class="btn" type="button" data-help="pregunta">Pregunta</button>
+      <button class="btn" type="button" data-help="tema">¿De qué hablan?</button>
+    </div>
+    <div class="lv-foot">
+      <div class="wrap">
+        <button class="round" id="lv-pause" type="button" aria-label="Pausar"><svg class="i" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
+        <p id="lv-hint">Puedes bloquear el teléfono: el clip sigue escuchando.</p>
+        <button class="round lv-end" id="lv-stop" type="button" aria-label="Terminar"><svg class="i" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+      </div>
+    </div>
+  </section>
 
   <div class="intro" id="intro" role="dialog" aria-modal="true" aria-label="Introducción" hidden>
     <div class="wrap top"><div class="dots" id="intro-dots"><i></i><i></i><i></i><i></i><i></i></div><button class="skip" id="intro-skip" type="button">Omitir</button></div>
@@ -699,12 +785,15 @@ export const PILOT_PAGE = `<!doctype html>
   }
 
   function setLevel(rms) {
-    const bars = $("bars").children;
-    const level = Math.min(1, rms / 3000);
-    for (let i = 0; i < bars.length; i++) {
-      const on = level > i / bars.length;
-      bars[i].style.height = on ? 30 + i * 17 + "%" : "25%";
-      bars[i].style.background = on ? "var(--ink)" : "var(--line)";
+    // Paused, the bars lie flat whatever the last level was.
+    const level = status.listening === false ? 0 : Math.min(1, rms / 3000);
+    for (const id of ["bars", "lv-bars"]) {
+      const bars = $(id).children;
+      for (let i = 0; i < bars.length; i++) {
+        const on = level > i / bars.length;
+        bars[i].style.height = on ? 30 + i * 17 + "%" : "25%";
+        bars[i].style.background = on ? (id === "lv-bars" ? "currentColor" : "var(--ink)") : "";
+      }
     }
   }
 
@@ -888,7 +977,173 @@ export const PILOT_PAGE = `<!doctype html>
   }
   document.addEventListener("visibilitychange", () => keepAwake(document.body.dataset.state === "listening"));
 
+  // --- Live view: full screen on Ahora while a listening session runs. The transcript goes through
+  // the hub-tested reducer (src/transcript-view.ts), carried into the page as it is.
+  ${TRANSCRIPT_PAGE_SCRIPT}
+  const STOP_CONFIRM_MS = 4000;
+  const LV_FOLLOW_PX = 48;
+  const HINT_CLIP = "Puedes bloquear el teléfono: el clip sigue escuchando.";
+  let tx = emptyTranscript();
+  /** performance.now() when the latest status arrived: the phone adds only what it counted since. */
+  let statusAt = performance.now();
+  /** The session the wearer collapsed; a new session opens the view again. */
+  let collapsedFor = Number(store.get("lente-lv-collapsed")) || 0;
+  let lvFollow = true, stopTimer = 0, lvWasOpen = false;
+  const lvRows = new Map();
+  const lvTx = $("lv-tx");
+
+  function sessionMs() {
+    const s = status.session;
+    if (!s) return 0;
+    return s.listenedMs + (s.running ? performance.now() - statusAt : 0);
+  }
+  function clockText(ms) {
+    const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), min = Math.floor((t % 3600) / 60), sec = String(t % 60).padStart(2, "0");
+    return h ? h + ":" + String(min).padStart(2, "0") + ":" + sec : min + ":" + sec;
+  }
+  function stateWord() {
+    if (!status.listening) return "En pausa";
+    if (!status.clip) return "Sin clip";
+    return status.assistMode === "record" ? "Grabando" : "Escuchando";
+  }
+  function tickLive() {
+    if (!status.session) return;
+    const line = stateWord() + " · " + clockText(sessionMs());
+    $("lv-state").textContent = line;
+    $("lv-bar-text").textContent = line;
+  }
+  setInterval(tickLive, 500);
+
+  function syncLive(relabel) {
+    const s = status.session;
+    const open = !!s && collapsedFor !== s.startedAt && document.body.dataset.screen === "ahora";
+    $("lv").hidden = !open;
+    $("lv-bar").hidden = !s || open;
+    const assist = status.assistMode !== "record";
+    $("lv-slot").hidden = !assist;
+    $("lv-help").hidden = !assist;
+    $("lv-mode").textContent = assist ? "Asistir" : "Solo grabar";
+    $("lv-dot").classList.toggle("on", !!status.clip);
+    $("lv-clip").textContent = status.clip ? "Clip conectado" : "Sin clip";
+    $("lv").dataset.state = document.body.dataset.state;
+    $("lv-pause").setAttribute("aria-label", status.listening ? "Pausar" : "Seguir escuchando");
+    $("lv-pause").innerHTML = status.listening
+      ? '<svg class="i" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
+      : '<svg class="i" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    if (!stopTimer) $("lv-hint").textContent = status.clip ? HINT_CLIP : "Conecta el clip para escuchar.";
+    $("lv-empty").textContent = status.listening ? "Escuchando… lo que se diga aparece aquí." : "En pausa. Toca ▶ para seguir escuchando.";
+    if (relabel) renderTranscript(true, false);
+    if (open && !lvWasOpen) { lvFollow = true; $("lv-new").hidden = true; lvTx.scrollTop = lvTx.scrollHeight; }
+    lvWasOpen = open;
+    tickLive();
+  }
+  addEventListener("hashchange", () => syncLive(false));
+
+  // Rows are keyed by the reducer, so a turn that completes or comes back in a snapshot is the same element.
+  const lvChip = (label) => (label && status.wearer === label ? (status.names && status.names[0]) || "Tú" : label || "·");
+  function renderTranscript(rowsChanged, newSession) {
+    if (newSession) clearSlot();
+    if (rowsChanged) {
+      const keep = new Set(tx.rows.map((r) => r.key));
+      for (const [key, el] of lvRows) if (!keep.has(key)) { el.remove(); lvRows.delete(key); }
+      let next = $("lv-live");
+      for (let i = tx.rows.length - 1; i >= 0; i--) {
+        const r = tx.rows[i];
+        let el = lvRows.get(r.key);
+        if (!el) {
+          el = document.createElement("div");
+          el.className = "lv-line";
+          el.innerHTML = '<span class="chip"></span><p></p>';
+          el.dataset.at = String(r.at);
+          el.querySelector("p").textContent = r.text;
+          lvRows.set(r.key, el);
+        }
+        el.querySelector(".chip").textContent = lvChip(r.speaker);
+        if (el.nextElementSibling !== next) lvTx.insertBefore(el, next);
+        next = el;
+      }
+    }
+    $("lv-live").hidden = !tx.live;
+    $("lv-live").querySelector("p").textContent = tx.live;
+    $("lv-empty").hidden = !!(tx.rows.length || tx.live);
+    if (lvFollow) lvTx.scrollTop = lvTx.scrollHeight;
+    else $("lv-new").hidden = false;
+  }
+  lvTx.addEventListener("scroll", () => {
+    lvFollow = lvTx.scrollHeight - lvTx.scrollTop - lvTx.clientHeight < LV_FOLLOW_PX;
+    if (lvFollow) $("lv-new").hidden = true;
+  });
+  $("lv-new").addEventListener("click", () => { lvFollow = true; $("lv-new").hidden = true; lvTx.scrollTop = lvTx.scrollHeight; });
+
+  // --- The reply slot: a placeholder, then only the newest card (DILO or a help card).
+  function clearSlot() {
+    $("lv-wait").textContent = "Cuando te pregunten algo, aquí aparece qué decir.";
+    $("lv-wait").hidden = false;
+    for (const id of ["lv-card-label", "lv-card-text", "lv-card-meaning", "lv-card-meta"]) $(id).hidden = true;
+  }
+  function showSlot(e) {
+    $("lv-wait").hidden = true;
+    $("lv-card-label").textContent = isDilo(e.label) ? "DILO" : e.label;
+    $("lv-card-text").textContent = e.text;
+    $("lv-card-meaning").textContent = e.meaning || "";
+    $("lv-card-meta").textContent = [whyLine(e), e.ms != null ? "en " + e.ms + " ms" : ""].filter(Boolean).join(" · ");
+    $("lv-card-label").hidden = $("lv-card-text").hidden = false;
+    $("lv-card-meaning").hidden = !e.meaning;
+    $("lv-card-meta").hidden = !$("lv-card-meta").textContent;
+  }
+  function slotNote(text) {
+    clearSlot();
+    $("lv-wait").textContent = text;
+  }
+  // On connect, the newest card of this session fills the slot again.
+  function catchUpSlot(items) {
+    const since = status.session ? status.session.startedAt : Infinity;
+    const cards = items.filter((e) => e.kind === "cue" && e.at >= since && e.label !== "ON SCREEN" && e.label !== "PHOTO");
+    if (cards.length) showSlot(cards[cards.length - 1]);
+  }
+  for (const b of document.querySelectorAll("[data-help]")) b.addEventListener("click", async () => {
+    if (b.getAttribute("aria-busy") === "true") return;
+    b.setAttribute("aria-busy", "true");
+    try {
+      const res = await fetch("/help", { method: "POST", body: JSON.stringify({ kind: b.dataset.help }) });
+      const out = await res.json();
+      if (!out.ok) slotNote(out.message); // the card itself arrives as a cue, like any other
+    } catch { slotNote("No se pudo pedir la ayuda; prueba otra vez."); }
+    b.removeAttribute("aria-busy");
+  });
+
+  // --- Pause, two-tap stop, collapse and reopen.
+  function askStop() {
+    if (!stopTimer) {
+      stopTimer = setTimeout(() => { stopTimer = 0; $("lv-hint").classList.remove("confirm"); $("lv-detener").textContent = "Detener"; syncLive(false); }, STOP_CONFIRM_MS);
+      $("lv-hint").textContent = "Toca otra vez para terminar";
+      $("lv-hint").classList.add("confirm");
+      $("lv-detener").textContent = "¿Terminar?";
+      return;
+    }
+    clearTimeout(stopTimer); stopTimer = 0;
+    $("lv-hint").classList.remove("confirm");
+    $("lv-detener").textContent = "Detener";
+    post("/session/stop");
+  }
+  $("lv-stop").addEventListener("click", askStop);
+  $("lv-detener").addEventListener("click", askStop);
+  $("lv-pause").addEventListener("click", () => post(status.listening ? "/listen/off" : "/listen/on"));
+  function setCollapsed(at) {
+    collapsedFor = at;
+    store.set("lente-lv-collapsed", String(at));
+    syncLive(false);
+  }
+  $("lv-collapse").addEventListener("click", () => setCollapsed(status.session ? status.session.startedAt : 0));
+  $("lv-bar").addEventListener("click", () => setCollapsed(0));
+  // Picking a mode on Ahora means "listen like this": it starts listening if paused and opens the view.
+  for (const b of document.querySelectorAll("#assist [data-assist]")) b.addEventListener("click", () => {
+    if (!status.listening) post("/listen/on");
+    setCollapsed(0);
+  });
+
   function applyStatus(m) {
+    statusAt = performance.now();
     const wearerChanged = !status || status.wearer !== m.wearer;
     status = m;
     if (wearerChanged) relabelSpeakers();
@@ -929,7 +1184,8 @@ export const PILOT_PAGE = `<!doctype html>
     else if (m.listening && m.asr !== "listening") note = asrNote(m.asr);
     $("note").textContent = note;
     $("note").hidden = !note;
-    if (!m.clip) setLevel(0);
+    if (!m.clip || !m.listening) setLevel(0);
+    syncLive(wearerChanged);
   }
 
   const es = new EventSource("/events");
@@ -941,6 +1197,7 @@ export const PILOT_PAGE = `<!doctype html>
         addItem(e);
         if (e.kind === "summary") showSummary(e);
       }
+      catchUpSlot(m.items);
     } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); }
     else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "recorded") showRecorded(m.ms);
@@ -971,6 +1228,7 @@ export const PILOT_PAGE = `<!doctype html>
         $("cue-meta").textContent = [whyLine(m), m.ms != null ? "en " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
         cueId = m.id;
         $("cue-stages").textContent = stagesLine(m.stages);
+        showSlot(m);
         addItem(m);
         // The card matters more than wherever the wearer was: go back to Ahora.
         if ($("intro").hidden) { setMenu(false); if (document.body.dataset.screen !== "ahora") location.hash = "#ahora"; }
@@ -978,6 +1236,9 @@ export const PILOT_PAGE = `<!doctype html>
         say(m.text, "high");
       }
     }
+    const before = tx;
+    tx = reduceTranscript(tx, m);
+    if (tx !== before) renderTranscript(tx.rows !== before.rows, tx.since !== before.since);
   };
   es.onerror = () => { $("note").textContent = "Reconectando con la computadora…"; $("note").hidden = false; };
 

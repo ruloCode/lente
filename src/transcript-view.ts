@@ -102,3 +102,8 @@ function addTurns(view: TranscriptView, turns: Array<Record<string, any>>): Tran
   const rows = view.rows.concat(added).sort((a, b) => a.at - b.at);
   return { ...view, rows: rows.slice(-TRANSCRIPT_MAX_ROWS), pending };
 }
+
+/** The reducer as page script: the phone runs the very functions the tests cover, types stripped by Node. */
+export const TRANSCRIPT_PAGE_SCRIPT = [`const TRANSCRIPT_MAX_ROWS = ${TRANSCRIPT_MAX_ROWS};`, emptyTranscript, transcriptRowKey, reduceTranscript, addTurns]
+  .map(String)
+  .join("\n");

@@ -87,3 +87,7 @@ The wearer reads Spanish and says English, so an English DILO line carries what 
 ### 2026-10-28 · Meta's models run inside Lente, not in the lane that builds it
 
 The owner chose to keep the Meta Model API credit for the product: transcription, DILO replies, notes, vision and the evals that measure them. The auto lane's second opinion was Muse Code; it is now a fresh Claude Code session in read-only plan mode that gets only the diff, the builder's report and the repository, with none of the builder's context. It is the same model family as the builder, so it is a second reader rather than a second model; the deterministic brakes (CI's gates, the guard hook, only the runner commits) are unchanged. Its cost counts against the lane's budget like the builder's. Muse Code stays documented for anyone who runs it by hand (standard mode only).
+
+### 2026-10-28 · The phone runs the hub's transcript reducer, not a copy of it
+
+The live view's rows (one per turn, a live row for the turn in progress, no duplicate when a turn completes or a reconnect snapshot repeats it) are the part most likely to drift if written twice. `src/transcript-view.ts` is pure and import-free, and `TRANSCRIPT_PAGE_SCRIPT` carries its functions into the page as Node prints them after stripping the types, so the page and the unit tests run the same code with no bundler and no runtime dependency. A test runs the page's copy against the module's on the same events.
