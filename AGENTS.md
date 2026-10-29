@@ -40,7 +40,7 @@ Build order (status 2026-10-28): done `harden-clip-protocol`, `add-meeting-memor
 
 ## Commands
 
-- `pnpm pilot` hub (prints the phone URL) · `pnpm test` · `pnpm typecheck` · `pnpm ping` · `pnpm bench:llm` · `pnpm bench:asr <wav>`
+- `pnpm pilot` hub (prints the phone URL) · `pnpm test` · `pnpm typecheck` · `pnpm ping` · `pnpm bench:llm` · `pnpm bench:asr <wav>` · `pnpm smoke` (end to end, stubbed Meta API, no keys)
 - Clip: `arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p /dev/cu.usbmodem* firmware/lente-clip`
 
 ## Conventions

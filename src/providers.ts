@@ -14,8 +14,9 @@ export interface ChatTarget {
 
 const env = process.env;
 
+/** Both overridable so the CI smoke test can point the hub at a stub (scripts/stub-meta.ts). */
 export const META_BASE_URL = env.META_BASE_URL ?? "https://api.meta.ai/v1";
-export const META_REALTIME_URL = "wss://api.meta.ai/v1/asr/realtime";
+export const META_REALTIME_URL = env.META_REALTIME_URL ?? "wss://api.meta.ai/v1/asr/realtime";
 export const TRANSCRIBE_MODEL = "muse-voice-transcribe-1.0";
 
 export function chatTargets(): ChatTarget[] {

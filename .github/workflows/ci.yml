@@ -1,0 +1,54 @@
+# Fast checks on every push, without API keys: typecheck, unit tests, an end-to-end smoke test
+# against a stubbed Meta API, and the clip firmware build.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  hub:
+    name: Hub (typecheck, tests, smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: End-to-end smoke (clip emulator → hub → stubbed Meta API → phone events)
+        run: pnpm smoke
+        timeout-minutes: 1
+
+  firmware:
+    name: Clip firmware build
+    runs-on: ubuntu-latest
+    env:
+      FQBN: esp32:esp32:XIAO_ESP32S3:PSRAM=opi
+      ESP32_CORE: 3.3.12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: arduino15-esp32-${{ env.ESP32_CORE }}
+      - name: ESP32 core ${{ env.ESP32_CORE }}
+        run: |
+          arduino-cli config init --overwrite --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@${{ env.ESP32_CORE }}
+      - name: Compile lente-clip (with the example Wi-Fi secrets)
+        run: |
+          cp firmware/lente-clip/secrets.example.h firmware/lente-clip/secrets.h
+          arduino-cli compile -b "$FQBN" firmware/lente-clip
+      - name: Compile selftest
+        run: arduino-cli compile -b "$FQBN" firmware/selftest
