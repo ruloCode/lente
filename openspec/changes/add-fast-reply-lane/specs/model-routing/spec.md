@@ -27,6 +27,14 @@ After a provider fails three times in a row for a job, the hub SHALL skip it for
 ### Requirement: Default routing
 By default, reply cues SHALL route to Muse Spark Open on Baseten, then on Fireworks when its key is set, then Muse Spark 1.3 at minimal effort; all other jobs SHALL route to Muse Spark 1.3.
 
+#### Scenario: Baseten model follows the key
+- **WHEN** `BASETEN_MODEL` is not set
+- **THEN** the Baseten target asks for `meta-models/muse-spark-open-1026`, the only model the hackathon key accepts
+
+#### Scenario: Key and model do not match
+- **WHEN** Baseten answers 403 or 404 for the model (a hackathon key with the unsuffixed name, or a regular key with `-1026`)
+- **THEN** the cue comes from the next provider and the logged error names the model and says to check that `BASETEN_MODEL` matches the key
+
 #### Scenario: Only the Meta key is set
 - **WHEN** only the Meta Model API key is configured
 - **THEN** cues are served by Muse Spark 1.3 at minimal effort

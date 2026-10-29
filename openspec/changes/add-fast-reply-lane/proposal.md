@@ -28,4 +28,4 @@ Privacy: the cue context (recent turns) goes to the chosen provider; providers a
 ## Impact
 
 - `src/providers.ts` (Baseten target exists; optional Fireworks target), a routing module with timeout and fallback (pure policy tested), `src/pilot.ts`.
-- `.env`: `BASETEN_API_KEY` (set), optional `FIREWORKS_API_KEY` (pending partner approval).
+- `.env`: `BASETEN_API_KEY` (the hackathon key from the partner email, set 2026-10-28; it carries the USD 100 credit and accepts only `meta-models/muse-spark-open-1026`), `BASETEN_MODEL` only for a non-hackathon key, optional `FIREWORKS_API_KEY` (pending partner approval).
