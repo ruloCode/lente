@@ -27,6 +27,7 @@ import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, JitterBuffer, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
+import { DESKTOP_PAGE } from "./desktop-page.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
@@ -1097,6 +1098,9 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
     } else if (req.method === "GET" && req.url === "/") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       res.end(PILOT_PAGE);
+    } else if (req.method === "GET" && req.url === "/desktop") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(DESKTOP_PAGE);
     } else if (req.method === "GET" && req.url === "/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
       const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), actionsEvent(), recordedEvent(), spendEvent()] });

@@ -10,5 +10,5 @@ Depends on: `add-phone-capture`
 
 ## 2. As a clip
 
-- [ ] 2.1 Protocol v2 hello and frames over WebSocket to the hub; verify transcript and cue on the phone with no clip connected [phone]
-- [ ] 2.2 Pause, mode and capturing indicator; verify pausing from the phone stops audio from the page [phone]
+- [x] 2.1 Protocol v2 hello and frames over WebSocket to the hub; verify transcript and cue on the phone with no clip connected [phone]
+- [x] 2.2 Pause, mode and capturing indicator; verify pausing from the phone stops audio from the page [phone]

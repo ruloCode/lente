@@ -77,9 +77,9 @@ export function uplinkFrame(type: string, payload: Uint8Array): Uint8Array {
   return out;
 }
 
-/** The hello a phone opens with: protocol 2.0, PCM16 at 16 kHz, no camera stream of its own. */
-export function phoneHello(fw: string): Uint8Array {
-  const hello = { proto: "2.0", device: "lente-phone", fw, codec: "pcm16", rate: 16000, rssi: 0, camera: false };
+/** The hello a browser device opens with: protocol 2.0, PCM16 at 16 kHz. The phone page is the default; the desktop page names itself. */
+export function phoneHello(fw: string, device = "lente-phone", camera = false): Uint8Array {
+  const hello = { proto: "2.0", device, fw, codec: "pcm16", rate: 16000, rssi: 0, camera };
   return uplinkFrame("H", new TextEncoder().encode(JSON.stringify(hello)));
 }
 

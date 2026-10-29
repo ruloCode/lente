@@ -88,3 +88,16 @@ test("scene: a deck of three slides, each shown for many frames with noise, send
   }
   assert.equal(sent, 3);
 });
+
+test("desktop hello: a clip-shaped v2 hello that names the desktop page and its pictures", async () => {
+  const { phoneHello } = await import("../src/phone-audio.ts");
+  const { encodeHello } = await import("../src/clip-protocol.ts");
+  assert.deepEqual(Buffer.from(phoneHello("desktop-page-1", "lente-desktop", true)), encodeHello({ fw: "desktop-page-1", device: "lente-desktop", camera: true }));
+});
+
+test("desktop page: its script parses and carries the pause and takeover commands", async () => {
+  const { DESKTOP_PAGE } = await import("../src/desktop-page.ts");
+  const script = DESKTOP_PAGE.slice(DESKTOP_PAGE.indexOf("<script>") + 8, DESKTOP_PAGE.indexOf("</script>"));
+  assert.doesNotThrow(() => new Function(script));
+  for (const cmd of ["M", "m", "P", "T"]) assert.ok(script.includes(`cmd === "${cmd}"`), `handles hub command ${cmd}`);
+});
