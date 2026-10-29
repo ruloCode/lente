@@ -48,3 +48,14 @@ test("cool-down is per job and starts fresh afterwards", () => {
   p.failed("cue", "open");
   assert.equal(p.pick("cue", routes)[0].id, "open");
 });
+
+test("the last-resort route never cools down", () => {
+  const { p } = policy();
+  for (let i = 0; i < 3; i++) {
+    p.failed("cue", "open");
+    p.failed("cue", "spark");
+  }
+  assert.deepEqual(p.pick("cue", routes).map((r) => r.id), ["spark"]);
+  p.failed("cue", "spark");
+  assert.deepEqual(p.pick("cue", routes).map((r) => r.id), ["spark"]);
+});

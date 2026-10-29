@@ -24,6 +24,10 @@ After a provider fails three times in a row for a job, the hub SHALL skip it for
 - **WHEN** the fast-lane provider keeps failing
 - **THEN** cues come from the fallback without paying its timeout each time
 
+#### Scenario: Every route has failed
+- **WHEN** every route of a job has failed three times in a row
+- **THEN** the last route (Muse Spark 1.3) is still tried on the next cue, because the last resort never cools down
+
 ### Requirement: Default routing
 By default, reply cues SHALL route to Muse Spark Open on Baseten, then on Fireworks when its key is set, then Muse Spark 1.3 at minimal effort; all other jobs SHALL route to Muse Spark 1.3.
 

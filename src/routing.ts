@@ -22,9 +22,14 @@ export class RoutePolicy {
     this.now = now;
   }
 
-  /** The routes to try now, in order: configured, and not cooling down after repeated failures. */
+  /**
+   * The routes to try now, in order: configured, and not cooling down after repeated failures.
+   * The last configured route is the last resort and never cools down: better a slow answer than none.
+   */
   pick<T extends Route>(job: string, routes: T[]): T[] {
-    return routes.filter((r) => r.configured && !this.cooling(job, r.id));
+    const configured = routes.filter((r) => r.configured);
+    const last = configured[configured.length - 1];
+    return configured.filter((r) => r === last || !this.cooling(job, r.id));
   }
 
   cooling(job: string, id: string): boolean {
