@@ -3,7 +3,8 @@
 ## 1. Hub
 
 - [ ] 1.1 Proposed facts in the notes schema and prompt (same call), turn validation, a text-only facts store under `data/` with keep, discard and cascade delete with the meeting; unit tests (`pnpm test`)
-- [ ] 1.2 Kept facts in the memory prefix for replies, briefings and (once `add-ask-lente` is in) questions to Lente; unit test that proposed facts never reach a prompt; one real extraction of a synthetic dialogue proposes grounded facts [key:MODEL_API_KEY]
+- [ ] 1.2 Kept facts in the memory prefix for replies, briefings and (once `add-ask-lente` is in) questions to Lente; unit test that proposed facts never reach a prompt (`pnpm test`)
+- [ ] 1.3 One real extraction of a synthetic dialogue proposes grounded facts [key:MODEL_API_KEY]
 
 ## 2. Phone
 

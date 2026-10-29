@@ -11,7 +11,7 @@
 //   pnpm auto --budget 40 --node-budget 6 --model opus
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, openSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, lstatSync, mkdirSync, openSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
@@ -27,7 +27,9 @@ const STATE_DIR = join(ROOT, "data", "auto");
 const STATE_PATH = join(STATE_DIR, "state.json");
 const RUNS_DIR = join(STATE_DIR, "runs");
 const FQBN = "esp32:esp32:XIAO_ESP32S3:PSRAM=opi";
-const LINKED_SECRETS = [".env", "firmware/lente-clip/secrets.h", "firmware/selftest/secrets.h"];
+// Wi-Fi only: the lane gets no model keys (.env), so building Lente spends no Meta or Baseten credit.
+const LINKED_SECRETS = ["firmware/lente-clip/secrets.h", "firmware/selftest/secrets.h"];
+const UNLINKED = [".env"];
 const FIX_ROUNDS = 2;
 const WATCH_MS = 10 * 60_000;
 const REVIEW_TIMEOUT_MS = 10 * 60_000;
@@ -56,7 +58,7 @@ const NODE_BUDGET_USD = Number(opt["node-budget"]);
 
 // ---------- state the progress page reads ----------
 
-type Outcome = { change: string; group: string; outcome: "merged" | "failed"; at: number; costUsd: number; commit?: string; reason?: string; review?: string; mainUpdated?: boolean };
+type Outcome = { change: string; group: string; outcome: "merged" | "failed"; at: number; costUsd: number; commit?: string; reason?: string; review?: string; mainUpdated?: boolean; blocked?: string[] };
 const state = {
   status: "starting",
   message: "",
@@ -65,7 +67,7 @@ const state = {
   updatedAt: Date.now(),
   lane: relative(ROOT, LANE),
   branch: LANE_BRANCH,
-  bench: { boardPort: null as string | null, phone: null as string | null, keys: [] as string[] },
+  bench: { boardPort: null as string | null, phone: null as string | null, keys: [] as string[], keysOff: true },
   node: null as null | { change: string; group: string; tasks: string[]; startedAt: number; round: number },
   spentUsd: 0,
   budgetUsd: BUDGET_USD,
@@ -114,9 +116,11 @@ function detectBench(): { bench: Bench; boardPort: string | null; phone: string 
   const adb = sh("adb", ["devices"], ROOT, 15_000);
   if (adb.ok) {
     const serials = adb.out.split("\n").map((l) => l.split("\t")).filter(([s, st]) => s && st?.trim() === "device").map(([s]) => s.trim());
-    phone = serials.find((s) => !s.includes(":")) ?? serials[0] ?? null; // USB before Wi-Fi debugging
+    // Only a phone counts: a TV on Wi-Fi debugging is an adb device too, with no Chrome to drive.
+    const phones = serials.filter((s) => !/\btv\b/.test(sh("adb", ["-s", s, "shell", "getprop", "ro.build.characteristics"], ROOT, 10_000).stdout));
+    phone = phones.find((s) => !s.includes(":")) ?? phones[0] ?? null; // USB before Wi-Fi debugging
   }
-  return { bench: { board: boardPort !== null, phone: phone !== null, keys: keyNames(ROOT) }, boardPort, phone };
+  return { bench: { board: boardPort !== null, phone: phone !== null, keys: keyNames(ROOT), keysOff: true }, boardPort, phone };
 }
 
 // ---------- the lane worktree ----------
@@ -126,6 +130,10 @@ function prepareLane(): void {
     const add = git(["worktree", "add", "-B", LANE_BRANCH, LANE, "main"], ROOT);
     if (!add.ok) throw new Error(`could not create the lane worktree at ${LANE}: ${tail(add.out, 5)}`);
     note(`created worktree ${relative(ROOT, LANE)} on ${LANE_BRANCH}`);
+  }
+  for (const rel of UNLINKED) {
+    const at = join(LANE, rel);
+    if (existsSync(at) && lstatSync(at).isSymbolicLink()) unlinkSync(at); // linked by an older runner
   }
   for (const rel of LINKED_SECRETS) {
     const from = join(ROOT, rel);
@@ -193,7 +201,7 @@ How:
 1. Read CLAUDE.md, then the change's proposal.md, design.md (if any), specs/ and tasks.md. Read docs/kb files only as the tasks need them. If the code must differ from the spec, update the change first.
 2. Implement each task, run the verification it names, and tick it (\`- [x]\`) in tasks.md only once that verification passed. If a task can't be finished (missing hardware behaviour, unclear spec, a step only a person can do), leave it unticked and report it blocked with the reason. Don't fake a verification and don't write a number you didn't measure.
 3. Bench: clip board ${boardPort ? `on ${boardPort} ($LENTE_BOARD_PORT)` : "not connected"}; Android phone ${phone ? `adb serial ${phone} ($LENTE_PHONE_SERIAL)` : "not connected"}. The lente-hardware skill says how to flash the clip, read its serial log, drive the phone page over adb and play test speech.
-4. The human's hub may be running on ports 7070/8080 from the main checkout. For live checks you may stop it and run this checkout's hub (\`pnpm pilot\`, in the background); the clip connects to 7070. Stop your hub when done; the runner starts the human's again after the node.
+4. Building Lente spends no model credit: this worktree has no .env and no Meta or Baseten key, and you must not load one from elsewhere. For live checks run the stubbed Meta API (\`pnpm stub\`, in the background; it prints the env that points a hub at it) and this checkout's hub with that env; the stub transcribes a fixed question whatever it hears, which is enough to check the page, the cards and the clip link. If a verification needs real model output (quality, real latency, a real transcript), leave that task unticked and report it blocked as "needs a real model run". The human's hub may be running on ports 7070/8080 from the main checkout; you may stop it for live checks (the clip connects to 7070). Stop your hub and the stub when done; the runner starts the human's hub again after the node.
 5. Finish green: \`pnpm typecheck && pnpm test && pnpm exec openspec validate ${node.change} --strict\`. If every task of the change is now ticked, run \`pnpm exec openspec archive ${node.change} --yes\`. Add or update today's row in README.md "What was built during the hackathon".
 6. Don't commit, push, merge or rebase: the runner reviews, commits and merges. Stay inside this worktree.
 
@@ -320,7 +328,8 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
   const logPath = join(RUNS_DIR, `${new Date(started).toISOString().replace(/[:.]/g, "-")}-${node.change}.jsonl`);
   mkdirSync(RUNS_DIR, { recursive: true });
   save({ status: "working", message: `building ${node.change} / ${node.group}`, node: { change: node.change, group: node.group, tasks: node.tasks.map((t) => t.id), startedAt: started, round: 0 } });
-  const env = { ...process.env, LENTE_AUTO: "1", LENTE_LANE_ROOT: LANE, LENTE_BOARD_PORT: boardPort ?? "", LENTE_PHONE_SERIAL: phone ?? "", LENTE_HUB_URL: "http://localhost:8080" };
+  const noKeys = Object.fromEntries([...keyNames(ROOT), "MODEL_API_KEY", "BASETEN_API_KEY"].map((k) => [k, ""]));
+  const env = { ...process.env, ...noKeys, LENTE_AUTO: "1", LENTE_LANE_ROOT: LANE, LENTE_BOARD_PORT: boardPort ?? "", LENTE_PHONE_SERIAL: phone ?? "", LENTE_HUB_URL: "http://localhost:8080" };
 
   let costUsd = 0;
   const fail = (reason: string): Outcome => {
@@ -382,7 +391,8 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
     const push = git(["push", "origin", "main"], ROOT);
     note(push.ok ? "pushed main; CI runs on GitHub" : `push failed: ${tail(push.out, 2)}`);
   }
-  return { change: node.change, group: node.group, outcome: "merged", at: Date.now(), costUsd, commit: sha, review: lastReview?.verdict, mainUpdated: ff.ok };
+  const blocked = run.result?.tasks.filter((t) => t.status === "blocked").map((t) => t.id) ?? [];
+  return { change: node.change, group: node.group, outcome: "merged", at: Date.now(), costUsd, commit: sha, review: lastReview?.verdict, mainUpdated: ff.ok, blocked };
 }
 
 // ---------- the human's hub ----------
@@ -415,7 +425,7 @@ async function main(): Promise<void> {
     const { bench, boardPort, phone } = detectBench();
     const changes = loadChanges(existsSync(LANE) ? LANE : ROOT);
     const wanted = new Set(changes.flatMap((c) => c.groups.flatMap((g) => g.tasks.flatMap((t) => t.tags.filter((x) => x.startsWith("key:")).map((x) => x.slice(4))))));
-    state.bench = { boardPort, phone, keys: [...wanted].filter((k) => bench.keys.has(k)) };
+    state.bench = { boardPort, phone, keys: [...wanted].filter((k) => bench.keys.has(k)), keysOff: true };
 
     if (opt["dry-run"]) {
       console.log(`bench: board ${boardPort ?? "none"} · phone ${phone ?? "none"} · keys ${state.bench.keys.join(", ") || "none"} (of ${[...wanted].join(", ") || "none"})`);
@@ -450,6 +460,10 @@ async function main(): Promise<void> {
     state.history.push(outcome);
     if (state.history.length > HISTORY_KEPT) state.history.shift();
     if (outcome.outcome === "failed") failed.add(`${node.change}/${node.group}`);
+    if (outcome.blocked?.length) {
+      failed.add(`${node.change}/${node.group}`); // its blocked tasks would only be retried in vain
+      note(`${node.change} / ${node.group}: ${outcome.blocked.join(", ")} blocked; skipped for the rest of this run`);
+    }
     note(outcome.outcome === "merged" ? `✓ ${node.change} / ${node.group} → ${outcome.commit} (US$${outcome.costUsd.toFixed(2)})` : `✗ ${node.change} / ${node.group}: ${outcome.reason}`);
     save({ status: "working", node: null });
     if (opt.once) {

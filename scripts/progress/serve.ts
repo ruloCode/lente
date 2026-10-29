@@ -61,7 +61,7 @@ function snapshot() {
   // Until the runner has looked, assume the clip and phone are plugged in: only what a person
   // or a missing key holds back is listed as needing the human.
   const seen = runner?.bench;
-  const bench = { board: seen ? Boolean(seen.boardPort) : true, phone: seen ? Boolean(seen.phone) : true, keys: keyNames(ROOT) };
+  const bench = { board: seen ? Boolean(seen.boardPort) : true, phone: seen ? Boolean(seen.phone) : true, keys: keyNames(ROOT), keysOff: seen?.keysOff ?? false };
   const ready = readyNodes(changes, bench);
   return {
     changes,

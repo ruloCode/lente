@@ -23,7 +23,8 @@
     "pilot": "node --env-file-if-exists=.env src/pilot.ts",
     "smoke": "node scripts/smoke.ts",
     "progress": "node scripts/progress/serve.ts",
-    "auto": "node scripts/auto/run.ts"
+    "auto": "node scripts/auto/run.ts",
+    "stub": "node scripts/stub-serve.ts"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.15.0",

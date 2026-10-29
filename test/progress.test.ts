@@ -69,6 +69,8 @@ test("tags come off the task text and say what the task needs", () => {
   assert.equal(g.tasks[0].text, "Verify on the phone with the clip");
   assert.deepEqual(g.tasks.map((t) => t.tags), [["hw", "phone"], ["key:BASETEN_API_KEY"], ["human"]]);
   assert.deepEqual(g.tasks.map((t) => holdReason(t, BARE)), ["clip board not connected", "BASETEN_API_KEY not set", "needs a person"]);
+  const lane = { board: true, phone: true, keys: new Set(["BASETEN_API_KEY"]), keysOff: true };
+  assert.match(holdReason(g.tasks[1], lane) ?? "", /^needs a real run with BASETEN_API_KEY/, "the lane holds key tasks even when the human has the key");
   assert.deepEqual(g.tasks.map((t) => holdReason(t, FULL)), [null, null, "needs a person"]);
 });
 

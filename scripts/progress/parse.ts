@@ -109,7 +109,8 @@ export function nextTask(ordered: Change[]): { change: string; group: string; ta
 }
 
 /** What the auto lane can reach right now: the clip board, the phone, and which keys are set. */
-export type Bench = { board: boolean; phone: boolean; keys: Set<string> };
+/** `keysOff`: the auto lane spends no model credit, so every task that needs a key waits for the human. */
+export type Bench = { board: boolean; phone: boolean; keys: Set<string>; keysOff?: boolean };
 export type Held = { change: string; id: string; text: string; reason: string };
 export type Node = { change: string; group: string; tasks: Task[]; held: Held[] };
 
@@ -119,6 +120,7 @@ export function holdReason(task: Task, bench: Bench): string | null {
     if (tag === "human") return "needs a person";
     if (tag === "hw" && !bench.board) return "clip board not connected";
     if (tag === "phone" && !bench.phone) return "phone not connected";
+    if (tag.startsWith("key:") && bench.keysOff) return `needs a real run with ${tag.slice(4)} (the lane spends no model or cloud credit)`;
     if (tag.startsWith("key:") && !bench.keys.has(tag.slice(4))) return `${tag.slice(4)} not set`;
   }
   return null;

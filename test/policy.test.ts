@@ -27,6 +27,14 @@ test("the auto lane leaves git history to the runner", () => {
   }
 });
 
+test("the auto lane never loads another checkout's keys", () => {
+  for (const cmd of ["node --env-file=/Users/rulocode/dev/side/lente/.env src/pilot.ts", "node --env-file-if-exists=../../.env src/pilot.ts", "set -a; source ../../../.env; set +a"]) {
+    assert.ok(blocked(cmd, LANE), cmd);
+  }
+  assert.equal(checkCommand("node --env-file-if-exists=.env src/pilot.ts", LANE), null, "the lane's own (absent) .env is harmless");
+  assert.equal(checkCommand("cp ../../.env.example /tmp/x", LANE), null);
+});
+
 test("firmware uploads name the clip's port, never a glob that may hit the phone", () => {
   assert.ok(blocked("arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p /dev/cu.usbmodem* firmware/lente-clip"));
   assert.ok(blocked("arduino-cli upload firmware/lente-clip"));

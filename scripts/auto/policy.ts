@@ -22,6 +22,7 @@ const CONTRIBUTOR = /(?:\b[a-z0-9][\w.-]*-contributor\b(?!-mode)|--contributor-m
 const LANE_GIT = new RegExp(String.raw`(?:${GIT}(?:commit|push|merge|rebase|cherry-pick|worktree)|\bgh\s+pr\s+(?:merge|create))\b`);
 const ARDUINO_PORT = /\barduino-cli\b[^;&|]*\b(?:upload|monitor|burn-bootloader|compile\b[^;&|]*--upload)\b/;
 const PORT_ARG = /(?:\s-p|\s--port)[ =]?(\S+)/;
+const OTHER_ENV = /(?:^|[\s='"])[^\s='"]*\/\.env(?![\w.-]*\.example\b)(?=$|[\s'";|&)])/;
 const RM_ROOTS = /\brm\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*r[a-zA-Z]*\s+(?:-[a-zA-Z]+\s+)*(?:\/|~|\$HOME|\.\.?|\.git)(?:\/)?(?:\s|$)/;
 
 /** Why a shell command must not run, or null when it may. */
@@ -31,6 +32,7 @@ export function checkCommand(cmd: string, ctx: Context): string | null {
   if (FORCE_PUSH.test(cmd)) return "force push rewrites published history; push normally or ask the human";
   if (ADD_FORBIDDEN.test(cmd)) return "rule 3: keys, the day record, recordings and audio never go into git (and no `git add -f`)";
   if (RM_ROOTS.test(cmd)) return "refusing to recursively delete the home, root, repository or .git directory";
+  if (ctx.auto && OTHER_ENV.test(cmd)) return "auto lane: building Lente spends no model credit; use the stub (pnpm stub), never another checkout's .env";
   if (ctx.auto && LANE_GIT.test(cmd)) return "auto lane: leave changes uncommitted; the runner reviews, commits, merges and pushes";
   if (ARDUINO_PORT.test(cmd)) {
     const port = PORT_ARG.exec(cmd)?.[1]?.replace(/['"]/g, "");
