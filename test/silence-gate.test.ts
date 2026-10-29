@@ -88,3 +88,28 @@ test("gate: the minimum level holds in a silent room", () => {
   assert.equal(run(gate, repeat(299, 5)).sent.length, 0);
   assert.equal(run(gate, repeat(300, 1)).sent.length, 1 + GATE_DEFAULTS.preRollMs / GATE_DEFAULTS.frameMs);
 });
+
+test("gate: fifteen seconds of loud speech with short word gaps never closes mid-sentence", () => {
+  const gate = new SilenceGate<number>();
+  const levels = [...repeat(QUIET, seconds(2))];
+  // words of 0.4 s, gaps of 0.24 s at a level a breath or the room gives, well above the quiet floor
+  while (levels.length < seconds(17)) levels.push(...repeat(SPEECH, 5), ...repeat(700, 3));
+  const { sent, reopenedAt } = run(gate, levels);
+  assert.equal(reopenedAt.length, 1);
+  assert.ok(sent.includes(levels.length - 1), "the last frame of the sentence is sent");
+  assert.equal(sent.filter((f) => f >= seconds(2)).length, levels.length - seconds(2), "no frame from the first word on is dropped");
+});
+
+test("gate: speech right after a loud noise opens the gate and stays open until it ends", () => {
+  const gate = new SilenceGate<number>();
+  const noise = repeat(1500, seconds(12));
+  const speech = [...repeat(2500, 5), ...repeat(900, 3)].flatMap((l) => [l]);
+  const levels = [...repeat(QUIET, seconds(1)), ...noise, ...Array.from({ length: seconds(8) / 8 }, () => speech).flat()];
+  const { sent } = run(gate, levels);
+  assert.ok(sent.includes(levels.length - 1), "speech that follows the noise is sent to its last frame");
+  assert.equal(
+    sent.filter((f) => f >= seconds(13)).length,
+    levels.length - seconds(13),
+    "no speech frame after the noise is dropped",
+  );
+});

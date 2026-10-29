@@ -6,7 +6,7 @@
 - [x] 1.2 Silence gate as a pure module (speech-level threshold from the clip's level, hangover, pre-roll; closed-session reopen with pre-roll first); the hub streams only around speech; unit tests with synthetic levels; `pnpm smoke`
 - [x] 1.3 Idle auto-pause as a pure policy (wearer silence, fallback to any speech, meeting exemption, configurable minutes) with fake-clock tests; the hub pauses and the status carries the reason
 - [x] 1.4 Usage meter as a pure module: seconds sent and tokens per model per local day, priced from constants that cite `docs/kb/meta-api.md`; `data/usage.json` numbers only; unit tests
-- [ ] 1.6 The silence gate never cuts a sentence: synthetic levels with fifteen seconds of continuous loud speech with only short word gaps, and speech that starts right after a loud noise, keep the gate open until the speech ends; fix the noise-floor estimate if a test fails; `pnpm test`
+- [x] 1.6 The silence gate never cuts a sentence: synthetic levels with fifteen seconds of continuous loud speech with only short word gaps, and speech that starts right after a loud noise, keep the gate open until the speech ends; fix the noise-floor estimate if a test fails; `pnpm test`
 - [ ] 1.5 Measure on a synthetic recording with long silences: seconds sent with and without the gate, and how much later the first word of a sentence after silence is transcribed; record both in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
 ## 2. Phone

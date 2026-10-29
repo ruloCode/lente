@@ -4,7 +4,7 @@
 // seconds, so a fan or an air conditioner doesn't hold the gate open). The gate keeps a short
 // pre-roll of the frames before the level rose and sends it first, keeps sending for a hangover
 // after the last speech frame (the service needs trailing silence to end a turn), and sends
-// nothing in silence. The service closes a session that gets no audio; the next speech reopens it.
+// nothing in silence. The noise floor is learned only while the gate is closed. The service closes a session that gets no audio; the next speech reopens it.
 // Pure: frames are counted, not timed, because the hub feeds one every FRAME_MS on a steady clock.
 
 export interface GateConfig {
@@ -63,7 +63,9 @@ export class SilenceGate<T> {
   /** One frame and its level, in order, once per frame time. */
   push(frame: T, level: number): GateStep<T> {
     const speech = level >= this.threshold();
-    this.noteLevel(level);
+    // Only a closed gate learns the floor: while open, the gaps between words and a loud noise
+    // that hands over to speech would lift the threshold above the voice and cut the sentence.
+    if (!this.isOpen) this.noteLevel(level);
     if (!this.isOpen) {
       if (!speech) {
         this.keep(frame);
