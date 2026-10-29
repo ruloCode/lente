@@ -29,7 +29,7 @@ Run OpenSpec as `pnpm exec openspec …` (pinned dev dependency). The OpenSpec s
 4. After each group: `pnpm typecheck && pnpm test` and `pnpm exec openspec validate <change> --strict`, then commit.
 5. When every task is done: `pnpm exec openspec archive <change> --yes` (merges its specs into `openspec/specs/`).
 
-Build order: `harden-clip-protocol` → `apply-dilo-identity` → `add-addressed-to-you` → `add-evals` → `add-meeting-memory` → `add-closing-agent` → `add-fast-reply-lane` (needs `BASETEN_API_KEY`) → `add-glasses-mcp` → `add-cloud-hub` / `add-desktop-mode`.
+Build order (status 2026-10-28): done `harden-clip-protocol`, `add-meeting-memory` (archived) · finishing `apply-dilo-identity` (2.1 install check), `add-addressed-to-you` (3.3 motor, hardware 2026-10-30), `add-app-navigation` (1.2), `add-evals` (3.1, CI) · next `add-record-only-mode` → `add-closing-agent` → `add-phone-capture` (builds the WebSocket ingest) → `add-fast-reply-lane` (needs `BASETEN_API_KEY`) → `add-glasses-mcp` → `add-desktop-mode` (reuses that ingest) / `add-cloud-hub`.
 
 ## Map
 

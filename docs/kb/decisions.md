@@ -61,3 +61,12 @@ Meta's API has no text-to-speech. Speech out uses the phone's own voice by defau
 ### 2026-10-28 · Brand "Calibre", card "Dilo"
 
 Every competitor site measured (Even Realities, Cluely, Omi, Brilliant Labs, Mentra) is light, gadget or fashion styled, and Cluely sells being undetectable. Lente takes the opposite ground: a dark, calm instrument where cyan marks only the line to say and amber only measured numbers, with a visible listening state. The product keeps the name Lente; its one action is "Dilo".
+
+### 2026-10-28 · Side menu, planned features visible as "Pronto", phone copy in Spanish
+
+The phone page follows the layout system measured from the Meta AI app (`docs/kb/ui-reference.md`): a calm Ahora with the live loop, everything else one tap away in a side menu. Planned features are listed greyed out with "Pronto" and a one-sentence screen, so the whole product is legible while nothing unbuilt is presented as working (the rules disqualify a demo that does). All phone copy is Spanish for the wearer; the DILO line stays in the meeting's language; docs and code stay in English.
+
+### 2026-10-28 · The phone can stand in for the clip; Solo grabar keeps text only
+
+When the clip is missing, the phone's microphone and camera feed the hub over the same clip protocol (WebSocket ingest shared with desktop mode); browsers require HTTPS or localhost for that. "Solo grabar" records the day and learns from automatic episodes without real-time cues; "recording" means the transcript as text, never audio, the same promise as the rest of Lente.
+

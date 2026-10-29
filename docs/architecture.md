@@ -12,9 +12,10 @@ One hub, several ways in. Every source of audio and pictures speaks the same cli
 |---|---|---|---|---|
 | **Clip firmware** | Hear, see, signal (LED, vibration) | Seeed XIAO ESP32-S3 Sense on the glasses | C++ on Arduino-ESP32 3.3.x, `esp32-camera`, `ESP_I2S` (PDM) | Pilot running (`firmware/lente-clip`) |
 | **Hub** | Transcription, cues, vision, memory, agents, MCP | Laptop on the LAN today, Modal later | Node 22.18+, TypeScript run natively, zero runtime deps (`node:http`, `node:net`, `fetch`, `WebSocket`) | Pilot running (`src/pilot.ts`) |
-| **Companion app** | Read the Dilo card, see the camera, control modes, approve actions | The wearer's phone | One HTML page served by the hub, SSE down, POST up, installable (manifest) | Pilot running (`src/pilot-page.ts`) |
-| **Clip emulator** | Run Lente with no hardware (judges, CI, demo fallback) | Any computer | Node script speaking the clip protocol | Planned (`harden-clip-protocol`) |
-| **Desktop mode** | Use Lente on Meet/Teams/Zoom without the clip | Chrome on a computer | Browser page: tab capture → 16 kHz PCM → clip protocol over WebSocket | Planned (`add-desktop-mode`) |
+| **Companion app** | Read the Dilo card, see the camera, control modes, approve actions | The wearer's phone | One HTML page served by the hub, SSE down, POST up, installable (manifest); side menu, sections, first-run introduction, all copy in Spanish | Running (`src/pilot-page.ts`, `add-app-navigation`) |
+| **Phone capture** | Use the phone's microphone and camera when the clip is missing | The wearer's phone | The same page: `getUserMedia` → 16 kHz PCM → clip protocol over WebSocket; needs HTTPS or localhost | Planned (`add-phone-capture`) |
+| **Clip emulator** | Run Lente with no hardware (judges, CI, demo fallback) | Any computer | Node script speaking the clip protocol | Done (`harden-clip-protocol`, archived) |
+| **Desktop mode** | Use Lente on Meet/Teams/Zoom without the clip | Chrome on a computer | Browser page: tab capture → 16 kHz PCM → clip protocol over WebSocket (the ingest `add-phone-capture` builds) | Planned (`add-desktop-mode`) |
 | **MCP server** | Glasses and memory as tools for any agent | Inside the hub | JSON-RPC over Streamable HTTP at `/mcp`, bearer key | Planned (`add-glasses-mcp`) |
 | **Site** | Landing with the video, open-hardware build guide, 3D viewer | Static hosting | Static HTML, three.js viewer from `hardware/clip-v1` | Partly built (viewer, guide) |
 
@@ -98,7 +99,7 @@ One question, end to end: the clip sends 80 ms audio frames → the hub paces th
 |---|---|---|---|
 | Audio | Memory only, streamed to Muse Voice Transcribe | Never stored | Paused = nothing sent |
 | Photos | Memory only, sent to Muse Spark | Never stored | Mic-only mode powers the camera down |
-| Day record | `data/days/*.jsonl` | Until deleted | Text only |
+| Day record | `data/days/*.jsonl` | Until deleted | Text only, also in Solo grabar (planned `add-record-only-mode`: the whole day kept as text and split into episodes, no real-time cues) |
 | Memory, profile, traces | `data/meetings/`, `data/profile.json`, `data/traces/` | Until deleted | Delete one or all from the phone |
 | Secrets | `.env`, `firmware/**/secrets.h` (git-ignored); platform secrets in the cloud | — | Rotated after the demo |
 
@@ -133,15 +134,15 @@ docs/           architecture, PROTOCOL, benchmarks, kb  firmware/, hardware/, op
 | Day | Changes | Why this order |
 |---|---|---|
 | Wed 28 | `harden-clip-protocol`, `apply-dilo-identity` | The emulator unlocks evals, CI and a hardware-free demo; the identity is small |
-| Thu 29 | `add-addressed-to-you`, `add-evals` (set + runner) | The core moment of the demo, measured from day one |
-| Fri 30 | `add-meeting-memory`, `add-fast-reply-lane` (if Baseten approves); buy parts, print case | Memory feeds the agent; routing needs partner keys |
-| Sat 31 | `add-closing-agent`; assemble the clip with motor | Agentic bonus |
-| Sun 1 | `add-glasses-mcp`, `add-cloud-hub` spike | Extension surface; hosting decision |
-| Mon 2 | `add-cloud-hub` or `add-desktop-mode` (whichever the spike favors), full eval run, CI green | Polish and numbers for the video |
+| Thu 29 | Finish `add-app-navigation` (1.2) and `add-evals` (stage timestamps, CI) | Numbers for the video from day one; CI green early |
+| Fri 30 | `add-record-only-mode`; motor on the clip when the hardware arrives (`add-addressed-to-you` 3.3) | Small, hub-side; episodes feed the agent's memory |
+| Sat 31 | `add-closing-agent` | Agentic bonus |
+| Sun 1 | `add-phone-capture` (WebSocket ingest, HTTPS), `add-fast-reply-lane` if Baseten keys hold | Lente without the clip; the ingest is reused by desktop mode |
+| Mon 2 | `add-glasses-mcp` or `add-desktop-mode`, full eval run, CI green | Extension surface or the judges' no-hardware path |
 | Tue 3 | Video, README, submission, X post | |
 | Wed 4 | Buffer | |
 
-Must: protocol, identity, addressing, evals, memory, closing agent. Should: fast lane, MCP. Could: cloud hub, desktop mode. Post-hackathon: native app with BLE, HUD, private mode with Muse Glimmer, team memory, Lente as an app on Meta Ray-Ban Display.
+Done: protocol, memory. Must: identity, navigation, addressing, evals, closing agent. Should: record-only mode, phone capture, fast lane, MCP. Could: cloud hub, desktop mode. Post-hackathon: native app with BLE, HUD, private mode with Muse Glimmer, team memory, Lente as an app on Meta Ray-Ban Display.
 
 ## 8. Related work
 

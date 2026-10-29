@@ -53,6 +53,7 @@ export const PILOT_PAGE = `<!doctype html>
   .round { width: var(--tap); height: var(--tap); flex: none; border: 0; border-radius: 50%; background: var(--surface); display: grid; place-items: center; }
   .title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; margin: 0; font: 700 18px/1.2 var(--body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .title svg { width: 26px; height: 26px; flex: none; }
+  .title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   body:not([data-screen="ahora"]) .title svg { display: none; }
   body[data-screen="ahora"] .title { font: 700 24px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; }
   .listen { display: flex; align-items: center; gap: 8px; min-height: var(--tap); flex: none; border: 2px solid transparent; background: var(--surface); border-radius: 999px; padding: 0 16px; font: 600 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
@@ -363,6 +364,7 @@ export const PILOT_PAGE = `<!doctype html>
         <div class="section">
           <span class="cap">Otras formas de usar Lente</span>
           <div class="group">
+            <a class="rowi" href="#telefono"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg><span class="rl">Usar el teléfono<small>Su micrófono y cámara, sin el clip</small></span><span class="tag">Pronto</span></a>
             <a class="rowi" href="#computadora"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="rl">Modo computadora<small>Meet, Teams o Zoom, sin el clip</small></span><span class="tag">Pronto</span></a>
             <a class="rowi" href="#nube"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/></svg><span class="rl">Hub en la nube<small>Funciona fuera de casa</small></span><span class="tag">Pronto</span></a>
           </div>
@@ -396,6 +398,7 @@ export const PILOT_PAGE = `<!doctype html>
         <div class="section">
           <span class="cap">Lente</span>
           <div class="group">
+            <a class="rowi" href="#grabar"><span class="rl">Solo grabar<small>Guarda tu día como texto y aprende, sin sugerencias</small></span><span class="tag">Pronto</span></a>
             <label class="rowi"><span class="rl">Leer en voz alta<small>Las respuestas y los resúmenes, en el teléfono</small></span><input type="checkbox" class="switch" id="voice-set"></label>
             <label class="rowi"><span class="rl">Contestar todas las preguntas<small>Para pruebas: aunque no sean para ti</small></span><input type="checkbox" class="switch" id="me-all"></label>
           </div>
@@ -503,6 +506,10 @@ export const PILOT_PAGE = `<!doctype html>
       text: "Una memoria compartida con tu equipo: las notas y los compromisos de cada reunión, para todos los que estuvieron." },
     computadora: { title: "Modo computadora", when: "Llega con add-desktop-mode", icon: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
       text: "Usa Lente en Meet, Teams o Zoom sin el clip: una página en la computadora comparte el audio de la llamada." },
+    telefono: { title: "Usar el teléfono", when: "Llega con add-phone-capture", icon: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/>',
+      text: "Si el clip no está, el micrófono y la cámara del teléfono hacen su trabajo: Lente escucha, responde y mira igual." },
+    grabar: { title: "Solo grabar", when: "Llega con add-record-only-mode", icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
+      text: "Lente guarda tu día como texto y aprende de él sobre la marcha (notas, vocabulario, tus frases), sin sugerencias en tiempo real." },
     nube: { title: "Hub en la nube", when: "Llega con add-cloud-hub", icon: '<path d="M7 18a4 4 0 0 1-.5-8 6 6 0 0 1 11.5 1.5A3.5 3.5 0 0 1 17.5 18z"/>',
       text: "El clip funcionará en cualquier lugar, con el hotspot de tu teléfono, sin depender de una computadora encendida. Emparejas el teléfono con un código." },
   };
