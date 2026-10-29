@@ -30,6 +30,9 @@ import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
+import { DeviceAuth, SESSION_COOKIE, cookieValue, deviceTokenOf } from "./device-auth.ts";
+import { HealthTracker } from "./health.ts";
+import { PAIR_PAGE } from "./pair-page.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -202,7 +205,17 @@ const sessionClock = new SessionClock();
 let latestPartial = "";
 
 /** The status as sent: the session view is taken at send time so every phone shows the same elapsed time. */
-const statusEvent = () => ({ ...status, session: sessionClock.view(Date.now()) });
+/** Cloud hub: clips need a device token and browsers a pairing; the laptop hub (no LENTE_CLOUD) stays open on the LAN. */
+const CLOUD = process.env.LENTE_CLOUD === "1";
+const auth = CLOUD ? new DeviceAuth(join(DATA_DIR, "devices.json")) : undefined;
+const health = new HealthTracker();
+
+/** A broken model or transcription key, as a reason class for the phone's note (no text from the call). */
+const modelDown = () => {
+  const h = health.snapshot();
+  return h.model.state === "failing" ? h.model.reason : h.transcription.state === "failing" ? h.transcription.reason : "";
+};
+const statusEvent = () => ({ ...status, modelDown: modelDown(), session: sessionClock.view(Date.now()) });
 
 /** What the phone read out loud lately; a turn that repeats it is Lente hearing itself. */
 const narration = new NarrationGuard();
@@ -295,6 +308,7 @@ async function callSpark(messages: ChatMessage[], opts: { label: string; extra?:
       // The last resort has nobody to fall back to, so it gets no first-token deadline.
       const firstTokenTimeoutMs = job && i < targets.length - 1 ? CUE_FIRST_TOKEN_TIMEOUT_MS : undefined;
       const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
+      health.ok("model");
       if (job) routePolicy.succeeded(job, target.id);
       else sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
       broadcast({ kind: "usage", label: opts.label, model: target.id, provider: target.provider, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
@@ -308,6 +322,8 @@ async function callSpark(messages: ChatMessage[], opts: { label: string; extra?:
       console.error(`[spark] ${target.id} failed: ${(error as Error).message.slice(0, 200)}`);
     }
   }
+  health.failed("model", lastError instanceof Error ? lastError.message : "is not set");
+  broadcast(statusEvent());
   throw lastError ?? new Error(`no provider is configured for ${job ?? "this job"}`);
 }
 
@@ -848,7 +864,10 @@ function startAsr(): void {
   setStatus({ asr: "listening · nothing sent in silence" });
   const gate = new SilenceGate<{ pcm: Buffer; sessionMs: number }>({ frameMs: FRAME_MS, ...GATE });
   const session = new AsrSession(key, {
-    onStatus: (s) => setStatus({ asr: s }),
+    onStatus: (s) => {
+      if (/^transcription (error|connection error)/.test(s)) health.failed("transcription", s);
+      setStatus({ asr: s });
+    },
     onIdleClose: () => gate.closed(),
     onPartial: (text) => {
       latestPartial = text;
@@ -869,6 +888,7 @@ function startAsr(): void {
       heard(speaker, Date.now());
     },
     onTurn: (turn) => {
+      health.ok("transcription");
       latestPartial = "";
       if (narration.repeats(turn.text, Date.now())) {
         console.log(`[self-voice] dropped a turn that repeats Lente's own voice: ${turn.text}`);
@@ -1083,8 +1103,54 @@ const ACTIONS: Record<string, () => void> = {
 const ICON_SIZES: Record<string, number> = { "/icon-192.png": 192, "/icon-512.png": 512, "/apple-touch-icon.png": 180 };
 const iconCache = new Map<string, Buffer>();
 
+/** Behind the platform's TLS proxy a plain-HTTP request carries `x-forwarded-proto: http`. */
+const plainHttp = (req: IncomingMessage): boolean => req.headers["x-forwarded-proto"] === "http";
+
+/** GET /health: three checks and an overall flag; reasons are classes, never content. Storage is probed with a write. */
+function healthReport() {
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    const probe = join(DATA_DIR, ".health");
+    writeFileSync(probe, String(Date.now()));
+    readFileSync(probe);
+    health.ok("storage");
+  } catch (error) {
+    health.failed("storage", (error as Error).message);
+  }
+  return health.snapshot();
+}
+
+/** Web gate: /health, and on a cloud hub TLS and pairing. Returns true when the request was answered here. */
+async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  const path = req.url?.split("?")[0];
+  if (path === "/health" && req.method === "GET") {
+    const report = healthReport();
+    res.writeHead(report.ok ? 200 : 503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(report));
+    return true;
+  }
+  if (!auth) return false;
+  if (plainHttp(req)) {
+    res.writeHead(308, { Location: `https://${req.headers.host ?? ""}${req.url}` }).end();
+    return true;
+  }
+  if (auth.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE))) return false;
+  if (req.method === "POST" && path === "/pair") {
+    const { code } = JSON.parse((await readBody(req)) || "{}") as { code?: string };
+    const token = typeof code === "string" ? auth.pair(code) : undefined;
+    if (!token) res.writeHead(403, { "Cache-Control": "no-store" }).end();
+    else res.writeHead(204, { "Set-Cookie": `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=31536000` }).end();
+    return true;
+  }
+  // Unpaired: the pairing screen and nothing else.
+  if (req.method === "GET" && path === "/") res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(PAIR_PAGE);
+  else res.writeHead(401, { "Cache-Control": "no-store" }).end();
+  return true;
+}
+
 const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   try {
+    if (await gateWeb(req, res)) return;
     if (req.method === "GET" && req.url === "/manifest.webmanifest") {
       res.writeHead(200, { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" });
       res.end(webManifest());
@@ -1222,7 +1288,12 @@ if (Boolean(TLS_CERT) !== Boolean(TLS_KEY)) {
 }
 const web = TLS_CERT && TLS_KEY ? createHttpsServer({ cert: readFileSync(TLS_CERT), key: readFileSync(TLS_KEY) }, handleWeb) : createHttpServer(handleWeb);
 web.on("upgrade", (req, raw, head) => {
-  if (req.url !== DEVICE_WS_PATH) return void raw.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+  if (req.url?.split("?")[0] !== DEVICE_WS_PATH) return void raw.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+  if (auth) {
+    if (plainHttp(req)) return void raw.end("HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\n\r\n");
+    const known = auth.checkDevice(deviceTokenOf(req.headers, req.url)) || auth.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE));
+    if (!known) return void raw.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+  }
   const socket = acceptDevice(req, raw, head);
   if (!socket) return;
   webDevices.add(socket);
@@ -1237,9 +1308,11 @@ const lanAddresses = Object.values(networkInterfaces())
   .filter((a) => a && a.family === "IPv4" && !a.internal)
   .map((a) => a!.address);
 
-tcp.listen(DEVICE_PORT, () => console.log(`Clip port ${DEVICE_PORT} (set HUB_HOST to ${lanAddresses.join(" or ")})`));
+// A cloud hub takes clips over TLS WebSocket only: raw TCP carries no device token.
+if (!CLOUD) tcp.listen(DEVICE_PORT, () => console.log(`Clip port ${DEVICE_PORT} (set HUB_HOST to ${lanAddresses.join(" or ")})`));
 web.listen(WEB_PORT, () => {
   for (const ip of lanAddresses) console.log(`Phone: ${TLS_CERT ? "https" : "http"}://${ip}:${WEB_PORT}`);
+  if (auth) console.log(`Cloud hub: pairing code ${auth.newPairingCode()} (valid 10 minutes; enter it on the phone's pairing screen). Clip tokens: node scripts/hub-token.ts add <name>`);
   console.log(`Voice: ${elevenKey ? "ElevenLabs" : "the phone's own voice (set ELEVENLABS_API_KEY for ElevenLabs)"}`);
   if (!key) console.log("MODEL_API_KEY is not set: the page shows connection, audio level and photos only.");
 });

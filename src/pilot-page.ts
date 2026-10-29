@@ -1653,6 +1653,7 @@ export const PILOT_PAGE = `<!doctype html>
     let note = "";
     if (m.clipError && !m.clip) note = "El hub rechazó el clip: " + m.clipError + ".";
     else if (/MODEL_API_KEY/.test(m.asr)) note = "Falta la clave de Meta: solo se ven la cámara y el nivel de audio.";
+    else if (m.modelDown) note = "Meta no responde (" + m.modelDown + "): revisa la clave en el hub.";
     else if (!m.clip) note = "Esperando el clip. Revisa que tenga batería y esté en la misma red Wi-Fi.";
     else if (m.listening && m.asr !== "listening") note = asrNote(m.asr);
     $("note").textContent = note;

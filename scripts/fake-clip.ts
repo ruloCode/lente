@@ -2,7 +2,7 @@
 // sequenced audio frames at real-time pace, answers photo requests with the JPEGs of a
 // folder and obeys the hub's commands. Lets anyone run Lente without the hardware.
 //
-// Usage: node scripts/fake-clip.ts <speech.wav> [--photos <dir>] [--host 127.0.0.1] [--port 7070] [--loop] [--v1] [--linger-ms 8000] [--ws]
+// Usage: node scripts/fake-clip.ts <speech.wav> [--photos <dir>] [--host 127.0.0.1] [--port 7070] [--loop] [--v1] [--linger-ms 8000] [--ws] [--token <device token>]
 // `--ws` connects like the phone page does: a WebSocket on the hub's web port (default 8080, path /device) carrying the same frames.
 // Make a WAV from any recording: ffmpeg -i in.m4a -ac 1 -ar 16000 -c:a pcm_s16le speech.wav
 //
@@ -28,6 +28,7 @@ const { values, positionals } = parseArgs({
     host: { type: "string", default: "127.0.0.1" },
     port: { type: "string" },
     ws: { type: "boolean", default: false },
+    token: { type: "string" }, // device token for a cloud hub (with --ws)
     loop: { type: "boolean", default: false },
     v1: { type: "boolean", default: false },
     "linger-ms": { type: "string", default: "8000" }, // keep listening for cues after the audio ends
@@ -92,7 +93,11 @@ function connectWs(): Link {
     host: values.host,
     port,
     path: "/device",
-    headers: { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": Buffer.from("lente-fake-clip!").toString("base64") },
+    headers: { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": Buffer.from("lente-fake-clip!").toString("base64"), ...(values.token ? { Authorization: `Bearer ${values.token}` } : {}) },
+  });
+  req.on("response", (res) => {
+    console.error(`[fake-clip] hub refused the WebSocket: HTTP ${res.statusCode}`);
+    process.exit(2);
   });
   req.on("upgrade", (_res, upgraded) => {
     raw = upgraded;
