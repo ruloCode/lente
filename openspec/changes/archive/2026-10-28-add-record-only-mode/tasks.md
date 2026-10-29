@@ -13,4 +13,4 @@
 
 ## 3. Docs
 
-- [ ] 3.1 Privacy table and consent text in `docs/architecture.md` and the introduction mention Solo grabar; README log
+- [x] 3.1 Privacy table and consent text in `docs/architecture.md` and the introduction mention Solo grabar; README log

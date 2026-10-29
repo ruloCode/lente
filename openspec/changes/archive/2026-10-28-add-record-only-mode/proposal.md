@@ -15,7 +15,7 @@ Out of scope: storing audio (Lente keeps text only, in this mode too), summaries
 
 Meta models: Muse Voice Transcribe (unchanged), Muse Spark 1.3 for episode notes only; no per-question calls in Solo grabar.
 
-Privacy: recording all day makes consent more important, not less. The red strip, the pill and the clip's LED stay on while recording, pause works everywhere, the introduction and Ajustes say that only text is kept, and episodes are deletable like meetings.
+Privacy: recording all day makes consent more important, not less. The red strip and the pill stay on while recording (the clip's LED only blinks for a cue, so the wearer tells the people around them), pause works everywhere, the introduction and Ajustes say that only text is kept, and episodes are deletable like meetings.
 
 ## Capabilities
 

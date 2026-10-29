@@ -420,7 +420,7 @@ export const PILOT_PAGE = `<!doctype html>
           <span class="cap">Privacidad</span>
           <div class="group">
             <div class="pad" style="padding-top:16px">
-              <p>Lente guarda solo texto, nunca audio. Mientras escucha lo verás siempre arriba, y puedes pausarlo cuando quieras.</p>
+              <p>Lente guarda solo texto, nunca audio, también en Solo grabar. Mientras escucha o graba lo verás siempre arriba, y puedes pausarlo cuando quieras.</p>
               <button class="btn danger" id="wipe" type="button" style="justify-self:start">Borrar toda la memoria</button>
             </div>
           </div>
@@ -491,6 +491,7 @@ export const PILOT_PAGE = `<!doctype html>
       <div class="step" data-step="5" hidden>
         <h2>Siempre a la vista</h2>
         <p>Mientras escucha verás la franja roja arriba y este botón. Tócalo cuando quieras pausar. Lente guarda solo texto, nunca audio.</p>
+        <p>En Solo grabar el botón dice «Grabando»: Lente guarda tu día como texto y aprende de él, sin sugerencias. Avisa a quienes estén contigo.</p>
         <div class="demo"><span class="listen" style="background:var(--live);color:#1c0606"><span class="rec" style="background:#1c0606;border-color:#1c0606"></span>Escuchando</span><span class="listen" style="background:transparent;border:2px dashed var(--line);color:var(--muted)"><span class="rec"></span>En pausa</span></div>
       </div>
     </div>
