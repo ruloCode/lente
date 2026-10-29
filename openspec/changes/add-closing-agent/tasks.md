@@ -8,9 +8,9 @@
 
 ## 2. Tools
 
-- [ ] 2.1 Read-only tools (meeting record, glossary, task list) and `propose_actions`; unit tests
-- [ ] 2.2 Local task list and reminder tools (reminders exported as an `.ics` file); verify a created task links to its meeting
-- [ ] 2.3 Email draft tool (draft only, never sends); verify the draft is editable and copied, not sent
+- [x] 2.1 Read-only tools (meeting record, glossary, task list) and `propose_actions`; unit tests
+- [x] 2.2 Local task list and reminder tools (reminders exported as an `.ics` file); verify a created task links to its meeting
+- [x] 2.3 Email draft tool (draft only, never sends); verify the draft is editable and copied, not sent
 
 ## 3. Approval and traces
 
