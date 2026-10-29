@@ -12,7 +12,7 @@
 ## 2. Measure
 
 - [ ] 2.1 `pnpm bench:llm 20` with Spark Open on Baseten vs Spark 1.3 minimal; record time to first token p50/p95 in docs/benchmarks.md [key:BASETEN_API_KEY]
-- [ ] 2.2 Pick the default cue timeout from the measured p95 and note the decision in docs/kb/decisions.md
+- [ ] 2.2 Pick the default cue timeout from the measured p95 and note the decision in docs/kb/decisions.md [key:BASETEN_API_KEY]
 
 ## 3. Key hygiene
 
