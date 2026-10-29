@@ -11,13 +11,14 @@
 //   pnpm auto --budget 40 --node-budget 6 --model opus
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, openSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { type Bench, type Node, heldTasks, readyNodes } from "../progress/parse.ts";
 import { keyNames, loadChanges } from "../progress/load.ts";
 import { lastJsonWith } from "./json.ts";
+import { commitMessage } from "./message.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const LANE = join(ROOT, ".claude", "worktrees", "auto");
@@ -35,6 +36,7 @@ const HISTORY_KEPT = 50;
 const DIFF_MAX_CHARS = 120_000;
 const TAIL_LINES = 60;
 const CO_AUTHOR = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>";
+const HUB_PORT = 7070;
 
 const { values: opt } = parseArgs({
   options: {
@@ -190,7 +192,7 @@ How:
 1. Read CLAUDE.md, then the change's proposal.md, design.md (if any), specs/ and tasks.md. Read docs/kb files only as the tasks need them. If the code must differ from the spec, update the change first.
 2. Implement each task, run the verification it names, and tick it (\`- [x]\`) in tasks.md only once that verification passed. If a task can't be finished (missing hardware behaviour, unclear spec, a step only a person can do), leave it unticked and report it blocked with the reason. Don't fake a verification and don't write a number you didn't measure.
 3. Bench: clip board ${boardPort ? `on ${boardPort} ($LENTE_BOARD_PORT)` : "not connected"}; Android phone ${phone ? `adb serial ${phone} ($LENTE_PHONE_SERIAL)` : "not connected"}. The lente-hardware skill says how to flash the clip, read its serial log, drive the phone page over adb and play test speech.
-4. The human's hub may be running on ports 7070/8080 from the main checkout. For live checks you may stop it and run this checkout's hub (\`pnpm pilot\`, in the background); the clip connects to 7070. Stop your hub when done.
+4. The human's hub may be running on ports 7070/8080 from the main checkout. For live checks you may stop it and run this checkout's hub (\`pnpm pilot\`, in the background); the clip connects to 7070. Stop your hub when done; the runner starts the human's again after the node.
 5. Finish green: \`pnpm typecheck && pnpm test && pnpm exec openspec validate ${node.change} --strict\`. If every task of the change is now ticked, run \`pnpm exec openspec archive ${node.change} --yes\`. Add or update today's row in README.md "What was built during the hackathon".
 6. Don't commit, push, merge or rebase: the runner reviews, commits and merges. Stay inside this worktree.
 
@@ -360,10 +362,8 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
   const forbidden = staged.split("\n").filter((f) => /(^|\/)\.env(\.|$)(?!example)|secrets\.h$|^data\/|^recordings\/|\.(wav|pcm)$/.test(f));
   if (forbidden.length) return fail(`refused to commit protected files: ${forbidden.join(", ")}`);
 
-  const r = run.result;
-  const evidence = r?.tasks.map((t) => `- ${t.id} ${t.status}: ${t.evidence}`).join("\n") ?? "";
   const reviewLine = lastReview ? `Review (Muse Code): ${lastReview.verdict}${lastReview.notes ? ` · ${[lastReview.notes].flat().join(" · ")}` : ""}` : "";
-  const message = `${(r?.commit_message ?? `${node.change}: ${node.group}`).trim()}\n\nAuto lane node: ${node.change} / ${node.group}\n${evidence}\n${reviewLine}\n\n${CO_AUTHOR}\n`;
+  const message = commitMessage(run.result, `${node.change}: ${node.group}`, `Auto lane node: ${node.change} / ${node.group}`, reviewLine, CO_AUTHOR);
   const msgFile = join(tmpdir(), `lente-commit-${process.pid}.txt`);
   writeFileSync(msgFile, message);
   const commit = git(["commit", "-F", msgFile]);
@@ -378,6 +378,22 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
     note(push.ok ? "pushed main; CI runs on GitHub" : `push failed: ${tail(push.out, 2)}`);
   }
   return { change: node.change, group: node.group, outcome: "merged", at: Date.now(), costUsd, commit: sha, review: lastReview?.verdict, mainUpdated: ff.ok };
+}
+
+// ---------- the human's hub ----------
+
+/** PID of whatever listens on the clip's port, or null. */
+function hubPid(): number | null {
+  const pid = Number(sh("lsof", ["-nP", `-iTCP:${HUB_PORT}`, "-sTCP:LISTEN", "-t"], ROOT, 10_000).stdout.trim().split("\n")[0]);
+  return pid || null;
+}
+
+/** A node may stop the human's hub for live checks; start it again from the main checkout. */
+function restoreHub(wasUp: boolean): void {
+  if (!wasUp || hubPid() !== null) return;
+  const log = openSync(join(STATE_DIR, "hub.log"), "a");
+  spawn("node", ["--env-file-if-exists=.env", "src/pilot.ts"], { cwd: ROOT, detached: true, stdio: ["ignore", log, log] }).unref();
+  note(`restarted the human's hub from the main checkout (it was on ${HUB_PORT} before the node; log in data/auto/hub.log)`);
 }
 
 // ---------- main loop ----------
@@ -423,7 +439,9 @@ async function main(): Promise<void> {
 
     const node = nodes[0];
     note(`▶ ${node.change} / ${node.group} (${node.tasks.map((t) => t.id).join(", ")})`);
+    const hubWasUp = hubPid() !== null;
     const outcome = await runNode(node, boardPort, phone);
+    restoreHub(hubWasUp);
     state.history.push(outcome);
     if (state.history.length > HISTORY_KEPT) state.history.shift();
     if (outcome.outcome === "failed") failed.add(`${node.change}/${node.group}`);
