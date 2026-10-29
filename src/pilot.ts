@@ -31,6 +31,10 @@ import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
 import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, parseReply, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
 import { MeetingStore } from "./meeting-store.ts";
+import { ActionStore, decide, parseDecision } from "./action-store.ts";
+import { runApproved } from "./agent-loop.ts";
+import { TraceWriter, traceLine } from "./agent-trace.ts";
+import { TaskStore, meetingTools } from "./agent-tools.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
@@ -60,6 +64,10 @@ const EPISODES: EpisodePolicy = {
 /** Where the day, meetings and profile are kept; the eval runner points it at a scratch folder. */
 const DATA_DIR = process.env.PILOT_DATA_DIR ?? fileURLToPath(new URL("../data/", import.meta.url));
 const meetings = new MeetingStore(join(DATA_DIR, "meetings"));
+const actions = new ActionStore(join(DATA_DIR, "actions.json"));
+const taskStore = new TaskStore(join(DATA_DIR, "tasks.json"));
+const traces = new TraceWriter(join(DATA_DIR, "traces"));
+const REMINDERS_FILE = join(DATA_DIR, "reminders.ics");
 const language = new LanguageStore(join(DATA_DIR, "language.json"));
 const profile = new ProfileStore(join(DATA_DIR, "profile.json"));
 const RECORDED_FILE = join(DATA_DIR, "recorded.json");
@@ -454,6 +462,48 @@ function meetingsEvent() {
     items: all.reverse().map(meetingSummary),
     language: { glossary: viewGlossary(language.glossary), phrases: wearerPhrases(finishedMeetings()), ...totalAskedAnswered(all.map((m) => m.stats)) },
   };
+}
+
+/** Pending action cards and the task list, for the Acciones page. Nothing in it runs anything. */
+function actionsEvent() {
+  const titles = new Map(meetings.list().map((m) => [m.id, m.title || m.topic || ""]));
+  const turnText = (meetingId: string, id: string) => {
+    const t = meetings.list().find((m) => m.id === meetingId)?.turns.find((x) => x.id === id);
+    return t ? { id, at: t.at, speaker: t.speaker, text: t.text } : { id, text: "" };
+  };
+  return {
+    kind: "actions",
+    pending: actions.list().filter((a) => a.status === "pending").map((a) => ({ ...a, meetingTitle: titles.get(a.meetingId) ?? "", quotes: a.evidence.map((id) => turnText(a.meetingId, id)) })),
+    decided: actions.list().filter((a) => a.status !== "pending").slice(-10).reverse().map((a) => ({ id: a.id, tool: a.tool, status: a.status, meetingId: a.meetingId })),
+    tasks: taskStore.list().map((t) => ({ ...t, meetingTitle: titles.get(t.meetingId) ?? "" })),
+  };
+}
+
+const broadcastActions = (): void => broadcast(actionsEvent());
+
+/** Runs one approved action with the arguments it was approved with, and traces it. */
+async function runDecided(body: unknown): Promise<{ status: number; body: unknown }> {
+  const parsed = parseDecision(body);
+  if (!parsed) return { status: 400, body: { error: "need id and decision (approve or reject)" } };
+  const found = actions.get(parsed.id);
+  const verdict = decide(found, parsed.decision, Date.now());
+  if (!verdict.ok) return { status: verdict.status, body: { error: verdict.error } };
+  const a = verdict.action;
+  const edited = JSON.stringify(a.args) !== JSON.stringify(a.proposedArgs);
+  actions.save(a);
+  traces.append(a.meetingId, [{ kind: "approval", at: Date.now(), actionId: a.id, tool: a.tool, decision: a.status === "approved" ? "approved" : "rejected", edited }]);
+  let outcome: unknown;
+  if (verdict.run) {
+    const meeting = meetings.list().find((m) => m.id === a.meetingId);
+    const result = meeting
+      ? await runApproved(meetingTools({ meeting, tasks: taskStore, remindersFile: REMINDERS_FILE }), a.tool, a.args)
+      : ({ ok: false, error: "the meeting is gone" } as const);
+    outcome = result.ok ? result.result : result.error;
+    actions.save({ ...a, status: result.ok ? "approved" : "failed", outcome });
+    traces.append(a.meetingId, [{ kind: "action", at: Date.now(), actionId: a.id, tool: a.tool, ok: result.ok, result: outcome }]);
+  }
+  broadcastActions();
+  return { status: 200, body: { status: actions.get(a.id)?.status, outcome } };
 }
 
 /** Meetings that are over: a running one would change the phrases (and the cached prefix) mid-meeting. */
@@ -1003,7 +1053,7 @@ const web = createHttpServer(async (req, res) => {
       res.end(PILOT_PAGE);
     } else if (req.method === "GET" && req.url === "/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), recordedEvent(), spendEvent()] });
+      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), actionsEvent(), recordedEvent(), spendEvent()] });
       for (const event of events) res.write(`data: ${JSON.stringify(event)}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
@@ -1016,6 +1066,19 @@ const web = createHttpServer(async (req, res) => {
       const m = meetings.list().find((x) => x.id === id);
       res.writeHead(m ? 200 : 404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(m ? { ...meetingSummary(m), share: notesAsText(m, new Date(m.startedAt).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })), turnList: m.turns.map((t) => ({ id: t.id, at: t.at, speaker: t.speaker, wearer: t.wearer === true, text: t.text })) } : { error: "no such meeting" }));
+    } else if (req.method === "GET" && req.url?.startsWith("/traces/get")) {
+      const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ steps: traces.read(id).map((e) => ({ at: e.at, kind: e.kind, ...traceLine(e) })) }));
+    } else if (req.method === "POST" && req.url === "/actions/decide") {
+      const out = await runDecided(JSON.parse((await readBody(req)) || "{}"));
+      res.writeHead(out.status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(out.body));
+    } else if (req.method === "POST" && req.url === "/tasks/done") {
+      const { id, done } = JSON.parse((await readBody(req)) || "{}") as { id?: string; done?: boolean };
+      const task = typeof id === "string" && typeof done === "boolean" ? taskStore.setDone(id, done) : undefined;
+      if (task) broadcastActions();
+      res.writeHead(task ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/meeting/start") {
       const { title } = JSON.parse((await readBody(req)) || "{}") as { title?: string };
       startMeeting(typeof title === "string" ? title : "");
@@ -1033,6 +1096,9 @@ const web = createHttpServer(async (req, res) => {
       const removed = typeof id === "string" && id !== current?.id && meetings.delete(id);
       if (removed) {
         deletedMeetings.add(id as string);
+        traces.delete(id as string);
+        actions.removeMeeting(id as string);
+        broadcastActions();
         language.set(forgetMeeting(language.glossary, id as string));
         broadcastMeetings();
       }
@@ -1043,6 +1109,9 @@ const web = createHttpServer(async (req, res) => {
         current = undefined; // discarded, not summarized
         syncMeeting();
       }
+      traces.deleteAll();
+      actions.removeAll();
+      broadcastActions();
       language.set([]);
       console.log(`[meeting] deleted ${meetings.deleteAll()} meeting(s)`);
       broadcastMeetings();

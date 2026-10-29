@@ -161,6 +161,21 @@ export const PILOT_PAGE = `<!doctype html>
   .pad p, .group p.help { margin: 0; font-size: 14px; color: var(--muted); }
   .group p.help { padding: 0 16px 16px; }
   .inline { display: flex; gap: 8px; }
+  .act { display: grid; gap: 10px; padding: 14px 16px; }
+  .act + .act, .tk + .tk { border-top: 1px solid var(--raised); }
+  .act h3 { margin: 0; font-size: 16px; text-align: left; }
+  .act .field { border-radius: 16px; text-align: left; }
+  .act .mtag { justify-self: start; }
+  .act .quote { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+  .act .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .act textarea.field { min-height: 120px; }
+  .tk { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; }
+  .tk input { width: 28px; height: 28px; flex: none; margin: 2px 0 0; }
+  .tk .t { display: grid; gap: 4px; min-width: 0; }
+  .tk.done .tt { text-decoration: line-through; color: var(--muted); }
+  .tk .tt { overflow-wrap: anywhere; }
+  .trace { margin: 0; padding: 0 16px 14px 36px; display: grid; gap: 8px; font-size: 14px; }
+  .trace small { display: block; color: var(--muted); overflow-wrap: anywhere; }
   .sec { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 8px; }
   .pad ul { margin: 0; padding-left: 20px; }
   .brief-out .none { color: var(--muted); margin: 0; }
@@ -302,11 +317,11 @@ export const PILOT_PAGE = `<!doctype html>
     <div class="clipline"><span class="dot" id="menu-dot"></span><span id="menu-clip">Sin clip</span></div>
     <a href="#ahora" data-nav="ahora"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4"/></svg>Ahora</a>
     <a href="#reuniones" data-nav="reuniones"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>Reuniones</a>
+    <a href="#acciones" data-nav="acciones"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>Acciones<span class="tag" id="act-badge" hidden></span></a>
     <a href="#memoria" data-nav="memoria"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21a2 2 0 0 1 2-2h13v2M9 8h6"/></svg>Memoria</a>
     <a href="#dispositivos" data-nav="dispositivos"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="14" r="4"/><circle cx="17" cy="14" r="4"/><path d="M11 14h2M3 14V9M21 14V9"/></svg>Dispositivos</a>
     <a href="#ajustes" data-nav="ajustes"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Ajustes</a>
     <span class="cap">Pronto</span>
-    <a href="#acciones" data-nav="acciones" class="soon"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>Acciones<span class="tag">Pronto</span></a>
     <a href="#conexiones" data-nav="conexiones" class="soon"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/></svg>Conexiones<span class="tag">Pronto</span></a>
     <a href="#equipo" data-nav="equipo" class="soon"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/></svg>Equipo<span class="tag">Pronto</span></a>
     <span class="cap" id="recent-cap" hidden>Recientes</span>
@@ -411,7 +426,24 @@ export const PILOT_PAGE = `<!doctype html>
           </div>
           <div class="group" id="md-notes"><div class="pad" id="md-notes-pad" style="padding-top:16px"></div></div>
           <div class="group" id="md-tr" hidden></div>
+          <details class="group" id="md-trace"><summary class="pad" style="padding:14px 16px;font-weight:700">Rastro del agente</summary><ol class="trace" id="md-trace-list"></ol></details>
         </div>
+      </section>
+
+      <section class="screen" data-screen="acciones">
+        <div class="section" id="act-pending-box" hidden>
+          <span class="cap" id="act-pending-cap">Por aprobar</span>
+          <div class="group" id="act-pending"></div>
+        </div>
+        <div class="section">
+          <span class="cap" id="act-todo-cap">Pendientes</span>
+          <div class="group" id="act-todo"></div>
+        </div>
+        <div class="section">
+          <span class="cap" id="act-done-cap">Hechas</span>
+          <div class="group" id="act-done"></div>
+        </div>
+        <div class="empty" id="act-empty">Aún no hay tareas. Al terminar una reunión, Lente propone aquí tareas y correos; nada se hace sin que lo apruebes.</div>
       </section>
 
       <section class="screen" data-screen="memoria">
@@ -640,11 +672,9 @@ export const PILOT_PAGE = `<!doctype html>
   const isDilo = (label) => label === "DILO" || label === "SAY THIS"; // older day records say SAY THIS
 
   // --- Sections and the side menu. The hash names the section, so the back button works.
-  const TITLES = { ahora: "Lente", reuniones: "Reuniones", reunion: "Reunión", memoria: "Memoria", dispositivos: "Dispositivos", ajustes: "Ajustes" };
+  const TITLES = { ahora: "Lente", reuniones: "Reuniones", reunion: "Reunión", acciones: "Acciones", memoria: "Memoria", dispositivos: "Dispositivos", ajustes: "Ajustes" };
   // Planned, not built: each says what it will do and when it comes.
   const PLANNED = {
-    acciones: { title: "Acciones", when: "Llega con add-closing-agent", icon: '<path d="M8.5 12l2.5 2.5 4.5-5"/><rect x="4" y="4" width="16" height="16" rx="4"/>',
-      text: "Al terminar una reunión, un agente redactará el correo de seguimiento y tus tareas, con la evidencia de cada una. Nada sale sin que lo apruebes aquí." },
     conexiones: { title: "Conexiones", when: "Llega con add-glasses-mcp", icon: '<path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5"/>',
       text: "Conecta tu calendario, tus tareas u otros agentes por MCP. Ellos podrán pedirle cosas a Lente y Lente a ellos, siempre con tu permiso." },
     equipo: { title: "Equipo", when: "Planeado para después del hackathon", icon: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6"/>',
@@ -1005,6 +1035,92 @@ export const PILOT_PAGE = `<!doctype html>
     }
   }
 
+
+  // --- Acciones: cards to approve, edit or reject, and the task list. The hub runs nothing until Approve.
+  let actState = { pending: [], decided: [], tasks: [] };
+  const ACT_NAMES = { create_task: "Crear una tarea", create_reminder: "Crear un recordatorio", draft_email: "Redactar un correo" };
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+  function chipFor(t) {
+    const a = el("a", "mtag", t.meetingTitle || "Reunión");
+    a.href = "#m/" + t.meetingId + (t.evidence && t.evidence[0] ? "/" + t.evidence[0] : "");
+    return a;
+  }
+  function actionCard(a) {
+    const box = el("div", "act");
+    box.append(el("h3", "", ACT_NAMES[a.tool] || a.tool));
+    const form = el("div", "");
+    form.style.display = "grid"; form.style.gap = "8px";
+    const fields = {};
+    const keys = a.tool === "draft_email" ? ["to", "subject", "body"] : a.tool === "create_reminder" ? ["title", "date", "note"] : ["title", "due"];
+    const labels = { to: "Para (separa con comas)", subject: "Asunto", body: "Texto", title: "Título", due: "Para cuándo", date: "Fecha (AAAA-MM-DD)", note: "Nota" };
+    for (const k of keys) {
+      const big = k === "body";
+      const f = el(big ? "textarea" : "input", "field"); f.setAttribute("aria-label", labels[k]); f.placeholder = labels[k];
+      const v = a.args[k];
+      f.value = Array.isArray(v) ? v.join(", ") : v === undefined ? "" : String(v);
+      f.readOnly = true; fields[k] = f; form.append(f);
+    }
+    box.append(form);
+    for (const q of a.quotes) if (q.text) box.append(el("p", "quote", "“" + q.text + "”" + (q.speaker ? " · " + q.speaker : "") + (q.at ? " · " + fmt(q.at) : "")));
+    box.append(chipFor({ meetingId: a.meetingId, meetingTitle: a.meetingTitle, evidence: a.evidence }));
+    const row = el("div", "row");
+    const ok = el("button", "btn primary", "Aprobar"), edit = el("button", "btn", "Editar"), no = el("button", "btn danger", "Rechazar");
+    for (const b of [ok, edit, no]) b.type = "button";
+    const args = () => {
+      const out = { ...a.args };
+      for (const k of keys) out[k] = k === "to" ? fields[k].value.split(",").map((x) => x.trim()).filter(Boolean) : fields[k].value;
+      return out;
+    };
+    edit.addEventListener("click", () => { for (const f of Object.values(fields)) f.readOnly = false; Object.values(fields)[0].focus(); edit.disabled = true; });
+    const decide = async (body, btns) => {
+      for (const b of btns) b.disabled = true;
+      try { const r = await fetch("/actions/decide", { method: "POST", body: JSON.stringify({ id: a.id, ...body }) }); if (!r.ok) throw 0; await showApproved(a, r); } catch { for (const b of btns) b.disabled = false; }
+    };
+    ok.addEventListener("click", () => decide({ decision: "approve", args: args() }, [ok, edit, no]));
+    no.addEventListener("click", () => decide({ decision: "reject" }, [ok, edit, no]));
+    row.append(ok, edit, no); box.append(row);
+    return box;
+  }
+  async function showApproved(a, r) {
+    if (a.tool !== "draft_email") return;
+    const { outcome } = await r.json();
+    if (outcome && outcome.body) { try { await navigator.clipboard.writeText(outcome.subject + "\\n\\n" + outcome.body); } catch {} location.href = outcome.mailto; }
+  }
+  function showActions(m) {
+    actState = m;
+    const pend = m.pending, todo = m.tasks.filter((t) => !t.done), done = m.tasks.filter((t) => t.done);
+    $("act-pending-box").hidden = !pend.length;
+    $("act-pending-cap").textContent = "Por aprobar · " + pend.length;
+    const box = $("act-pending"); box.textContent = ""; for (const a of pend) box.append(actionCard(a));
+    $("act-todo-cap").textContent = "Pendientes · " + todo.length;
+    $("act-done-cap").textContent = "Hechas · " + done.length;
+    for (const [id, arr] of [["act-todo", todo], ["act-done", done]]) {
+      const g = $(id); g.textContent = ""; g.hidden = !arr.length;
+      for (const t of arr) {
+        const row = el("div", "tk" + (t.done ? " done" : ""));
+        const cb = el("input"); cb.type = "checkbox"; cb.checked = t.done; cb.setAttribute("aria-label", t.title);
+        cb.addEventListener("change", () => sendJson("/tasks/done", { id: t.id, done: cb.checked }));
+        const info = el("div", "t"); info.append(el("span", "tt", t.title));
+        const meta = el("div", "row"); meta.style.gap = "6px";
+        if (t.due) meta.append(el("span", "mtag", "Para " + t.due));
+        meta.append(chipFor(t)); info.append(meta);
+        row.append(cb, info); g.append(row);
+      }
+    }
+    $("act-empty").hidden = !!(pend.length || m.tasks.length);
+    const badge = $("act-badge"); badge.hidden = !pend.length; badge.textContent = String(pend.length);
+  }
+  // The trace of a meeting's agent run, every step in order.
+  $("md-trace").addEventListener("toggle", async () => {
+    if (!$("md-trace").open) return;
+    const ol = $("md-trace-list"); ol.textContent = "";
+    try {
+      const { steps } = await (await fetch("/traces/get?id=" + encodeURIComponent(openId))).json();
+      if (!steps.length) ol.append(el("li", "", "Sin rastro: el agente no corrió en esta reunión."));
+      for (const s of steps) { const li = el("li", "", s.label); li.append(el("small", "", s.detail)); ol.append(li); }
+    } catch { ol.append(el("li", "", "No se pudo leer el rastro.")); }
+  });
+
   // --- Search and meeting detail
   let searchTimer = 0;
   $("search").addEventListener("input", () => {
@@ -1034,7 +1150,7 @@ export const PILOT_PAGE = `<!doctype html>
   $("md-tab-tr").addEventListener("click", () => setTab(true));
   async function openDetail(id, turnId) {
     openId = id || ""; pendingTurn = turnId || ""; openTurns = []; openShare = "";
-    $("md-del").dataset.armed = ""; $("md-del").textContent = "Borrar";
+    $("md-del").dataset.armed = ""; $("md-del").textContent = "Borrar"; $("md-trace").open = false;
     setTab(false);
     renderDetail();
     try {
@@ -1357,6 +1473,7 @@ export const PILOT_PAGE = `<!doctype html>
       }
       catchUpSlot(m.items);
     } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); }
+    else if (m.kind === "actions") showActions(m);
     else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "recorded") showRecorded(m.ms);
     else if (m.kind === "spend") showSpend(m);
