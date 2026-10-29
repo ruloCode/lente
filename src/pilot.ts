@@ -242,6 +242,8 @@ async function onScreen(jpeg: Buffer): Promise<void> {
 
 // --- Meetings: start and end from the phone, notes extracted at the end ----------------------------
 
+/** Which speaker label is the wearer; declared before the restart recovery below ends a meeting with it. */
+const wearerTracker = new WearerTracker();
 let current: Meeting | undefined;
 /** ASR turn id → the meeting turn it became, so a late addressing decision can flag it. */
 const meetingTurns = new Map<string, MeetingTurn>();
@@ -509,7 +511,6 @@ let timeline = new AudioTimeline(FRAME_BYTES);
 /** Wall-clock time of the first audio frame of this connection: session audio 0 ms. */
 let audioOrigin = 0;
 let loudness = new LoudnessRing(FRAME_MS);
-const wearerTracker = new WearerTracker();
 
 /** Announce the wearer's label to the phone whenever it changes. */
 function syncWearer(): void {
