@@ -23,3 +23,10 @@ No action that creates, sends or changes anything outside the hub's own proposal
 #### Scenario: Hub restarts with pending actions
 - **WHEN** the hub restarts while actions are pending
 - **THEN** they remain pending and none runs on its own
+
+### Requirement: Task list on the phone
+Acciones SHALL list the wearer's tasks in two groups, Pendientes and Hechas, each with a count. A task SHALL show its text, its due hint when it has one, and a chip for the meeting it came from that opens the meeting at the cited turn. Tapping its checkbox SHALL move it between the groups, and the change SHALL survive a hub restart.
+
+#### Scenario: Finish a task
+- **WHEN** the wearer checks a pending task
+- **THEN** it moves to Hechas, struck through, and stays there after the hub restarts

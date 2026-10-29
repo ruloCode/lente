@@ -8,7 +8,7 @@
 
 ## 2. Phone
 
-- [ ] 2.1 Full-screen live view on Ahora while listening in Asistir or Solo grabar: state strip with elapsed time and Detener, the row with collapse, mode and clip state, the transcript through the reducer, the bottom bar with pause, hint and stop; collapse to a compact bar that reopens it; verify with the clip and the phone in both modes using test speech [hw] [phone]
+- [ ] 2.1 Full-screen live view on Ahora while listening in Asistir or Solo grabar: state strip with elapsed time, level bars and Detener, the row with collapse, mode and clip state, the transcript through the reducer, the bottom bar with pause, hint and stop; collapse to a compact bar that reopens it; verify with the clip and the phone in both modes using test speech [hw] [phone]
 - [ ] 2.2 Reply slot with its placeholder and the newest card (DILO with its meaning, or a help card); Aportar, Pregunta and ¿De qué hablan? in Asistir only; verify a cue from test speech and each action on the phone [hw] [phone]
 - [ ] 2.3 Pause (time stops, "En pausa") and two-tap stop that ends an open meeting; follow the newest line with "Nuevo ↓"; catch up on reload without duplicates; verify on the phone during test speech [hw] [phone]
 - [ ] 2.4 Measure on the phone, over several test sentences, the time from the hub publishing a completed turn to its row being final on the page, and the interval between partial updates; record both in `docs/benchmarks.md` [hw] [phone]

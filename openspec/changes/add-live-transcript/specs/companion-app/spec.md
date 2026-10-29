@@ -17,6 +17,13 @@ While Lente is listening in Asistir or Solo grabar, Ahora SHALL open a full-scre
 - **WHEN** the clip is the audio source
 - **THEN** the hint reads "Puedes bloquear el teléfono: el clip sigue escuchando."
 
+### Requirement: Sound level in the live view
+The live view's strip SHALL show a small set of level bars driven by the microphone level the hub already reports, so the wearer sees at a glance that sound is arriving. Paused, the bars SHALL be flat.
+
+#### Scenario: Someone speaks
+- **WHEN** someone speaks near the clip while listening
+- **THEN** the bars move with the level, and they go flat when Lente is paused
+
 ### Requirement: Live transcript rows
 The live view's transcript SHALL show one row per completed turn with its speaker chip (the wearer's name when the hub marks the turn as the wearer's), oldest first, and one live row for the turn in progress whose text SHALL update in place as partials arrive and SHALL become that turn's row when the turn completes, never leaving a duplicate. It SHALL show only what was said; summaries, cues and photos stay in the day timeline.
 
