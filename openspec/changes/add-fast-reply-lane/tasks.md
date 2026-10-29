@@ -5,6 +5,7 @@
 - [ ] 1.1 Routing policy (order, first-token timeout, three-strike cool-down) as a pure module with unit tests using fake clocks (`pnpm test`)
 - [ ] 1.2 Baseten target in `src/providers.ts` defaults to `meta-models/muse-spark-open-1026` (the hackathon key's model; default and key set 2026-10-28, a direct call answered 200); on 403/404 log the model and point at `BASETEN_MODEL`; read the answer from `reasoning_content` when `content` is null (raise `max_tokens`); unit tests with a fake fetch for both; `pnpm bench:llm` skips it when its key is not set. Fireworks target only if its credits are granted
 - [ ] 1.3 Cues route through the policy and report model and provider; unit tests; verify on the phone against the stubbed Meta API (`pnpm stub`) [phone]
+- [ ] 1.6 The last-resort route never enters a cool-down: when every route has failed, the cue still tries Spark 1.3 instead of throwing for two minutes; unit test with a fake clock where both routes fail three times (`pnpm test`)
 - [ ] 1.4 `pnpm bench:llm` lists the Baseten target with its key set and one call to `-1026` answers [key:BASETEN_API_KEY]
 - [ ] 1.5 Verify cues on the phone with the real Meta key, then with Baseten, each showing its model and provider [phone] [key:MODEL_API_KEY] [key:BASETEN_API_KEY]
 
