@@ -25,7 +25,7 @@ After a provider fails three times in a row for a job, the hub SHALL skip it for
 - **THEN** cues come from the fallback without paying its timeout each time
 
 ### Requirement: Default routing
-By default, reply cues SHALL route to Muse Spark Open on Baseten, then on Fireworks, then Muse Spark 1.3 at minimal effort; all other jobs SHALL route to Muse Spark 1.3.
+By default, reply cues SHALL route to Muse Spark Open on Baseten, then on Fireworks when its key is set, then Muse Spark 1.3 at minimal effort; all other jobs SHALL route to Muse Spark 1.3.
 
 #### Scenario: Only the Meta key is set
 - **WHEN** only the Meta Model API key is configured

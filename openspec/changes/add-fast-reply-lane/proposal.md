@@ -6,7 +6,7 @@ The reply has to land while the question still hangs in the air. Muse Spark 1.3 
 
 ## What Changes
 
-- Route reply cues to a fast lane on Muse Spark Open (Baseten, model `meta-models/muse-spark-open-1026`), with Fireworks as a second provider and Muse Spark 1.3 minimal as the last resort.
+- Route reply cues to a fast lane on Muse Spark Open (Baseten, model `meta-models/muse-spark-open`; the `-1026` name from the partner email returned 404 for our key on 2026-10-28, so it stays an override via `BASETEN_MODEL`), with Fireworks as an optional second provider if its credits are granted and Muse Spark 1.3 minimal as the last resort.
 - Per-request timeouts and automatic fallback, so a slow or failing provider never blocks the cue.
 - Record which model and provider served each cue and its latency, visible in the timeline and in evals.
 - Keep scene vision, summaries, extraction and the agent on Muse Spark 1.3 unless evals show Spark Open is better for them.
@@ -27,5 +27,5 @@ Privacy: the cue context (recent turns) goes to the chosen provider; providers a
 
 ## Impact
 
-- `src/providers.ts` (Fireworks target), a routing module with timeout and fallback (pure policy tested), `src/pilot.ts`.
-- `.env`: `BASETEN_API_KEY`, optional `FIREWORKS_API_KEY` (pending partner approval).
+- `src/providers.ts` (Baseten target exists; optional Fireworks target), a routing module with timeout and fallback (pure policy tested), `src/pilot.ts`.
+- `.env`: `BASETEN_API_KEY` (set), optional `FIREWORKS_API_KEY` (pending partner approval).

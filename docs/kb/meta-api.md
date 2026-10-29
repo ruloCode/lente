@@ -78,6 +78,7 @@ Batch: `POST /v1/asr/transcribe`, up to 10 minutes of audio per request, 32 MB b
 ## Baseten (Muse Spark Open, open weights)
 
 - **Endpoint:** `POST https://inference.baseten.co/v1/chat/completions`, OpenAI-compatible, `Authorization: Bearer $BASETEN_API_KEY`.
-- **Model:** `meta-models/muse-spark-open-1026` for the hackathon (the docs say `meta-models/muse-spark-open`; the guide says use the `-1026` one).
+- **Model:** `meta-models/muse-spark-open`. Verified 2026-10-28 with our key: `-1026` (the name in the partner email) returns 404 "please check the model you provided"; the unsuffixed name answers 200 in ~2 s. Override with `BASETEN_MODEL` if Baseten enables `-1026`.
+- **Reasoning:** the reply can come back with `content: null` and the text in `reasoning_content`; leave room in `max_tokens` and handle both.
 - Accepts text, image, audio and video; returns text and a reasoning output (see Baseten's "Reasoning" guide before parsing).
 - Counts toward **Best Build on Meta Open Weight Models**: the partner verifies the project runs on it.
