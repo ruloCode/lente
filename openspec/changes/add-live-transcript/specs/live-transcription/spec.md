@@ -12,3 +12,10 @@ The hub SHALL keep the latest partial text of the turn in progress and SHALL sen
 #### Scenario: Connect while paused
 - **WHEN** a phone connects while Lente is paused
 - **THEN** it receives no partial
+
+### Requirement: Session time in the status
+The hub's status SHALL carry when the current listening session started and how long it has been listening, excluding paused time, so every phone shows the same elapsed time.
+
+#### Scenario: Two phones
+- **WHEN** two phones are open on the same session
+- **THEN** both show the same elapsed time, within one second
