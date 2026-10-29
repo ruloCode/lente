@@ -5,11 +5,13 @@
 
 import { toCue } from "./clip-protocol.ts";
 import { type GlossaryEntry, termKey } from "./language-profile.ts";
+import { type Fact, keptFacts } from "./fact-store.ts";
 import type { Meeting } from "./meetings.ts";
 
 /** Oldest meetings fall out of the prefix first once it grows past this. */
 export const MEMORY_MAX_CHARS = 24_000;
 const MAX_GLOSSARY_IN_MEMORY = 60;
+const MAX_FACTS_IN_MEMORY = 100;
 const MAX_PER_KIND = { owed: 5, open: 5, term: 6, phrase: 3 } as const;
 
 const day = (at: number) => new Date(at).toISOString().slice(0, 10);
@@ -30,13 +32,15 @@ function meetingBlock(m: Meeting): string {
  * The memory as one block, or "" when there is nothing yet. It only changes when a meeting ends
  * or is deleted, so the bytes stay identical across the replies of a meeting.
  */
-export function memoryPrefix(input: { phrases: string[]; glossary: GlossaryEntry[]; meetings: Meeting[] }): string {
+export function memoryPrefix(input: { phrases: string[]; glossary: GlossaryEntry[]; meetings: Meeting[]; facts?: Fact[] }): string {
+  const facts = keptFacts(input.facts ?? []).slice(-MAX_FACTS_IN_MEMORY);
   const blocks = rememberedMeetings(input.meetings).map(meetingBlock);
   const glossary = input.glossary.slice(0, MAX_GLOSSARY_IN_MEMORY);
-  if (!blocks.length && !glossary.length && !input.phrases.length) return "";
+  if (!blocks.length && !glossary.length && !input.phrases.length && !facts.length) return "";
   const head = ["WHAT LENTE REMEMBERS ABOUT THE WEARER (the person wearing the glasses)"];
   if (input.phrases.length) head.push(`Phrases they often say: ${input.phrases.map((p) => `"${p}"`).join("; ")}`);
   if (glossary.length) head.push(`Terms they looked up: ${glossary.map((g) => `${g.term} = ${g.meaning}`).join("; ")}`);
+  if (facts.length) head.push("Facts they kept about people, projects and clients:", ...facts.map((f) => `- ${f.text}`));
   let budget = MEMORY_MAX_CHARS - head.join("\n").length;
   const kept: string[] = [];
   for (let i = blocks.length - 1; i >= 0; i--) {

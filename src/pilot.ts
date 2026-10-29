@@ -33,6 +33,7 @@ import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, p
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
 import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, parseReply, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
+import { FactStore } from "./fact-store.ts";
 import { MeetingStore } from "./meeting-store.ts";
 import { ActionStore, decide, parseDecision } from "./action-store.ts";
 import { runApproved } from "./agent-loop.ts";
@@ -68,6 +69,7 @@ const EPISODES: EpisodePolicy = {
 /** Where the day, meetings and profile are kept; the eval runner points it at a scratch folder. */
 const DATA_DIR = process.env.PILOT_DATA_DIR ?? fileURLToPath(new URL("../data/", import.meta.url));
 const meetings = new MeetingStore(join(DATA_DIR, "meetings"));
+const facts = new FactStore(join(DATA_DIR, "facts.json"));
 const actions = new ActionStore(join(DATA_DIR, "actions.json"));
 const taskStore = new TaskStore(join(DATA_DIR, "tasks.json"));
 const traces = new TraceWriter(join(DATA_DIR, "traces"));
@@ -533,7 +535,7 @@ const finishedMeetings = (): Meeting[] => meetings.list().filter((m) => m.status
 /** The memory prefix, rebuilt only after meetings or the glossary change. */
 let memoryCache: string | undefined;
 const memoryText = (): string =>
-  (memoryCache ??= memoryPrefix({ phrases: wearerPhrases(finishedMeetings()), glossary: language.glossary, meetings: meetings.list() }));
+  (memoryCache ??= memoryPrefix({ phrases: wearerPhrases(finishedMeetings()), glossary: language.glossary, meetings: meetings.list(), facts: facts.list() }));
 
 function broadcastMeetings(): void {
   memoryCache = undefined;
@@ -585,7 +587,7 @@ async function extractNotes(m: Meeting): Promise<void> {
       extra: { response_format: { type: "json_schema", json_schema: { name: "meeting_notes", strict: true, schema: notesSchema(turnIds) } } },
       maxTokens: 3000,
     });
-    const { notes, dropped } = validateNotes(JSON.parse(text), turnIds);
+    const { notes, dropped, facts: proposedFacts } = validateNotes(JSON.parse(text), turnIds);
     m.notes = notes;
     applyTitleAndTopic(m, notes);
     m.droppedItems = dropped;
@@ -593,6 +595,7 @@ async function extractNotes(m: Meeting): Promise<void> {
     if (!deletedMeetings.has(m.id)) {
       const found = (notes.glossary ?? []).map((g) => ({ term: g.term, meaning: g.meaning, example: m.turns.find((t) => t.id === g.evidence[0])?.text ?? "" }));
       language.set(mergeGlossary(language.glossary, found, m.id, m.endedAt ?? Date.now()));
+      facts.propose(m.id, proposedFacts, Date.now());
     }
     console.log(
       `[meeting] notes for ${m.id} in ${Math.round(performance.now() - started)} ms · ${notes.decisions.length} decisions, ${notes.commitments.length} commitments, ${notes.openQuestions.length} open · ${dropped} dropped`,
@@ -1096,6 +1099,14 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
       const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ steps: traces.read(id).map((e) => ({ at: e.at, kind: e.kind, ...traceLine(e) })) }));
+    } else if (req.method === "GET" && req.url === "/facts") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ facts: facts.list() }));
+    } else if (req.method === "POST" && (req.url === "/facts/keep" || req.url === "/facts/discard")) {
+      const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
+      const ok = typeof id === "string" && (req.url === "/facts/keep" ? facts.keep(id) : facts.remove(id));
+      if (ok) memoryCache = undefined;
+      res.writeHead(ok ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/actions/decide") {
       const out = await runDecided(JSON.parse((await readBody(req)) || "{}"));
       res.writeHead(out.status, { "Content-Type": "application/json" });
@@ -1124,6 +1135,7 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
         deletedMeetings.add(id as string);
         traces.delete(id as string);
         actions.removeMeeting(id as string);
+        facts.removeMeeting(id as string);
         broadcastActions();
         language.set(forgetMeeting(language.glossary, id as string));
         broadcastMeetings();
@@ -1137,6 +1149,7 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
       }
       traces.deleteAll();
       actions.removeAll();
+      facts.removeAll();
       broadcastActions();
       language.set([]);
       console.log(`[meeting] deleted ${meetings.deleteAll()} meeting(s)`);

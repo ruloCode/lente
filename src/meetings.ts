@@ -7,6 +7,9 @@ export const MEETING_SILENCE_MS = 10 * 60_000;
 /** Fewer turns than this and the meeting is kept without notes. */
 export const MIN_TURNS = 3;
 const MAX_TITLE_CHARS = 80;
+/** Durable facts proposed per meeting, and the longest one. */
+export const MAX_FACTS = 5;
+export const MAX_FACT_CHARS = 120;
 /** Generated titles are shorter than the ones the wearer types. */
 export const MAX_GENERATED_TITLE_CHARS = 60;
 export const TOPICS = ["Proyecto", "Cliente", "Equipo", "Entrevista", "Clase", "Personal", "Otro"] as const;
@@ -45,6 +48,9 @@ export interface GlossaryItem {
   meaning: string;
   evidence: string[];
 }
+
+/** A durable fact the model proposed; it waits for the wearer's review before any model sees it. */
+export type ProposedFact = Evidenced;
 
 export interface Notes {
   /** Generated Spanish title; the meeting only takes it when the wearer typed none. */
@@ -137,7 +143,7 @@ export function notesSchema(turnIds: string[]) {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["title", "topic", "summary", "decisions", "commitments", "openQuestions", "glossary"],
+    required: ["title", "topic", "summary", "decisions", "commitments", "openQuestions", "glossary", "facts"],
     properties: {
       title: { type: "string", maxLength: MAX_GENERATED_TITLE_CHARS },
       topic: { type: "string", enum: [...TOPICS] },
@@ -153,6 +159,7 @@ export function notesSchema(turnIds: string[]) {
         },
       },
       openQuestions: { type: "array", items: evidenced(turnIds) },
+      facts: { type: "array", maxItems: MAX_FACTS, items: evidenced(turnIds) },
       glossary: {
         type: "array",
         items: {
@@ -172,7 +179,8 @@ export const NOTES_PROMPT =
   "whatever language the meeting was held in; keep names, product terms and quoted words exactly as they were said. Give a summary of at most " +
   "two sentences, the decisions made, the commitments (what, owner, due date if one was said, else an empty string) " +
   "and the questions left open. Also list the glossary: terms, acronyms and idioms a Spanish speaker who learned English as a second language may not know, each with a one-line meaning in Spanish and the turn where it was said (skip common words). For an owner use `you` for YOU, otherwise the name said in the meeting or the speaker " +
-  "letter. Every item must cite the turn ids that support it. Include only what was actually said; if there is none " +
+  "letter. Also propose up to five durable facts worth remembering beyond this meeting about people, projects or clients (who someone is and what they own, what a client cares about, what slipped), " +
+  "each one sentence in Spanish of at most 120 characters; skip anything about the wearer's private life and anything only true of this meeting. Every item must cite the turn ids that support it. Include only what was actually said; if there is none " +
   "of a kind, return an empty list.";
 
 export function transcriptOf(meeting: Meeting): string {
@@ -201,7 +209,7 @@ const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
  * Keeps only items with at least one real turn behind them. This is where "grounded" is
  * enforced: the count of dropped items says how often the model made something up.
  */
-export function validateNotes(raw: unknown, turnIds: string[]): { notes: Notes; dropped: number } {
+export function validateNotes(raw: unknown, turnIds: string[]): { notes: Notes; dropped: number; facts: ProposedFact[] } {
   const ids = new Set(turnIds);
   const input = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   let dropped = 0;
@@ -230,7 +238,9 @@ export function validateNotes(raw: unknown, turnIds: string[]): { notes: Notes; 
     glossary: list(input.glossary, (o, evidence) => (text(o.term) && text(o.meaning) ? { term: text(o.term).slice(0, 60), meaning: text(o.meaning).slice(0, 200), evidence } : undefined)),
     openQuestions: list(input.openQuestions, (o, evidence) => (text(o.text) ? { text: text(o.text), evidence } : undefined)),
   };
-  return { notes, dropped };
+  const facts = list(input.facts, (o, evidence) => (text(o.text) ? { text: text(o.text).replace(/\s+/g, " ").slice(0, MAX_FACT_CHARS).trim(), evidence } : undefined));
+  dropped += Math.max(0, facts.length - MAX_FACTS);
+  return { notes, dropped, facts: facts.slice(0, MAX_FACTS) };
 }
 
 /** Takes the topic always and the generated title only when the wearer typed none. */
