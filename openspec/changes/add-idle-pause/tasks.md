@@ -11,5 +11,5 @@
 
 ## 2. Phone
 
-- [ ] 2.1 Start control when paused at boot, the inactivity note with one-tap resume, and "Hoy" in Dispositivos; verify on the phone with the clip against the stubbed Meta API (`pnpm stub`) [hw] [phone]
-- [ ] 2.2 README "What was built during the hackathon" row for the day the change lands
+- [x] 2.1 Start control when paused at boot, the inactivity note with one-tap resume, and "Hoy" in Dispositivos; verify on the phone with the clip against the stubbed Meta API (`pnpm stub`) [hw] [phone]
+- [x] 2.2 README "What was built during the hackathon" row for the day the change lands

@@ -315,6 +315,7 @@ export const PILOT_PAGE = `<!doctype html>
           </button>
         </div>
         <div class="note" id="note" hidden></div>
+        <div class="note" id="pause-note" hidden><span id="pause-text"></span><button class="btn" id="pause-go" type="button"></button></div>
         <section class="cue" id="cue" aria-live="assertive" hidden>
           <span class="label" id="cue-label">DILO</span>
           <div class="text" id="cue-text"></div>
@@ -405,6 +406,14 @@ export const PILOT_PAGE = `<!doctype html>
             <div class="rowi"><span class="rl">Grabado hoy<small>Audio recibido, guardado solo como texto</small></span><span class="rv measured" id="dev-recorded">0 s</span></div>
           </div>
           <p class="hint" id="dev-help">Enciende el clip: se conecta solo a la misma red Wi-Fi que la computadora.</p>
+        </div>
+        <div class="section">
+          <span class="cap">Hoy</span>
+          <div class="group">
+            <div class="rowi"><span class="rl">Transcrito<small>Audio enviado a transcribir; en silencio no se envía</small></span><span class="rv measured" id="spend-min">0 min</span></div>
+            <div class="rowi"><span class="rl">Tokens<small>Resúmenes y respuestas</small></span><span class="rv measured" id="spend-tokens">0</span></div>
+            <div class="rowi"><span class="rl">Costo aproximado<small>Precios de lista</small></span><span class="rv measured" id="spend-usd">US$ 0.00</span></div>
+          </div>
         </div>
         <div class="section">
           <span class="cap">Modo</span>
@@ -776,6 +785,16 @@ export const PILOT_PAGE = `<!doctype html>
     $("now-text").textContent = e.text;
     $("now-text").classList.remove("idle");
     $("now-time").textContent = fmt(e.at || Date.now());
+  }
+
+  // Today's spend, from the hub's usage meter: minutes sent to transcription, tokens, approximate US$.
+  function showSpend(m) {
+    const min = (m.audioSeconds || 0) / 60;
+    let tokens = 0;
+    for (const t of Object.values(m.models || {})) tokens += (t.input || 0) + (t.output || 0);
+    $("spend-min").textContent = (min < 10 ? min.toFixed(1) : Math.round(min)) + " min";
+    $("spend-tokens").textContent = tokens.toLocaleString("es");
+    $("spend-usd").textContent = (m.unpriced && m.unpriced.length ? "≈ " : "") + "US$ " + (m.usd || 0).toFixed(2) + (m.unpriced && m.unpriced.length ? " + sin precio" : "");
   }
 
   // Recorded time today, as the hub measured it from the audio it received.
@@ -1184,6 +1203,15 @@ export const PILOT_PAGE = `<!doctype html>
     else if (m.listening && m.asr !== "listening") note = asrNote(m.asr);
     $("note").textContent = note;
     $("note").hidden = !note;
+    // Paused: say why and offer one tap to start (boot) or resume (inactivity).
+    const p = m.pause;
+    $("pause-note").hidden = m.listening || !p;
+    if (!m.listening && p) {
+      $("pause-text").textContent = p.reason === "idle"
+        ? "En pausa: " + p.min + " min sin que " + (p.basis === "wearer" ? "hablaras" : "nadie hablara")
+        : p.reason === "start" ? "Lente está en pausa: no envía nada hasta que empieces." : "En pausa.";
+      $("pause-go").textContent = p.reason === "start" ? "Empezar a escuchar" : "Seguir escuchando";
+    }
     if (!m.clip || !m.listening) setLevel(0);
     syncLive(wearerChanged);
   }
@@ -1201,6 +1229,7 @@ export const PILOT_PAGE = `<!doctype html>
     } else if (m.kind === "meetings") { showPast(m.items); showLanguage(m.language); }
     else if (m.kind === "level") setLevel(m.rms);
     else if (m.kind === "recorded") showRecorded(m.ms);
+    else if (m.kind === "spend") showSpend(m);
     else if (m.kind === "partial") { $("tl-hint").hidden = true; partial.textContent = m.text; }
     else if (m.kind === "turn") addItem(m);
     else if (m.kind === "speaker") { const r = rows.get(String(m.turnId)); if (r) { r.dataset.speaker = m.speaker; r.querySelector(".chip").textContent = speakerChip(m.speaker); } }
@@ -1242,6 +1271,7 @@ export const PILOT_PAGE = `<!doctype html>
   };
   es.onerror = () => { $("note").textContent = "Reconectando con la computadora…"; $("note").hidden = false; };
 
+  $("pause-go").addEventListener("click", () => post("/listen/on"));
   $("listen").addEventListener("click", () => post(status.listening ? "/listen/off" : "/listen/on"));
   for (const b of document.querySelectorAll("[data-mode]")) b.addEventListener("click", () => post("/mode/" + b.dataset.mode));
   for (const b of document.querySelectorAll("[data-assist]")) b.addEventListener("click", () => post("/assist-mode/" + b.dataset.assist));
