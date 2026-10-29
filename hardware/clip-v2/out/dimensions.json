@@ -1,0 +1,54 @@
+{
+  "outer_mm": [
+    61.7,
+    13.6,
+    26.2
+  ],
+  "shell_volume_cm3": 7.69,
+  "shell_mass_g_pla_100pct": 9.5,
+  "camera_center_yz": [
+    7.0,
+    17.1
+  ],
+  "temple_channel": {
+    "width": 7.0,
+    "depth": 3.0,
+    "center_z": 17.1
+  },
+  "parts": {
+    "xiao_stack": [
+      17.8,
+      21.0,
+      8.3
+    ],
+    "camera": [
+      8.5,
+      8.5,
+      3.7
+    ],
+    "usb_c": [
+      8.9,
+      3.3,
+      7.3
+    ],
+    "battery": [
+      35.0,
+      6.0,
+      20.0
+    ],
+    "motor": [
+      10.0,
+      3.4
+    ],
+    "driver": [
+      8.0,
+      1.5,
+      6.0
+    ],
+    "antenna": [
+      28.0,
+      0.3,
+      6.6
+    ]
+  }
+}
