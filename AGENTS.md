@@ -29,7 +29,7 @@ Run OpenSpec as `pnpm exec openspec …` (pinned dev dependency). The OpenSpec s
 4. After each group: `pnpm typecheck && pnpm test` and `pnpm exec openspec validate <change> --strict`, then commit.
 5. When every task is done: `pnpm exec openspec archive <change> --yes` (merges its specs into `openspec/specs/`).
 
-Build order (status 2026-10-28): done `harden-clip-protocol`, `add-meeting-memory`, `add-evals` (archived) · finishing `apply-dilo-identity` (2.1 install check), `add-addressed-to-you` (3.3 motor, hardware 2026-10-30), `add-app-navigation` (1.2, needs the clip) · in progress `add-record-only-mode` (hub done; phone next) · next `add-closing-agent` → `add-phone-capture` (builds the WebSocket ingest) → `add-fast-reply-lane` (needs `BASETEN_API_KEY`) → `add-glasses-mcp` → `add-desktop-mode` (reuses that ingest) / `add-cloud-hub`.
+Build order (status 2026-10-28): done `harden-clip-protocol`, `add-meeting-memory`, `add-evals`, `add-app-navigation` (archived) · finishing `apply-dilo-identity` (2.1 install check), `add-addressed-to-you` (3.3 motor, hardware 2026-10-30) · in progress `add-record-only-mode` (hub done; phone next) · next `add-closing-agent` → `add-phone-capture` (builds the WebSocket ingest) → `add-fast-reply-lane` (needs `BASETEN_API_KEY`) → `add-glasses-mcp` → `add-desktop-mode` (reuses that ingest) / `add-cloud-hub`.
 
 ## Auto lane
 
