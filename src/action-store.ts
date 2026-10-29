@@ -100,7 +100,9 @@ export function parseDecision(body: unknown): { id: string; decision: Decision }
   if (typeof b.id !== "string") return undefined;
   if (b.decision === "reject") return { id: b.id, decision: { decision: "reject" } };
   if (b.decision !== "approve") return undefined;
-  const args = typeof b.args === "object" && b.args !== null && !Array.isArray(b.args) ? (b.args as Record<string, unknown>) : undefined;
+  const raw = typeof b.args === "object" && b.args !== null && !Array.isArray(b.args) ? (b.args as Record<string, unknown>) : undefined;
+  // An emptied optional field (due, note) means "none": it is left out, not sent as "".
+  const args = raw && Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== ""));
   return { id: b.id, decision: { decision: "approve", args } };
 }
 

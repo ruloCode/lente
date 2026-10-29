@@ -1069,7 +1069,7 @@ export const PILOT_PAGE = `<!doctype html>
     for (const b of [ok, edit, no]) b.type = "button";
     const args = () => {
       const out = { ...a.args };
-      for (const k of keys) out[k] = k === "to" ? fields[k].value.split(",").map((x) => x.trim()).filter(Boolean) : fields[k].value;
+      for (const k of keys) { const v = k === "to" ? fields[k].value.split(",").map((x) => x.trim()).filter(Boolean) : fields[k].value; if (v === "") delete out[k]; else out[k] = v; }
       return out;
     };
     edit.addEventListener("click", () => { for (const f of Object.values(fields)) f.readOnly = false; Object.values(fields)[0].focus(); edit.disabled = true; });

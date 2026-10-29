@@ -80,3 +80,12 @@ test("a trace reads back in the order it was written, and is deleted with the me
   assert.equal(w.read(id).length, 0);
   assert.ok(!existsSync(join(dir, `${id}.jsonl`)));
 });
+
+test("approving with emptied due or note leaves those fields out, not as empty strings", () => {
+  const parsed = parseDecision({ id: "a1", decision: "approve", args: { title: "Send deck", due: "", note: "", to: [] } });
+  assert.deepEqual(parsed, { id: "a1", decision: { decision: "approve", args: { title: "Send deck", to: [] } } });
+  const store = new ActionStore(join(tmp(), "a.json"));
+  const [task] = store.addAll("m20261028100000", [{ tool: "create_task", args: { title: "Send deck", due: "viernes" }, evidence: ["t1"] }], 1);
+  const r = decide(task, parsed!.decision, 2);
+  assert.ok(r.ok && !("due" in r.action.args) && !("note" in r.action.args));
+});

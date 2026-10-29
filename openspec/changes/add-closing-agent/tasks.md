@@ -19,7 +19,7 @@
 ## 3. Approval and traces
 
 - [x] 3.1 Action cards on the phone with Approve / Edit / Reject; verify pending actions survive a hub restart and none runs on its own [phone]
-- [ ] 3.5 Approving a proposal that has no `due` or `note` doesn't send those fields as empty strings; test (`pnpm test`)
+- [x] 3.5 Approving a proposal that has no `due` or `note` doesn't send those fields as empty strings; test (`pnpm test`)
 - [ ] 3.2 Trace writer (`data/traces/`, git-ignored) and trace viewer; verify every step of one real run is visible in order
 - [ ] 3.3 End-to-end run on a simulated meeting: two commitments become two approved tasks and one edited email; record steps, tokens and latency in docs/benchmarks.md [key:MODEL_API_KEY]
 - [x] 3.4 Acciones lists tasks as Pendientes and Hechas with counts, due hints and meeting chips; the checkbox moves a task and survives a hub restart; replaces the "Pronto" entry; verify on the phone [phone]
