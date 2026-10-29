@@ -42,3 +42,11 @@ test("the phone page keeps the identity rules: cyan only on the line to say, amb
   assert.match(PILOT_PAGE, /id="cue-label">DILO</);
   assert.doesNotMatch(PILOT_PAGE, /SAY THIS<|"Say this: "/);
 });
+
+test("the Dilo card shows the Spanish meaning muted and hidden until a cue carries one, and never speaks it", async () => {
+  const { PILOT_PAGE } = await import("../src/pilot-page.ts");
+  assert.match(PILOT_PAGE, /id="cue-text"><\/div>\s*<div class="meaning" id="cue-meaning"[^>]* hidden>/);
+  assert.match(PILOT_PAGE, /\.cue \.meaning \{[^}]*color: var\(--muted\)/);
+  assert.match(PILOT_PAGE, /\$\("cue-meaning"\)\.hidden = !m\.meaning;/);
+  assert.doesNotMatch(PILOT_PAGE, /say\([^)]*meaning/);
+});

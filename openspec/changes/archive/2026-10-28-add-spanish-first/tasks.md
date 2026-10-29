@@ -9,5 +9,5 @@
 
 ## 2. Phone
 
-- [ ] 2.1 Dilo card shows the Spanish meaning under the sentence, smaller and muted, only when present; narration speaks only the sentence; verify with the clip and the phone: an English question played as test speech shows the English line with its meaning, a Spanish question shows the line alone [hw] [phone]
-- [ ] 2.2 README "What was built during the hackathon" row for the day the change lands
+- [x] 2.1 Dilo card shows the Spanish meaning under the sentence, smaller and muted, only when present; narration speaks only the sentence; verify with the clip and the phone: an English question played as test speech shows the English line with its meaning, a Spanish question shows the line alone [hw] [phone]
+- [x] 2.2 README "What was built during the hackathon" row for the day the change lands

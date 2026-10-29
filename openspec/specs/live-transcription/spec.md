@@ -20,7 +20,7 @@ The hub SHALL send audio to transcription on a fixed 80 ms clock, padding gaps w
 - **THEN** transcription keeps receiving exactly one frame every 80 ms and the session stays open
 
 ### Requirement: Speaker-labelled turns
-The hub SHALL transcribe in DIARIZATION mode with English and Spanish language bias, publish partial text as it arrives, and publish each completed turn with its speaker label when known, including the first turn of a session (turn id 0).
+The hub SHALL transcribe in DIARIZATION mode with Spanish then English language bias (Spanish listed first), publish partial text as it arrives, and publish each completed turn with its speaker label when known, including the first turn of a session (turn id 0).
 
 #### Scenario: First question of a session
 - **WHEN** the first thing said in a session is a complete question
@@ -29,6 +29,10 @@ The hub SHALL transcribe in DIARIZATION mode with English and Spanish language b
 #### Scenario: Speaker label arrives after the turn
 - **WHEN** the speaker label for a turn arrives after the turn was published
 - **THEN** the phone updates that turn's speaker
+
+#### Scenario: English meeting under Spanish-first bias
+- **WHEN** a meeting is held entirely in English
+- **THEN** its turns are transcribed in English, not translated or forced into Spanish
 
 ### Requirement: Survive session limits
 The hub SHALL open a new transcription session automatically when one closes for any reason other than being stopped, backing off five seconds after rate-limit or configuration closes and one second otherwise.

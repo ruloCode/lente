@@ -98,6 +98,7 @@ export const PILOT_PAGE = `<!doctype html>
   .cue { border-radius: var(--card); padding: 18px 20px 20px; display: grid; gap: 8px; background: var(--raised); }
   .cue .label { color: var(--muted); font-size: 12px; letter-spacing: .2em; }
   .cue .text { font: 700 34px/1.05 var(--display); color: var(--cyan); text-wrap: balance; }
+  .cue .meaning { font-size: 17px; line-height: 1.25; color: var(--muted); text-wrap: balance; }
   .meta { font: 12px var(--mono); color: var(--amber); }
   .meet { display: flex; gap: 8px; align-items: center; }
   .field, .meet input { flex: 1; min-width: 0; width: 100%; min-height: var(--tap); border: 0; border-radius: 999px; background: var(--surface); color: var(--ink); padding: 0 20px; font: inherit; font-size: 16px; }
@@ -276,6 +277,7 @@ export const PILOT_PAGE = `<!doctype html>
         <section class="cue" id="cue" aria-live="assertive" hidden>
           <span class="label" id="cue-label">DILO</span>
           <div class="text" id="cue-text"></div>
+          <div class="meaning" id="cue-meaning" lang="es" hidden></div>
           <span class="meta" id="cue-meta"></span>
           <span class="meta" id="cue-stages"></span>
         </section>
@@ -963,6 +965,9 @@ export const PILOT_PAGE = `<!doctype html>
         $("cue").hidden = false;
         $("cue-label").textContent = isDilo(m.label) ? "DILO" : m.label;
         $("cue-text").textContent = m.text;
+        // The Spanish meaning of a line in another language; never spoken, only read.
+        $("cue-meaning").textContent = m.meaning || "";
+        $("cue-meaning").hidden = !m.meaning;
         $("cue-meta").textContent = [whyLine(m), m.ms != null ? "en " + m.ms + " ms" : ""].filter(Boolean).join(" · ");
         cueId = m.id;
         $("cue-stages").textContent = stagesLine(m.stages);
