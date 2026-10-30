@@ -155,3 +155,19 @@ export function checkPatch(patch: string, root: string): string | null {
   const bad = paths.filter((p) => p.startsWith("/") || p.split("/").includes("..") || p.startsWith(".git/") || FORBIDDEN.test(p) || checkWrite(p, { auto: true, root }) !== null);
   return bad.length ? `the cloud patch touches protected paths: ${bad.join(", ")}` : null;
 }
+
+const ANTHROPIC_SECRETS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+
+/** The environment for a local `claude` child: the Anthropic keys removed, so it bills the owner's plan. */
+export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = { ...env };
+  for (const k of ANTHROPIC_SECRETS) delete out[k];
+  return out;
+}
+
+const NEEDS_BENCH = new Set(["hw", "phone", "human"]);
+
+/** A node goes to the cloud only when none of the tasks it builds needs the bench, a key or a person. */
+export function cloudEligible(tasks: { tags: string[] }[]): boolean {
+  return tasks.length > 0 && tasks.every((t) => t.tags.every((g) => !NEEDS_BENCH.has(g) && !g.startsWith("key:")));
+}

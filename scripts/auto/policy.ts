@@ -12,6 +12,8 @@ export type Context = {
 };
 
 const SECRET_FILE = String.raw`(?:^|[\s/'"=])(?:\.env(?![\w.-]*\.example\b)(?:\.[\w.-]+)?|secrets\.h)(?=$|[\s'";|&)])`;
+// The Claude Platform key and the GitHub read token live outside the repo; only the runner's own code reads them.
+const CLOUD_SECRET_FILE = /anthropic-cloud\.key|github-read\.token/;
 const GIT = String.raw`\bgit(?:\s+-[Cc]\s+\S+)*\s+`;
 const READS_FILE = new RegExp(String.raw`\b(?:cat|less|more|head|tail|bat|nl|strings|xxd|od|grep|rg|ag|sed|awk|cut|sort|cp|mv|scp|rsync|curl|base64|open|code|pbcopy)\b[^|;&]*${SECRET_FILE}`);
 const PRINTS_KEY = /\b(?:echo|printf|print)\b[^|;&]*\$\{?\w*(?:API_KEY|TOKEN|SECRET|PASSWORD)\b/;
@@ -30,6 +32,7 @@ const RM_ROOTS = /\brm\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*r[a-zA-Z]*\s+(?:-[a-zA-Z]+\
 /** Why a shell command must not run, or null when it may. */
 export function checkCommand(cmd: string, ctx: Context): string | null {
   if (READS_FILE.test(cmd) || PRINTS_KEY.test(cmd) || DUMPS_ENV.test(cmd)) return "rule 3: never print or copy keys (.env) or Wi-Fi secrets (secrets.h); load them with --env-file instead";
+  if (CLOUD_SECRET_FILE.test(cmd)) return "rule 3: the Claude Platform key and GitHub token files are the runner's; never read, copy or print them";
   if (CONTRIBUTOR.test(cmd)) return "rule 4: standard mode only; never use *-contributor models or contributor mode";
   if (FORCE_PUSH.test(cmd)) return "force push rewrites published history; push normally or ask the human";
   if (ADD_FORBIDDEN.test(cmd)) return "rule 3: keys, the day record, recordings and audio never go into git (and no `git add -f`)";
@@ -54,4 +57,25 @@ export function checkWrite(path: string, ctx: Context): string | null {
     return `auto lane: stay inside the lane's checkout (${ctx.root}); the main checkout belongs to the human`;
   }
   return null;
+}
+
+/** Why a file must not be read with a file tool (Read, Grep), or null when it may. */
+export function checkRead(path: string): string | null {
+  return CLOUD_SECRET_FILE.test(path) ? "rule 3: the Claude Platform key and GitHub token files are the runner's; never read them" : null;
+}
+
+export type ToolInput = { command?: string; file_path?: string; notebook_path?: string; path?: string; pattern?: string; glob?: string };
+
+/** The guard's whole decision for one tool call: why it must not run, or null. */
+export function checkTool(tool: string, input: ToolInput, ctx: Context): string | null {
+  if (tool === "Bash") return input.command ? checkCommand(input.command, ctx) : null;
+  if (/^(Read|Grep|Glob)$/.test(tool)) {
+    for (const p of [input.file_path, input.path, input.pattern, input.glob]) {
+      const why = p ? checkRead(p) : null;
+      if (why) return why;
+    }
+    return null;
+  }
+  const path = input.file_path ?? input.notebook_path;
+  return path && /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(tool) ? checkWrite(path, ctx) : null;
 }

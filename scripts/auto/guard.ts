@@ -2,9 +2,9 @@
 // break the hard rules. Exit 2 blocks the call and hands the reason back to the agent.
 
 import { readFileSync } from "node:fs";
-import { checkCommand, checkWrite } from "./policy.ts";
+import { type ToolInput, checkTool } from "./policy.ts";
 
-type HookInput = { tool_name?: string; tool_input?: { command?: string; file_path?: string; notebook_path?: string }; cwd?: string };
+type HookInput = { tool_name?: string; tool_input?: ToolInput; cwd?: string };
 
 let input: HookInput;
 try {
@@ -14,12 +14,7 @@ try {
 }
 
 const ctx = { auto: process.env.LENTE_AUTO === "1", boardPort: process.env.LENTE_BOARD_PORT || undefined, root: process.env.LENTE_LANE_ROOT || input.cwd };
-const tool = input.tool_name ?? "";
-const path = input.tool_input?.file_path ?? input.tool_input?.notebook_path;
-const reason =
-  tool === "Bash" && input.tool_input?.command ? checkCommand(input.tool_input.command, ctx)
-  : path && /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(tool) ? checkWrite(path, ctx)
-  : null;
+const reason = checkTool(input.tool_name ?? "", input.tool_input ?? {}, ctx);
 
 if (reason) {
   console.error(`Blocked by Lente's guard: ${reason}`);

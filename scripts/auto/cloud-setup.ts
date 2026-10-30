@@ -9,6 +9,8 @@ import { API_BASE, agentBody, environmentBody, headers } from "./cloud.ts";
 export const IDS_FILE = "data/auto/cloud.json";
 export const KEY_FILE = join(homedir(), ".config", "lente", "anthropic-cloud.key");
 
+export const GITHUB_TOKEN_FILE = join(homedir(), ".config", "lente", "github-read.token");
+
 export type CloudIds = { agentId?: string; environmentId?: string; agentVersion?: number; workspaceId?: string };
 
 // Short on purpose: the runner sends the per-node prompt as the first message.
@@ -27,6 +29,15 @@ export function readKey(file = process.env.LENTE_CLOUD_KEY_FILE ?? KEY_FILE): st
     if (key) return key;
   } catch {}
   throw new Error(`Claude Platform key file missing at ${file}`);
+}
+
+/** The GitHub read-only token for the repository mount; same rule as the key: the path in the error, never the content. */
+export function readGithubToken(file = process.env.LENTE_GITHUB_TOKEN_FILE ?? GITHUB_TOKEN_FILE): string {
+  try {
+    const token = readFileSync(file, "utf8").trim();
+    if (token) return token;
+  } catch {}
+  throw new Error(`GitHub read token file missing at ${file}`);
 }
 
 async function call(f: typeof fetch, key: string, path: string, body: unknown): Promise<{ id?: string; version?: number }> {

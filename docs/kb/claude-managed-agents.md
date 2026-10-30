@@ -41,3 +41,4 @@ Objects and fields used:
 
 - The cloud sandbox's Node and pnpm versions (Lente needs Node 22.18+ for native TypeScript). Check with one session before the first node; record the answer here.
 - Time for `pnpm install && pnpm test` in a fresh sandbox, and whether repository caching makes the second session faster.
+- Runner shapes guessed from the docs and covered only by a fake API (`test/cloud-run.test.ts`): the `GET /sessions/{id}/events` and `GET /files` list envelopes (`data` or `events`/`files`, `filename` or `name`, `created_at`), the SSE framing of the stream, and no pagination of the event list. Check them with the first real session (task 3.1).

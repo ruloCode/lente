@@ -1,6 +1,7 @@
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkCommand, checkWrite } from "../scripts/auto/policy.ts";
+import { checkCommand, checkRead, checkWrite } from "../scripts/auto/policy.ts";
 
 const HUMAN = { auto: false };
 const LANE = { auto: true, boardPort: "/dev/cu.usbmodem3101", root: "/repo/.claude/worktrees/auto" };
@@ -48,6 +49,23 @@ test("firmware uploads name the clip's port, never a glob that may hit the phone
   assert.equal(checkCommand("arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p /dev/cu.usbmodem3101 firmware/lente-clip", LANE), null);
   assert.equal(checkCommand('arduino-cli monitor -p "$LENTE_BOARD_PORT" -c baudrate=115200', LANE), null);
   assert.equal(checkCommand("arduino-cli compile -b esp32:esp32:XIAO_ESP32S3 firmware/lente-clip", LANE), null, "compiling alone needs no port");
+});
+
+test("the cloud key and GitHub token files are never read, copied or listed", () => {
+  for (const cmd of ["cat ~/.config/lente/anthropic-cloud.key", "head -c 20 /Users/me/.config/lente/github-read.token", "cp ~/.config/lente/anthropic-cloud.key /tmp/k", "grep sk- ~/.config/lente/anthropic-cloud.key", "ls ~/.config/lente/github-read.token"]) assert.ok(blocked(cmd, LANE), cmd);
+  assert.equal(checkCommand("pnpm auto:cloud-setup --dry-run", LANE), null);
+  assert.ok(checkRead("/Users/me/.config/lente/anthropic-cloud.key"));
+  assert.ok(checkRead("/Users/me/.config/lente/github-read.token"));
+  assert.equal(checkRead("/repo/src/pilot.ts"), null);
+});
+
+test("the guard hook itself blocks Read, Grep and Glob aimed at the key and token files", () => {
+  const run = (tool_name: string, tool_input: object) => spawnSync("node", ["scripts/auto/guard.ts"], { input: JSON.stringify({ tool_name, tool_input, cwd: "/repo" }), encoding: "utf8" }).status;
+  assert.equal(run("Read", { file_path: "/Users/me/.config/lente/anthropic-cloud.key" }), 2);
+  assert.equal(run("Grep", { pattern: "sk-ant", path: "/Users/me/.config/lente/github-read.token" }), 2);
+  assert.equal(run("Glob", { pattern: "**/anthropic-cloud.key", path: "/Users/me/.config/lente" }), 2);
+  assert.equal(run("Grep", { pattern: "TODO", path: "/repo/src" }), 0);
+  assert.equal(run("Read", { file_path: "/repo/src/pilot.ts" }), 0);
 });
 
 test("writes keep off secrets, and the lane stays in its checkout", () => {
