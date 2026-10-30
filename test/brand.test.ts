@@ -14,13 +14,13 @@ function decode(png: Buffer) {
   return { width, height, pixel };
 }
 
-test("icon PNG is a valid image with graphite tile, ink lens and cyan line", () => {
+test("icon PNG is a valid image with the kit's blue tile, a white lens and a light blue line", () => {
   const { width, height, pixel } = decode(iconPng(100));
   assert.deepEqual([width, height], [100, 100]);
-  assert.deepEqual(pixel(2, 2), [0x0b, 0x10, 0x13], "corner is graphite");
-  assert.deepEqual(pixel(50, 46), [0x0b, 0x10, 0x13], "inside the lens is graphite");
-  assert.deepEqual(pixel(50, 76), [0x4f, 0xd0, 0xd8], "the line is cyan");
-  assert.deepEqual(pixel(26, 46), [0xe6, 0xed, 0xef], "the lens ring is ink");
+  assert.deepEqual(pixel(2, 2), [0x0a, 0x47, 0xc2], "corner is the accent blue");
+  assert.deepEqual(pixel(50, 46), [0x0a, 0x47, 0xc2], "inside the lens is the tile");
+  assert.deepEqual(pixel(50, 76), [0x8c, 0xc8, 0xff], "the line is light blue");
+  assert.deepEqual(pixel(26, 46), [0xff, 0xff, 0xff], "the lens ring is white");
 });
 
 test("manifest declares name, standalone display and PNG icons the hub serves", () => {
@@ -33,12 +33,18 @@ test("manifest declares name, standalone display and PNG icons the hub serves", 
   assert.ok(!logoSvg(false).includes("<rect"));
 });
 
-test("the phone page keeps the identity rules: cyan only on the line to say, amber only on measured numbers", async () => {
+test("the phone page keeps the kit's rules: one accent, red only for recording, numbers in the secondary ink", async () => {
   const { PILOT_PAGE } = await import("../src/pilot-page.ts");
-  const rulesUsing = (token: string) =>
-    [...PILOT_PAGE.matchAll(/^\s*([^{}\n]+)\{[^}]*var\(--(\w+)\)[^}]*\}/gm)].filter((m) => m[2] === token).map((m) => m[1].trim());
-  assert.deepEqual(rulesUsing("cyan"), [".cue .text", ".item.k-cue p"]);
-  assert.deepEqual(rulesUsing("amber"), [".meta"]);
+  const css = PILOT_PAGE.slice(PILOT_PAGE.indexOf("<style>"), PILOT_PAGE.indexOf("</style>"));
+  const rules = [...css.matchAll(/^\s*([^{}\n@]+)\{([^}]*)\}/gm)].map((m) => ({ sel: m[1].trim(), vars: [...m[2].matchAll(/var\(--([\w-]+)/g)].map((v) => v[1]) }));
+  const using = (...tokens: string[]) => rules.filter((r) => r.vars.some((v) => tokens.includes(v))).map((r) => r.sel);
+  assert.deepEqual(using("cyan"), [".cue .label", ".item.k-cue p"], "the old cyan name now means the accent, only on the DILO label and the replied line");
+  assert.deepEqual(using("amber"), [".meta", ".rv.measured"], "measured numbers keep their own token, now the secondary ink");
+  assert.match(css, /--amber: var\(--muted\)/);
+  for (const sel of using("live", "live-fill", "on-live")) assert.match(sel, /listen|lv|live|rec|record|meet/, `red outside recording: ${sel}`);
+  assert.match(css, /\.meta \{[^}]*font-variant-numeric: tabular-nums/);
+  assert.doesNotMatch(PILOT_PAGE, /fonts\.googleapis|Barlow|Atkinson|IBM Plex/, "no web fonts");
+  assert.match(PILOT_PAGE, /<meta name="theme-color" content="#F2F2F7" media="\(prefers-color-scheme: light\)">/);
   assert.match(PILOT_PAGE, /id="cue-label">DILO</);
   assert.doesNotMatch(PILOT_PAGE, /SAY THIS<|"Say this: "/);
 });
