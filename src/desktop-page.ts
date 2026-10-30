@@ -3,46 +3,88 @@
 // clip: protocol v2 over the WebSocket door. Pause and takeover come back as the clip's commands.
 // Resampling, framing and scene detection are the tested modules; this file is the browser glue.
 
+import { logoSvg } from "./brand.ts";
 import { DESKTOP_CAPTURE_PAGE_SCRIPT } from "./desktop-capture.ts";
 import { PHONE_AUDIO_PAGE_SCRIPT } from "./phone-audio.ts";
+import { THEME_TOKENS } from "./theme.ts";
 
 export const DESKTOP_PAGE = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>Lente · Escritorio</title>
 <style>
-  :root { color-scheme: light dark; --bg: #f5f5f4; --fg: #1c1c1e; --card: #fff; --mute: #6b6b70; --rec: #d92d20; --ok: #12805c; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #111113; --fg: #f2f2f3; --card: #1c1c1f; --mute: #9a9aa2; } }
-  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); display: grid; place-items: start center; min-height: 100dvh; }
-  main { width: min(440px, 100%); box-sizing: border-box; padding: 20px; display: grid; gap: 14px; }
-  .card { background: var(--card); border-radius: 20px; padding: 16px; display: grid; gap: 10px; }
-  h1 { font-size: 20px; margin: 0; }
-  #state { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-  #dot { width: 14px; height: 14px; border-radius: 50%; background: var(--mute); }
-  body[data-state="capturing"] #dot { background: var(--rec); animation: pulse 1.4s infinite; }
-  body[data-state="paused"] #dot { background: var(--ok); }
-  @keyframes pulse { 50% { opacity: .35; } }
-  label { display: flex; gap: 8px; align-items: center; color: var(--mute); }
-  button { font: inherit; min-height: 48px; border: 0; border-radius: 24px; padding: 0 20px; background: var(--fg); color: var(--bg); cursor: pointer; }
-  button:disabled { opacity: .4; cursor: default; }
-  #note { color: var(--mute); margin: 0; min-height: 1.4em; }
-  #cue-label { font-size: 12px; letter-spacing: .08em; color: var(--mute); }
-  #cue-text { font-size: 22px; font-weight: 600; }
-  #heard { color: var(--mute); }
+${THEME_TOKENS}
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 32px; background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); -webkit-font-smoothing: antialiased; }
+  /* A macOS window: translucent toolbar, two panes, soft shadow. */
+  .window { width: min(1040px, 100%); border-radius: 14px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 .5px var(--glass-edge), 0 24px 70px rgba(10, 15, 40, .18), 0 4px 14px rgba(10, 15, 40, .08); }
+  @media (prefers-color-scheme: dark) { .window { box-shadow: 0 0 0 1px #38383A, 0 24px 70px rgba(0, 0, 0, .7); } }
+  .toolbar { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 18px; background: var(--glass); -webkit-backdrop-filter: blur(20px) saturate(1.8); backdrop-filter: blur(20px) saturate(1.8); border-bottom: 1px solid var(--line); }
+  .toolbar svg { width: 24px; height: 24px; color: var(--ink); flex: none; }
+  .toolbar h1 { margin: 0; font: 700 15px/1 var(--display); }
+  .toolbar span { color: var(--muted); font-size: 13px; }
+  .toolbar .grow { flex: 1; }
+  .panes { display: grid; grid-template-columns: 340px minmax(0, 1fr); min-height: 520px; }
+  .side { padding: 22px 20px; background: var(--bg); border-right: 1px solid var(--line); display: grid; align-content: start; gap: 16px; }
+  .main { padding: 28px 32px; display: grid; align-content: start; gap: 16px; }
+  .cap { font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); margin: 0 4px; }
+  .card { background: var(--surface); border-radius: 14px; padding: 16px; display: grid; gap: 14px; box-shadow: var(--shadow); }
+  @media (prefers-color-scheme: dark) { .main .card { background: var(--raised); box-shadow: none; } }
+  #state { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; }
+  #dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; }
+  body[data-state="capturing"] #dot { background: var(--live-fill); box-shadow: 0 0 0 4px color-mix(in srgb, var(--live-fill) 22%, transparent); animation: pulse 1.4s infinite; }
+  body[data-state="capturing"] #state-text { color: var(--live); }
+  @keyframes pulse { 50% { opacity: .4; } }
+  label { display: flex; gap: 12px; align-items: center; justify-content: space-between; font-weight: 500; cursor: pointer; }
+  #use-mic { appearance: none; -webkit-appearance: none; flex: none; width: 38px; height: 22px; margin: 0; border-radius: 999px; background: var(--track); box-shadow: inset 0 0 0 1px var(--line); position: relative; cursor: pointer; transition: background-color .2s; }
+  #use-mic::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .3s var(--spring); }
+  #use-mic:checked { background: var(--accent-fill); box-shadow: none; }
+  #use-mic:checked::after { transform: translateX(16px); }
+  #use-mic:disabled { opacity: .5; }
+  button { font: inherit; font-weight: 600; min-height: 40px; border: 0; border-radius: 10px; padding: 0 18px; background: var(--accent-fill); color: var(--on-accent); cursor: pointer; transition: scale .3s var(--spring); }
+  button:active { scale: .97; }
+  body[data-state="capturing"] button, body[data-state="paused"] button { background: var(--raised); color: var(--ink); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 2px; }
+  #note { color: var(--muted); margin: 0; min-height: 1.4em; font-size: 13px; }
+  .privacy { margin: 0; font-size: 13px; color: var(--muted); }
+  #cue-card { padding: 22px 24px; gap: 10px; justify-items: start; }
+  #cue-label { padding: 4px 9px; border-radius: 8px; background: var(--tag); color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+  #cue-text { font: 700 30px/1.15 var(--display); letter-spacing: -.02em; text-wrap: balance; }
+  .waiting { color: var(--muted); font-size: 15px; }
+  #heard { font-size: 17px; line-height: 1.45; color: var(--ink); }
+  #cue-card:not([hidden]) + .waiting { display: none; }
+  @media (max-width: 760px) { body { padding: 0; } .window { border-radius: 0; } .panes { grid-template-columns: minmax(0, 1fr); } .side { border-right: 0; border-bottom: 1px solid var(--line); } }
+  @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
 </style></head>
 <body data-state="idle">
-<main>
-  <h1>Lente · Escritorio</h1>
-  <div class="card">
-    <div id="state"><span id="dot"></span><span id="state-text">Sin compartir</span></div>
-    <label><input type="checkbox" id="use-mic"> Incluir mi micrófono</label>
-    <button id="share">Compartir una pestaña</button>
-    <p id="note"></p>
+<main class="window">
+  <div class="toolbar">${logoSvg(false)}<h1>Lente</h1><span>Escritorio</span><span class="grow"></span><span>Una pestaña o ventana, como si fuera el clip</span></div>
+  <div class="panes">
+    <section class="side" aria-label="Captura">
+      <p class="cap">Captura</p>
+      <div class="card">
+        <div id="state"><span id="dot"></span><span id="state-text">Sin compartir</span></div>
+        <label>Incluir mi micrófono <input type="checkbox" id="use-mic"></label>
+        <button id="share">Compartir una pestaña</button>
+        <p id="note"></p>
+      </div>
+      <p class="privacy">El navegador pide permiso antes de compartir y Lente muestra siempre que está escuchando. Se guarda solo texto, nunca audio.</p>
+    </section>
+    <section class="main" aria-label="En vivo">
+      <p class="cap">Qué decir</p>
+      <div class="card" id="cue-card" hidden>
+        <div id="cue-label">DILO</div>
+        <div id="cue-text"></div>
+      </div>
+      <div class="card waiting">Cuando te pregunten algo en la llamada, aquí aparece qué decir.</div>
+      <p class="cap">Lo último que se escuchó</p>
+      <div class="card"><div id="heard">Lo último que se escuchó aparecerá aquí.</div></div>
+    </section>
   </div>
-  <div class="card" id="cue-card" hidden>
-    <div id="cue-label">DILO</div>
-    <div id="cue-text"></div>
-  </div>
-  <div class="card"><div id="heard">Lo último que se escuchó aparecerá aquí.</div></div>
 </main>
 <script>
 (() => {

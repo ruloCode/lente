@@ -9,7 +9,7 @@
 
 ## 2. Mac
 
-- [ ] 2.1 `/desktop` with the kit's tokens in a macOS window layout; verify screenshots at 1440 × 900 in both themes
+- [x] 2.1 `/desktop` with the kit's tokens in a macOS window layout; verify screenshots at 1440 × 900 in both themes
 
 ## 3. Agents in the kit ("Tu equipo")
 

@@ -26,3 +26,14 @@ test("contrast math matches the WCAG reference values", () => {
   assert.equal(Math.round(contrast(parseColor("#767676"), parseColor("#ffffff")) * 100) / 100, 4.54);
   assert.throws(() => parseColor("hsl(0 0% 0%)"), /not a color/);
 });
+
+test("the desktop page uses the same measured tokens and keeps red text on surfaces it was measured on", async () => {
+  const { DESKTOP_PAGE } = await import("../src/desktop-page.ts");
+  const { THEME_TOKENS } = await import("../src/theme.ts");
+  assert.ok(DESKTOP_PAGE.includes(THEME_TOKENS.trim()), "desktop page embeds the shared tokens");
+  assert.doesNotMatch(DESKTOP_PAGE, /fonts\.googleapis/);
+  // #state-text turns red while capturing; its card (the capture pane's) must stay on --surface
+  // (7.5:1 in dark; --raised is 6.1). Cards in the live pane carry no red and may be raised.
+  assert.doesNotMatch(DESKTOP_PAGE, /\.side \.card \{[^}]*background: var\(--raised\)/);
+  assert.match(DESKTOP_PAGE, /<section class="side"[^>]*>[\s\S]*id="state-text"[\s\S]*<\/section>\s*<section class="main"/);
+});
