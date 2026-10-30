@@ -123,3 +123,20 @@ What the runs showed:
 - One call each, so these are single samples, not percentiles; they sit in the same range as the DILO reply above (first token 1.0–1.7 s).
 - Two earlier runs shaped the prompts: in the first, Aportar offered to "deliver PDF now", a deliverable nobody mentioned, so Aportar and Pregunta now say to use only what the conversation says; in the second, Aportar came back as a question, so it now asks for a statement. The table is the third run, with the prompts as committed.
 - Both English cards carried a Spanish meaning; the topic came back in Spanish, in two sentences, 101 characters (cap 160).
+
+## Live transcript on the phone
+
+Measured on 2026-10-29 for `add-live-transcript` (task 2.4): the Samsung SM-S931B over USB (`adb reverse`, Chrome on `localhost:8080`), the clip hearing six English test sentences from `say -v Samantha` through the Mac speakers, the live view open in Solo grabar. A second `EventSource` injected through Chrome DevTools stamped each `partial` and `turn` event on arrival, and a `MutationObserver` stamped each final `.lv-line` row. The phone clock runs 129 ms ahead of the Mac (three DevTools round trips, ±3 ms), subtracted from the hub-to-phone figures.
+
+| Measure | n | p50 | p90 | Max |
+|---|---|---|---|---|
+| Hub publishes a completed turn → event on the phone | 5 | 6 ms | 38 ms | 38 ms |
+| Event on the phone → row final on the page | 5 | under 5 ms | under 5 ms | under 5 ms |
+| Interval between partial updates | 56 | 258 ms | 655 ms | 897 ms |
+
+What the run showed:
+
+- Only five of the six sentences came out as turns in the window I read; the sixth was not counted. Five samples, so read the p90 as the max.
+- The row-render figure sits below what this method can resolve: the page's own handler draws the row before the injected listener sees the same event, so the stamps came out between -5 and 0 ms. Treat it as "no visible delay", not as zero.
+- Partial intervals measure the speech service's pace (the hub forwards each update as it arrives), not the page; gaps over 2 s (pauses between sentences) are left out.
+- USB `adb reverse` has no Wi-Fi hop, so over Wi-Fi the hub-to-phone figure will be larger; this run does not measure that.
