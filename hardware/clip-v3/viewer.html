@@ -1,0 +1,637 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lente Clip v3</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one-screen workbench. Model on the left, parts bench on the right; stacks on phones. */
+  :root {
+    --bg: #eef1f3;          /* drafting film */
+    --panel: #f8fafb;
+    --ink: #17202a;
+    --muted: #5b6874;
+    --line: #d5dce2;
+    --accent: #0b8793;      /* OLED cyan, darkened for paper */
+    --accent-soft: #d6eef0;
+    --measure: #b45d0e;     /* caliper amber */
+    --stage: #e3e8ec;
+    --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1519; --panel: #151c21; --ink: #dfe6ea; --muted: #8d9aa4; --line: #26323a;
+      --accent: #4fd0d8; --accent-soft: #143338; --measure: #e8a052; --stage: #121a1f;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1519; --panel: #151c21; --ink: #dfe6ea; --muted: #8d9aa4; --line: #26323a;
+    --accent: #4fd0d8; --accent-soft: #143338; --measure: #e8a052; --stage: #121a1f;
+    color-scheme: dark;
+  }
+
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--font-body);
+    display: grid; grid-template-rows: auto minmax(0, 1fr);
+  }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  header {
+    display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px;
+    padding-block: 14px 12px; border-bottom: 1px solid var(--line);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  h1 { margin: 0; font: 600 30px/1 var(--font-display); letter-spacing: 0.01em; text-wrap: balance; }
+  .sub { margin: 4px 0 0; color: var(--muted); }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 500 13px/1.3 var(--font-mono); font-variant-numeric: tabular-nums; }
+  .stats span { color: var(--muted); font: 500 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 3px; }
+  .stats .dim { color: var(--measure); }
+
+  main {
+    display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: 0;
+  }
+  .stage { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; background: var(--stage); }
+  .canvas-wrap { position: relative; min-height: 0; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font: 500 14px var(--font-mono); pointer-events: none; }
+  #tags { position: absolute; inset: 0; pointer-events: none; }
+  .ptag {
+    position: absolute; transform: translate(-50%, calc(-100% - var(--lead, 10px))); pointer-events: auto; cursor: pointer;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 3px;
+    font: 500 12px/1 var(--font-body); padding: 5px 7px; white-space: nowrap;
+  }
+  .ptag::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: var(--lead, 10px); background: var(--muted); }
+  .ptag.sel { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .nominal {
+    position: absolute; top: 12px; left: 12px; font: 500 11px/1.3 var(--font-body); letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--measure); border: 1px solid currentColor; padding: 4px 7px; border-radius: 3px; background: color-mix(in srgb, var(--stage) 85%, transparent);
+  }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-block: 10px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
+    border-top: 1px solid var(--line); background: var(--panel);
+  }
+  .views { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .views button { border: 0; background: none; padding: 7px 12px; cursor: pointer; font-weight: 500; }
+  .views button + button { border-left: 1px solid var(--line); }
+  .views button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+  .version { align-self: center; margin-right: auto; }
+  .explode { display: flex; align-items: center; gap: 10px; flex: 1 1 180px; min-width: 0; }
+  .explode label { font-weight: 500; white-space: nowrap; }
+  .explode input { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .explode output { font: 500 12px var(--font-mono); color: var(--muted); width: 3.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+  .toggles { display: flex; gap: 14px; }
+  .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .toggles input { accent-color: var(--accent); }
+
+  .dl { margin: 16px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .dl h3 { margin: 0 0 8px; font: 600 15px/1.2 var(--font-body); }
+  .dl a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-top: 8px; border-radius: 10px; background: var(--accent-soft); color: var(--ink); text-decoration: none; font: 500 14px/1.3 var(--font-body); min-height: 24px; }
+  .dl a:hover, .dl a:focus-visible { outline: 2px solid var(--accent); }
+  .dl small { color: var(--muted); display: block; font-weight: 400; }
+  .dl .num { font: 500 13px/1.3 var(--font-mono); white-space: nowrap; }
+  aside {
+    background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; min-height: 0;
+    padding-block: 16px 24px; padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-left: 16px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  aside > * { flex-shrink: 0; }
+  #groups { display: grid; gap: 18px; }
+  .detail { display: grid; gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--line); min-height: 132px; }
+  .detail .kicker { font: 500 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+  .detail h2 { margin: 0; font: 600 24px/1.05 var(--font-display); text-wrap: balance; }
+  .detail .size { font: 500 13px var(--font-mono); color: var(--measure); font-variant-numeric: tabular-nums; }
+  .detail p { margin: 0; max-width: 60ch; }
+  .detail .src { font-size: 12px; color: var(--muted); }
+  .detail .clear { justify-self: start; border: 1px solid var(--line); background: none; border-radius: 3px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+
+  .group h3 { margin: 0 0 6px; font: 600 12px/1 var(--font-body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .group ul { list-style: none; margin: 0; padding: 0; display: grid; }
+  .row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 4px; cursor: pointer; }
+  .row:hover { background: var(--bg); }
+  .row[aria-selected="true"] { background: var(--accent-soft); }
+  .row .sw { width: 12px; height: 12px; border-radius: 2px; border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent); }
+  .row .nm { min-width: 0; }
+  .row .nm b { display: block; font-weight: 500; }
+  .row .nm small { display: block; font: 400 12px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .eye { border: 0; background: none; padding: 4px; cursor: pointer; color: var(--muted); border-radius: 3px; display: grid; }
+  .eye:hover { color: var(--ink); }
+  .eye[aria-pressed="false"] { opacity: 0.45; }
+  .eye svg { width: 18px; height: 18px; }
+  .foot { font-size: 12px; color: var(--muted); }
+  .foot code { font-family: var(--font-mono); }
+
+  /* Phones: the model stays pinned on top while the parts list scrolls underneath. */
+  @media (max-width: 820px) {
+    html, body { height: auto; }
+    body { display: block; }
+    body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+    header { padding-block: 10px; gap: 8px 12px; align-items: center; }
+    h1 { font-size: 24px; }
+    .sub { display: none; }
+    .stats { width: 100%; gap: 4px 14px; font-size: 12px; }
+    main { display: block; }
+    .stage { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; border-bottom: 1px solid var(--line); }
+    .canvas-wrap { height: 50vh; min-height: 280px; }
+    .nominal { top: 8px; left: 8px; font-size: 10px; }
+    .toolbar { padding-block: 8px; gap: 8px 14px; padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .views { width: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+    .views button { padding: 10px 4px; }
+    .version { width: auto; display: flex; margin-right: 0; }
+    .version button { padding: 8px 12px; }
+    .explode { flex-basis: 100%; }
+    aside { border-left: 0; overflow: visible; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<header>
+  <div>
+    <h1>Lente Clip v3</h1>
+    <p class="sub">Placas de cabeza: los dos USB-C abajo, el interruptor arriba atrás</p>
+  </div>
+  <div class="views version" role="group" aria-label="Versión">
+    <button id="ver-simple" data-version="simple" aria-pressed="true">Simple</button>
+    <button id="ver-hud" data-version="hud" aria-pressed="false">Con HUD</button>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="canvas-wrap" id="wrap">
+      <canvas id="c" aria-label="Modelo 3D del clip: arrastra para girar, rueda o pellizco para acercar"></canvas>
+      <div class="status" id="status">Cargando modelo…</div>
+      <div class="nominal">Medidas nominales · confirmar con calibrador</div>
+      <div id="tags"></div>
+    </div>
+    <div class="toolbar">
+      <div class="views" role="group" aria-label="Vista">
+        <button id="v-puesto" data-view="puesto" aria-pressed="true">Puesto</button>
+        <button id="v-dentro" data-view="dentro" aria-pressed="false">Por dentro</button>
+        <button id="v-despiece" data-view="despiece" aria-pressed="false">Despiece</button>
+        <button id="v-puertos" data-view="puertos" aria-pressed="false">Puertos</button>
+        <button id="v-hud" data-view="hud" aria-pressed="false">HUD</button>
+      </div>
+      <div class="explode">
+        <label for="explode">Despiece</label>
+        <input id="explode" type="range" min="0" max="100" value="0">
+        <output id="explode-out" for="explode">0%</output>
+      </div>
+      <div class="toggles">
+        <label><input id="t-glasses" type="checkbox" checked> Gafas</label>
+        <label><input id="t-labels" type="checkbox" checked> Etiquetas</label>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="detail" id="detail" aria-live="polite"></div>
+    <div id="groups"></div>
+    <section class="dl" id="dl" aria-label="Archivos para imprimir"></section>
+    <p class="foot">Generado por <code>hardware/clip-v3/clip.py</code>. Cambia las medidas ahí y vuelve a correrlo: el STL, este visor y las cifras salen del mismo modelo.</p>
+  </aside>
+</main>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+const $ = (id) => document.getElementById(id);
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+const GROUPS = { print: "Se imprime", elec: "Electrónica", hw: "Tornillería", hud: "HUD · opcional", ref: "Referencia" };
+const mm = (...v) => v.join(" × ") + " mm";
+
+// Explode offsets are in model axes (mm): X forward, Y outward from the head, Z up.
+function partsFrom(d) {
+  const p = d.parts, o = d.outer_mm;
+  return [
+    { id: "shell_base", group: "print", nodes: ["shell_base"], color: "#3a3f47", name: "Carcasa",
+      size: mm(...o), src: `~${Math.round(d.shell_mass_g_pla_100pct)} g con la tapa, en PLA`,
+      note: `Base impresa: dos ranuras en el piso para los USB-C (carga y flasheo, a ${d.usb_c_ports.pitch_mm} mm entre sí, en un rebaje de ${d.usb_c_ports.recess_mm} mm para que el enchufe entre a fondo), ranura del interruptor arriba en la pared de atrás con un pilar que lo sostiene, y canal para la patilla con costilla fija arriba y dos tornillos M3 de ajuste abajo.`, explode: [0, 0, 0] },
+    { id: "shell_lid", group: "print", nodes: ["shell_lid"], color: "#4a505a", name: "Tapa",
+      size: `${o[0]} × ${o[1]} mm`, src: "Se imprime con la cara exterior contra la cama",
+      note: "Tres rejillas sobre la XIAO: la placa se calienta cuando transmite video.", explode: [0, 0, 44] },
+    { id: "xiao", group: "elec", nodes: ["xiao", "usb_c"], color: "#2b3a55", name: "XIAO ESP32-S3",
+      size: mm(p.xiao_stack[0], p.xiao_stack[1]), src: "Ficha de Seeed · Sigma Electrónica, $99.960 con Sense y cámara",
+      note: "El cerebro: Wi-Fi, cámara y audio. Va de cabeza respecto a la v1: su USB-C mira al piso y sale por la ranura de adelante, para flashear y ver el log sin abrir el clip.", explode: [-6, 0, 26] },
+    { id: "charger", group: "elec", nodes: ["charger", "charger_usb"], color: "#1f4fa8", name: "Cargador USB-C 1S",
+      size: mm(p.charger[0], p.charger[1]) + " · por medir", src: "Módulo azul tipo TP4056 con protección · medidas estimadas de la foto",
+      note: "Detrás de la XIAO, con su USB-C también hacia el piso (la ranura de atrás). Carga la batería antes del interruptor, así que carga con el clip apagado.", explode: [-16, 0, 30] },
+    { id: "sense", group: "elec", nodes: ["sense", "mic"], color: "#35507a", name: "Placa Sense",
+      size: mm(p.xiao_stack[0], p.xiao_stack[1]), src: "Viene con la XIAO Sense",
+      note: "Trae el micrófono digital y la ranura microSD, y conecta la cámara. El micrófono escucha por un orificio en la cara exterior.", explode: [2, 0, 32] },
+    { id: "camera", group: "elec", nodes: ["camera", "lens"], color: "#14161a", name: "Cámara OV3660",
+      size: mm(p.camera[0], p.camera[1]), src: "Viene con la XIAO Sense",
+      note: `Queda en la parte baja de la placa (del lado del USB-C), así que mira al frente ${d.camera_below_temple_mm} mm por debajo de la patilla. Ve lo que tú ves: el tablero, la slide, el documento.`, explode: [16, 0, 26] },
+    { id: "antenna", group: "elec", nodes: ["antenna"], color: "#c08a2c", name: "Antena 2.4 GHz",
+      size: mm(p.antenna[0], p.antenna[1]) + " · por confirmar", src: "Viene con la placa, conector U.FL",
+      note: "Va pegada bajo la tapa. Sin ella el Wi-Fi no alcanza para mandar video.", explode: [0, 0, 36] },
+    { id: "battery", group: "elec", nodes: ["battery"], color: "#c4c8ce", name: "Batería LiPo 502540",
+      size: "Bahía de " + mm(p.battery[0], p.battery[2], p.battery[1]) + " · ~550 mAh", src: "Cabe también la BATLI 400 mAh de Sigma (35 × 20 × 6) · con placa de protección",
+      note: "En el mismo lugar que en la v1: contra la patilla, del lado de tu cabeza. Va a B+ y B− del cargador.", explode: [-4, -16, 2] },
+    { id: "motor", group: "elec", nodes: ["motor"], color: "#9aa0a8", name: "Vibrador de moneda",
+      size: `Ø${p.motor[0]} × ${p.motor[1]} mm`, src: "Nominal · con transistor S8050 y diodo",
+      note: "Te avisa con un zumbido cuando alguien te habla a ti, antes de que mires la tarjeta.", explode: [0, 16, 18] },
+    { id: "switch", group: "elec", nodes: ["switch", "switch_lever"], color: "#1b1c20", name: "Interruptor SS12D00",
+      size: mm(...p.switch), src: "Nominal",
+      note: "Arriba en la pared de atrás: la palanca sale por detrás y se desliza hacia arriba y abajo. OUT+ del cargador al pin del centro, un pin de extremo al pad BAT+ de la XIAO; OUT− al BAT−. El pilar lo sostiene por debajo y el labio de la tapa por arriba.", explode: [-14, 10, 0] },
+    { id: "pin", group: "hw", nodes: ["pin_screw_1", "pin_head_1", "pin_screw_2", "pin_head_2"], color: "#c9ced3", name: "Tornillos de ajuste M3 × 16 (2)",
+      size: `Patillas de ${d.clamp_pin.temple_height_mm[0]} a ${d.clamp_pin.temple_height_mm[1]} mm de alto`, src: "Rosca directa en el plástico, sin tuerca",
+      note: "Suben por un bloque bajo el canal y empujan el borde de abajo de la patilla contra la costilla fija. Girándolos, el mismo clip se ajusta a cualquier gafa sin amarres.", explode: [0, 0, -24] },
+    { id: "hud_arm", group: "hud", nodes: ["hud_arm"], color: "#3a3f47", name: "Brazo HUD",
+      size: `~${d.hud_arm_mass_g_pla_100pct} g en PLA`, src: "Segunda impresión, independiente del clip",
+      note: "Se engancha a la patilla delante del clip y pasa por fuera de la bisagra hasta la esquina exterior del lente.", explode: [10, 0, 0] },
+    { id: "oled", group: "hud", nodes: ["oled"], color: "#10363a", name: "OLED 0.91\" 128×32",
+      size: mm(p.oled[0], p.oled[2], p.oled[1]), src: "Nominal · SSD1306 por I2C",
+      note: "Muestra la tarjeta de Lente: 4 líneas de 21 caracteres, justo los 90 que mide una tarjeta.", explode: [10, 14, 0] },
+    { id: "magnifier", group: "hud", nodes: ["magnifier"], color: "#bfe3ea", name: "Lupa",
+      size: `Ø${p.magnifier[0]} × ${p.magnifier[1]} mm`, src: "Distancia focal por definir (25–40 mm)",
+      note: "Aleja la imagen para que el ojo pueda enfocar un texto que está a 2 cm.", explode: [10, -10, 0] },
+    { id: "combiner", group: "hud", nodes: ["combiner"], color: "#d8f1f5", name: "Acrílico a 45°",
+      size: mm(p.combiner[0], p.combiner[2], p.combiner[1]), src: "Retazo de acrílico transparente",
+      note: "Refleja el texto hacia tu ojo y deja ver a través. La óptica es un concepto sin validar.", explode: [10, -22, 0] },
+    { id: "glasses", group: "ref", nodes: ["temple_right", "temple_left", "hinge", "frame", "lens_right", "lens_left"], color: "#121214",
+      name: "Gafas", size: "Montura genérica de 140 mm", src: "Solo referencia, no se imprime",
+      note: "Cualquier gafa con patilla de 2 a 10 mm de alto (el brazo HUD solo agarra patillas de unos 6 mm).", explode: [0, 0, 0] },
+  ];
+}
+
+function renderDownloads(d) {
+  const files = [["clip-base", "Base", "Se imprime con la cara abierta hacia arriba"], ["clip-lid", "Tapa", "Se imprime con la cara plana contra la cama"]];
+  if (version === "hud") files.push(["hud-arm", "Brazo HUD", "Opcional, segunda impresión"]);
+  const board = d.parts.xiao_stack;
+  $("dl").innerHTML = `<h3>Descargar para imprimir</h3>` + files.map(([f, name, how]) =>
+    `<a href="out/${f}.stl" download><span>${name}<small>${how}</small></span><span class="num">${d.stl_mm[f].join(" × ")} mm</span></a>`).join("") +
+    `<p class="foot" style="margin-top:12px">Diseñado para la XIAO ESP32-S3 Sense (${board[0]} × ${board[1]} mm con la placa Sense y la cámara) y un cargador USB-C 1S de ${d.parts.charger[0]} × ${d.parts.charger[1]} mm detrás. Capa de 0.12 a 0.16 mm, relleno al 100 %, sin soportes. Los tornillos de ajuste son M3 × 16 mm.</p>`;
+}
+
+const renderer = new THREE.WebGLRenderer({ canvas: $("c"), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const sun = new THREE.DirectionalLight("#ffffff", 1.5);
+sun.position.set(80, 140, -160);
+scene.add(sun, new THREE.HemisphereLight("#ffffff", "#9aa3ad", 0.5));
+const camera = new THREE.PerspectiveCamera(32, 1, 1, 4000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = !reduceMotion;
+controls.screenSpacePanning = true;
+
+const root = new THREE.Group();
+root.rotation.x = -Math.PI / 2;   // model is Z-up, three.js is Y-up
+scene.add(root);
+
+const nodes = {}, partOf = {};
+let PARTS = [], DIMS = null, selected = null, explode = 0, explodeTarget = 0, ghostShell = false;
+let version = location.hash === "#hud" ? "hud" : "simple";
+let currentView = "despiece";
+const hidden = new Set();
+const anim = { from: null, to: null, t: 1 };
+
+function material(part, name) {
+  if (name === "lens") return new THREE.MeshPhysicalMaterial({ color: "#0b1020", roughness: 0.05, clearcoat: 1 });
+  if (name === "usb_c" || name === "charger_usb") return new THREE.MeshStandardMaterial({ color: "#b9bec6", roughness: 0.25, metalness: 0.95 });
+  if (name === "switch_lever") return new THREE.MeshStandardMaterial({ color: "#eeeeee", roughness: 0.5 });
+  if (name.startsWith("lens_") || name === "combiner" || name === "magnifier")
+    return new THREE.MeshPhysicalMaterial({ color: part.color, roughness: 0.03, transmission: 0.85, transparent: true, opacity: 0.45, thickness: 1 });
+  const metal = ["battery", "motor"].includes(name) ? 0.85 : 0.1;
+  return new THREE.MeshStandardMaterial({ color: part.color, roughness: name.startsWith("shell") ? 0.6 : 0.45, metalness: metal });
+}
+
+function applyLook() {
+  for (const part of PARTS) {
+    const isSel = selected === part.id;
+    const off = hidden.has(part.id) || (part.group === "hud" && version === "simple") || (part.id === "glasses" && !$("t-glasses").checked);
+    for (const n of part.nodes) {
+      const o = nodes[n];
+      if (!o) continue;
+      o.visible = !off;
+      const m = o.material;
+      let opacity = o.userData.baseOpacity;
+      if (ghostShell && part.group === "print" && part.id !== "hud_arm") opacity = Math.min(opacity, part.id === "shell_lid" ? 0.1 : 0.2);
+      if (selected && !isSel) opacity = Math.min(opacity, 0.12);
+      m.transparent = opacity < 1;
+      m.opacity = opacity;
+      m.depthWrite = opacity >= 1;
+      m.emissive?.set(isSel ? css("--accent") : "#000000");
+      if (m.emissiveIntensity !== undefined) m.emissiveIntensity = isSel ? 0.35 : 0;
+      m.needsUpdate = true;
+    }
+  }
+}
+
+function placeParts() {
+  for (const part of PARTS) for (const n of part.nodes) nodes[n]?.position.set(...part.explode.map((v) => v * explode));
+}
+
+function boxOf(ids) {
+  const box = new THREE.Box3();
+  root.updateMatrixWorld(true);
+  for (const id of ids) {
+    const part = PARTS.find((p) => p.id === id);
+    for (const n of part.nodes) if (nodes[n]?.visible) box.expandByObject(nodes[n]);
+  }
+  return box;
+}
+
+function frameView(ids, dir, pad = 1.3) {
+  const box = boxOf(ids);
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = box.getSize(new THREE.Vector3()).length() / 2;
+  const dist = (radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * pad / Math.min(1, camera.aspect);
+  return { pos: center.clone().add(new THREE.Vector3(...dir).normalize().multiplyScalar(dist)), target: center };
+}
+
+function flyTo(view) {
+  if (reduceMotion) {
+    camera.position.copy(view.pos); controls.target.copy(view.target); return;
+  }
+  anim.from = { pos: camera.position.clone(), target: controls.target.clone() };
+  anim.to = view;
+  anim.t = 0;
+}
+
+// Directions in three.js space: +x forward, +y up, -z outward from the head.
+const VIEWS = {
+  puesto: () => ({ explode: 0, ghost: false, glasses: true, frame: [["shell_base", "glasses"], [0.9, 0.55, -1.1], 1.05] }),
+  dentro: () => ({ explode: 0, ghost: true, glasses: true, frame: [["shell_base", ...(version === "hud" ? ["hud_arm"] : [])], [0.35, 0.6, -1.2], 1.25] }),
+  despiece: () => ({ explode: 1, ghost: false, glasses: false, frame: [["shell_base", "shell_lid", "battery", "motor", "camera", "charger", "switch"], [0.55, 0.65, -1.2], 1.15] }),
+  // From below and behind: both USB-C slots in the floor and the switch lever on the back wall.
+  puertos: () => ({ explode: 0, ghost: false, glasses: false, frame: [["shell_base"], [-0.55, -0.75, -0.7], 1.2] }),
+  hud: () => ({ explode: 0, ghost: false, glasses: true, frame: [["hud_arm", "combiner"], [0.8, 0.35, -0.9], 1.6] }),
+};
+
+function setView(name, instant = false) {
+  currentView = name;
+  for (const b of document.querySelectorAll("[data-view]")) b.setAttribute("aria-pressed", String(b.dataset.view === name));
+  const v = VIEWS[name]();
+  ghostShell = v.ghost;
+  $("t-glasses").checked = v.glasses;
+  explodeTarget = v.explode;
+  $("explode").value = String(v.explode * 100);
+  $("explode-out").value = Math.round(v.explode * 100) + "%";
+  // Frame against the end state so the camera lands where the parts will be.
+  const keep = explode;
+  explode = v.explode; placeParts(); applyLook();
+  const [ids, dir, pad] = v.frame;
+  const target = frameView(ids, dir, pad);
+  explode = reduceMotion || instant ? v.explode : keep; placeParts();
+  if (instant) {
+    camera.position.copy(target.pos);
+    controls.target.copy(target.target);
+  } else {
+    flyTo(target);
+  }
+}
+
+function select(id) {
+  selected = selected === id ? null : id;
+  for (const r of document.querySelectorAll(".row")) r.setAttribute("aria-selected", String(r.dataset.id === selected));
+  renderDetail();
+  applyLook();
+}
+
+function renderDetail() {
+  const el = $("detail");
+  const part = PARTS.find((p) => p.id === selected);
+  if (!part) {
+    el.innerHTML = `<span class="kicker">Cómo usarlo</span><h2>Toca una pieza</h2>
+      <p>En el modelo o en la lista, para aislarla y ver qué hace. Arrastra para girar, usa la rueda o pellizca para acercar. El deslizador separa las piezas.</p>`;
+    return;
+  }
+  el.innerHTML = `<span class="kicker">${GROUPS[part.group]}</span><h2>${part.name}</h2>
+    <span class="size">${part.size}</span><p>${part.note}</p><span class="src">${part.src}</span>
+    <button class="clear" id="clear">Ver todo</button>`;
+  $("clear").addEventListener("click", () => select(part.id));
+}
+
+const EYE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+
+function renderList() {
+  const host = $("groups");
+  host.replaceChildren();
+  for (const [key, title] of Object.entries(GROUPS)) {
+    if (key === "hud" && version === "simple") continue;
+    const sec = document.createElement("section");
+    sec.className = "group";
+    sec.innerHTML = `<h3>${title}</h3><ul role="listbox" aria-label="${title}"></ul>`;
+    const ul = sec.querySelector("ul");
+    for (const part of PARTS.filter((p) => p.group === key)) {
+      const li = document.createElement("li");
+      li.className = "row";
+      li.dataset.id = part.id;
+      li.tabIndex = 0;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", "false");
+      li.setAttribute("aria-selected", String(part.id === selected));
+      li.innerHTML = `<span class="sw" style="background:${part.color}"></span>
+        <span class="nm"><b>${part.name}</b><small>${part.size}</small></span>
+        <button class="eye" aria-pressed="${!hidden.has(part.id)}" aria-label="Mostrar u ocultar ${part.name}">${EYE}</button>`;
+      li.addEventListener("click", (e) => { if (!e.target.closest(".eye")) select(part.id); });
+      li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(part.id); } });
+      li.querySelector(".eye").addEventListener("click", (e) => {
+        const btn = e.currentTarget;
+        hidden.has(part.id) ? hidden.delete(part.id) : hidden.add(part.id);
+        btn.setAttribute("aria-pressed", String(!hidden.has(part.id)));
+        applyLook();
+      });
+      ul.append(li);
+    }
+    host.append(sec);
+  }
+}
+
+function renderStats(d) {
+  const o = d.outer_mm;
+  const printed = `~${Math.round(d.shell_mass_g_pla_100pct)} g` + (version === "hud" ? ` + ${d.hud_arm_mass_g_pla_100pct} g HUD` : "");
+  $("stats").innerHTML = `
+    <div><span>Clip</span><b class="dim">${o[0]} × ${o[1]} × ${o[2]} mm</b></div>
+    <div><span>Cola</span><b class="dim">${d.tail_width_mm} mm de grosor</b></div>
+    <div><span>Puertos</span><b class="dim">2 × USB-C abajo</b></div>
+    <div><span>Impreso</span><b>${printed}</b></div>`;
+}
+
+function setVersion(next) {
+  version = next;
+  for (const b of document.querySelectorAll("[data-version]")) b.setAttribute("aria-pressed", String(b.dataset.version === next));
+  $("v-hud").hidden = next === "simple";
+  if (next === "simple" && PARTS.find((p) => p.id === selected)?.group === "hud") selected = null;
+  try { history.replaceState(null, "", "#" + next); } catch {}
+  renderStats(DIMS);
+  renderList();
+  renderDetail();
+  setView(next === "simple" && currentView === "hud" ? "puesto" : currentView);
+}
+
+// Picking: a click that didn't turn into a drag selects the part under the pointer.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let down = null;
+renderer.domElement.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const pickable = Object.values(nodes).filter((o) => o.visible && o.material.opacity > 0.15);
+  const hit = ray.intersectObjects(pickable, false)[0];
+  if (hit) select(partOf[hit.object.name]);
+  else if (selected) select(selected);
+});
+addEventListener("keydown", (e) => { if (e.key === "Escape" && selected) select(selected); });
+
+for (const b of document.querySelectorAll("[data-view]")) b.addEventListener("click", () => setView(b.dataset.view));
+for (const b of document.querySelectorAll("[data-version]")) b.addEventListener("click", () => setVersion(b.dataset.version));
+addEventListener("hashchange", () => {
+  const next = location.hash === "#hud" ? "hud" : "simple";
+  if (DIMS && next !== version) setVersion(next);
+});
+$("explode").addEventListener("input", (e) => {
+  explodeTarget = e.target.value / 100;
+  $("explode-out").value = e.target.value + "%";
+  if (reduceMotion) { explode = explodeTarget; placeParts(); }
+});
+$("t-glasses").addEventListener("change", applyLook);
+
+function resize() {
+  const wrap = $("wrap");
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe($("wrap"));
+
+// Name tags float over each part; tapping one selects it, which beats hitting tiny parts on a phone.
+const tagEls = {};
+function buildTags() {
+  const host = $("tags");
+  host.replaceChildren();
+  for (const part of PARTS.filter((p) => p.id !== "glasses")) {
+    const b = document.createElement("button");
+    b.className = "ptag";
+    b.textContent = part.name;
+    b.hidden = true;
+    b.addEventListener("click", () => select(part.id));
+    host.append(b);
+    tagEls[part.id] = b;
+  }
+}
+
+function updateTags() {
+  const labels = $("t-labels").checked;
+  const wrap = $("wrap");
+  const items = [];
+  for (const [id, el] of Object.entries(tagEls)) {
+    const part = PARTS.find((p) => p.id === id);
+    const shown = nodes[part.nodes[0]]?.visible && (selected ? selected === id : labels);
+    el.hidden = !shown;
+    if (!shown) continue;
+    const box = boxOf([id]);
+    const v = box.getCenter(new THREE.Vector3());
+    v.y = box.max.y;
+    v.project(camera);
+    el.classList.toggle("sel", selected === id);
+    const x = ((v.x + 1) / 2) * wrap.clientWidth, y = ((1 - v.y) / 2) * wrap.clientHeight;
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    items.push({ el, x, y, w: el.offsetWidth, h: el.offsetHeight });
+  }
+  // Lowest tags claim their spot first; a tag that would overlap one already placed moves up
+  // and its leader line stretches to keep pointing at its part.
+  items.sort((a, b) => b.y - a.y);
+  const placed = [];
+  for (const it of items) {
+    let top = it.y - 10 - it.h;
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const p of placed) {
+        const overlapX = Math.abs(it.x - p.x) < (it.w + p.w) / 2 + 4;
+        const overlapY = top < p.top + p.h + 3 && top + it.h > p.top - 3;
+        if (overlapX && overlapY) { top = p.top - it.h - 3; moved = true; }
+      }
+    }
+    it.el.style.setProperty("--lead", it.y - top - it.h + "px");
+    placed.push({ x: it.x, w: it.w, h: it.h, top });
+  }
+}
+
+function loop() {
+  requestAnimationFrame(loop);
+  if (Math.abs(explode - explodeTarget) > 0.001) {
+    explode += (explodeTarget - explode) * 0.14;
+    placeParts();
+  }
+  if (anim.t < 1) {
+    anim.t = Math.min(1, anim.t + 0.045);
+    const k = 1 - Math.pow(1 - anim.t, 3);
+    camera.position.lerpVectors(anim.from.pos, anim.to.pos, k);
+    controls.target.lerpVectors(anim.from.target, anim.to.target, k);
+  }
+  controls.update();
+  scene.background = new THREE.Color(css("--stage"));
+  renderer.render(scene, camera);
+  updateTags();
+}
+
+try {
+  const [dims, glb] = await Promise.all([
+    fetch("out/dimensions.json").then((r) => { if (!r.ok) throw new Error("dimensions.json"); return r.json(); }),
+    // Hosts that don't serve .glb get a base64 copy as text instead.
+    fetch("out/assembly.glb").then((r) => r.ok ? r.arrayBuffer() : fetch("out/assembly.glb.txt").then((t) => {
+      if (!t.ok) throw new Error("assembly.glb");
+      return t.text().then((b64) => Uint8Array.from(atob(b64.trim()), (c) => c.charCodeAt(0)).buffer);
+    })),
+  ]);
+  PARTS = partsFrom(dims);
+  for (const part of PARTS) for (const n of part.nodes) partOf[n] = part.id;
+  const gltf = await new GLTFLoader().parseAsync(glb, "");
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const name = o.name || o.parent?.name;
+    const part = PARTS.find((p) => p.nodes.includes(name));
+    if (!part) return;
+    o.name = name;
+    o.material = material(part, name);
+    o.userData.baseOpacity = o.material.opacity;
+    o.geometry.computeVertexNormals();
+    nodes[name] = o;
+  });
+  root.add(gltf.scene);
+  DIMS = dims;
+  for (const b of document.querySelectorAll("[data-version]")) b.setAttribute("aria-pressed", String(b.dataset.version === version));
+  $("v-hud").hidden = version === "simple";
+  renderStats(dims);
+  renderDownloads(dims);
+  renderList();
+  renderDetail();
+  resize();
+  applyLook();
+  buildTags();
+  setView(currentView, true);
+  $("status").hidden = true;
+  loop();
+} catch (err) {
+  $("status").textContent = `No se pudo cargar el modelo (${err.message}). Vuelve a correr clip.py y recarga.`;
+}
+</script>

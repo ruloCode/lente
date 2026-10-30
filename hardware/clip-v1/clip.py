@@ -32,10 +32,10 @@ SEG = 48
 # --- Parts (nominal; measure yours and adjust) ---------------------------
 XIAO = (21.0, 17.8)              # XIAO ESP32-S3 board outline (Z, Y as mounted)
 STACK_D = 12.0                   # depth from the back of the XIAO to the camera module face
-LENS_D, LENS_L = 8.0, 3.0        # camera lens barrel: diameter, length past the module
-CAM = (8.5, 8.5)                 # OV3660 module face
+LENS_D, LENS_L = 6.5, 3.0        # camera lens barrel: diameter (estimated from a photo, not calipered yet), length past the module
+CAM = (9.0, 9.0)                 # OV3660 module face (estimated from a photo, not calipered yet)
 USB_C = (8.9, 3.3, 7.3)          # receptacle: width, height, length
-BATTERY = (33.0, 5.2, 20.0)      # LiPo 502030 ~250 mAh: 30 x 20 x 5 + ~3 mm protection board
+BATTERY = (40.0, 7.5, 25.0)      # bay for a LiPo 502540 ~550 mAh (40 x 25 x 5 with its protection board) or smaller, 2.5 mm spare thickness
 MOTOR_D, MOTOR_T = 10.0, 2.7     # coin vibration motor
 SWITCH = (8.6, 3.5, 4.0)         # SS12D00 slide switch body, lying on its side
 ANTENNA = (28.0, 6.6, 0.3)       # 2.4 GHz FPC antenna on U.FL (size to confirm)
@@ -45,13 +45,19 @@ COMBINER = (13.0, 1.5, 9.0)      # clear acrylic plate at 45°
 
 # --- Shell --------------------------------------------------------------
 WALL = 1.6
-TAIL_IN = (34.0, 9.8)            # tail cavity: length (X), width (Y)
+TAIL_IN = (42.0, 12.2)           # tail cavity: length (X), width (Y); battery layer, then motor and switch layer
 HEAD_IN = (STACK_D + 0.6, 18.4)  # head cavity: length (X), width (Y)
-IN_Z = 23.0                      # cavity height, shared
+IN_Z = 27.5                      # cavity height, shared (battery 25 mm + antenna above it)
 RADIUS = 2.5
 LID_LIP = 1.5
 FIT = 0.2
-RIB_T, RIB_H, TEMPLE_W = 1.6, 3.0, 7.0
+RIB_T, RIB_H, TEMPLE_W = 1.6, 3.0, 7.0   # TEMPLE_W: nominal temple height, used by the HUD arm clip
+TEMPLE_MIN, TEMPLE_MAX = 2.0, 10.0       # temple heights the clamp pin takes (Z extent of the temple)
+PIN_XS = ((10.0, 18.0), (34.0, 42.0))    # two clamp blocks under the temple, one each side of the band groove at x=28
+GRIP_T = 0.6                             # recess under the top rib for a 1 mm rubber strip (grip on any temple)
+PIN_BLOCK_Y = 4.5                        # block depth toward the head, hole centred in it
+PIN_HOLE_D = 2.6                         # M3 self-tapping in PLA/PETG
+PIN_LEN = 16.0                           # M3 x 16 mm screw (range for temples 2 to 10 mm tall)
 BAND_W, BAND_D = 2.4, 0.8
 
 w = WALL
@@ -105,17 +111,19 @@ P["sense"] = (box(sx0 + 5.8, sy0, sz0, sx0 + 6.8, sy1, sz1)                     
               + box(sx0 + 6.8, sy0 + 1.5, sz0 + 1.0, sx0 + 8.3, sy1 - 4.0, sz0 + 9.0))   # microSD slot
 MIC_X = sx0 + 7.3
 P["mic"] = box(sx0 + 6.8, sy1 - 3.5, sz1 - 4.5, MIC_X + 1.0, sy1 - 0.5, sz1 - 1.5)
-CAM_C = (SY_C, SZ_C + 2.0)
+CAM_C = (SY_C, SZ_C + 6.0)       # 4 mm toward the top end vs. the nominal 2.0 (photo check, 2026-10-29)
 P["camera"] = box(sx0 + 8.3, CAM_C[0] - CAM[0] / 2, CAM_C[1] - CAM[1] / 2,
                   sx0 + STACK_D, CAM_C[0] + CAM[0] / 2, CAM_C[1] + CAM[1] / 2)
 P["lens"] = cyl_x(LENS_D, LENS_L, sx0 + STACK_D, *CAM_C)
-P["antenna"] = box(w + 3.0, w + 1.6, w + 21.6, w + 3.0 + ANTENNA[0], w + 1.6 + ANTENNA[1], w + 21.6 + ANTENNA[2])
+ANT_Z = w + IN_Z - 0.9
+P["antenna"] = box(w + 3.0, w + 1.6, ANT_Z, w + 3.0 + ANTENNA[0], w + 1.6 + ANTENNA[1], ANT_Z + ANTENNA[2])
 P["battery"] = box(w + 0.5, w + 0.3, w + 0.4, w + 0.5 + BATTERY[0], w + 0.3 + BATTERY[1], w + 0.4 + BATTERY[2])
 MOTOR_C = (w + 8.0, w + 15.0)
-P["motor"] = cyl_y(MOTOR_D, MOTOR_T, MOTOR_C[0], w + 5.9, MOTOR_C[1])
+SW_Y0 = w + 0.3 + BATTERY[1] + 0.4      # motor and switch layer starts after the battery bay
+P["motor"] = cyl_y(MOTOR_D, MOTOR_T, MOTOR_C[0], SW_Y0, MOTOR_C[1])
 sw_x0 = w + 20.0
-P["switch"] = box(sw_x0, w + 5.9, w + 0.4, sw_x0 + SWITCH[0], w + 5.9 + SWITCH[1], w + 0.4 + SWITCH[2])
-P["switch_lever"] = box(sw_x0 + 3.3, w + 6.9, -0.8, sw_x0 + 5.3, w + 8.5, w + 0.4)
+P["switch"] = box(sw_x0, SW_Y0, w + 0.4, sw_x0 + SWITCH[0], SW_Y0 + SWITCH[1], w + 0.4 + SWITCH[2])
+P["switch_lever"] = box(sw_x0 + 3.3, SW_Y0 + 1.0, -2.2, sw_x0 + 5.3, SW_Y0 + 2.6, w + 0.4)
 
 # --- Shell -------------------------------------------------------------------
 tail_outer = rounded_box((HX0 + w, TAIL_OUT_Y, OUTER[2]), RADIUS)
@@ -125,11 +133,11 @@ split_z = w + IN_Z                      # base below, lid on top
 temple_z = CAM_C[1]                     # temple at camera height
 
 holes = [
-    cyl_x(LENS_D + 1.0, WALL + 2, HX1 - 1, *CAM_C),                                     # camera
+    cyl_x(LENS_D + 2.0, WALL + 2, HX1 - 1, *CAM_C),                                     # camera, 1 mm of slack per side
     box(sx0 - 0.6, SY_C - USB_C[0] / 2 - 0.6, -1, sx0 + USB_C[1] + 0.6,
         SY_C + USB_C[0] / 2 + 0.6, WALL + 1),                                            # USB-C, from below
     cyl_y(1.6, WALL + 2, MIC_X, OUTER[1] - WALL - 1, sz1 - 3.0),                        # mic port, outer side
-    box(sw_x0 + 2.8, w + 6.4, -1, sw_x0 + 5.8, w + 9.0, WALL + 1),                      # switch lever slot
+    box(sw_x0 + 2.8, SW_Y0 + 0.5, -1, sw_x0 + 5.8, SW_Y0 + 3.1, WALL + 1),                      # switch lever slot
 ]
 for i in range(3):                                                                       # vents over the XIAO
     y0 = w + 3.0 + i * 5.0
@@ -141,10 +149,18 @@ for x in (5.0, 28.0):                                                           
 
 above = box(-1, -RIB_H - 1, split_z, OUTER[0] + 1, OUTER[1] + 1, OUTER[2] + 1)
 base = outer - above - cavity()
-for sgn in (1, -1):
-    z_edge = temple_z + sgn * TEMPLE_W / 2
-    base = base + box(0, -RIB_H, z_edge + (0 if sgn > 0 else -RIB_T), OUTER[0] - 3, 0.5,
-                      z_edge + (RIB_T if sgn > 0 else 0))
+# Clamp pin: the temple's top edge sits against a fixed rib; an M3 screw rising through a
+# block under the channel pushes on its bottom edge, so any temple from TEMPLE_MIN to TEMPLE_MAX
+# tall is held without changing the part.
+rib_z0 = temple_z + 3.2                                  # rib underside: 0.2 mm above the top edge of a 6 mm temple centred on temple_z
+pin_top = rib_z0 - TEMPLE_MAX                            # block top: tallest temple still clears it
+pin_xcs = [(a + b) / 2 for a, b in PIN_XS]
+pin_yc = -PIN_BLOCK_Y / 2 + 0.5 / 2
+base = base + box(0, -RIB_H, rib_z0, OUTER[0] - 3, 0.5, rib_z0 + RIB_T)
+for (x0, x1), xc in zip(PIN_XS, pin_xcs):
+    base = base + box(x0, -PIN_BLOCK_Y + 0.5, 0, x1, 0.5, pin_top)
+    base = base - Manifold.cylinder(pin_top + 2.0, PIN_HOLE_D / 2, PIN_HOLE_D / 2, SEG).translate([xc, pin_yc, -1.0])
+base = base - box(4.0, -RIB_H + 0.5, rib_z0 - 0.01, OUTER[0] - 7.0, 0.0, rib_z0 + GRIP_T)   # rubber strip recess
 lip = cavity(FIT, grow_up=1.0) - cavity(FIT + 1.2, grow_up=5.0)
 lid = (outer ^ above) + (lip ^ box(-1, -1, split_z - LID_LIP, OUTER[0] + 1, OUTER[1] + 1, split_z + 0.01))
 for h in holes:
@@ -205,6 +221,13 @@ P_HUD = {
 }
 
 
+tip_z = temple_z - 3.0                                   # the 6 mm temple modelled in the glasses
+P_PIN = {}
+for i, xc in enumerate(pin_xcs, 1):
+    P_PIN[f"pin_screw_{i}"] = Manifold.cylinder(PIN_LEN, 1.5, 1.5, SEG).translate([xc, pin_yc, tip_z - PIN_LEN])
+    P_PIN[f"pin_head_{i}"] = Manifold.cylinder(2.2, 2.75, 2.75, SEG).translate([xc, pin_yc, tip_z - PIN_LEN - 2.2])
+
+
 def to_trimesh(m: Manifold) -> trimesh.Trimesh:
     mesh = m.to_mesh()
     return trimesh.Trimesh(np.asarray(mesh.vert_properties)[:, :3], np.asarray(mesh.tri_verts), process=False)
@@ -216,7 +239,7 @@ to_trimesh(lid).export(OUT / "clip-lid.stl")
 to_trimesh(hud_arm).export(OUT / "hud-arm.stl")
 
 scene = trimesh.Scene()
-for name, part in {"shell_base": base, "shell_lid": lid, **P, "hud_arm": hud_arm, **P_HUD, **glasses}.items():
+for name, part in {"shell_base": base, "shell_lid": lid, **P, "hud_arm": hud_arm, **P_HUD, **P_PIN, **glasses}.items():
     scene.add_geometry(to_trimesh(part), node_name=name, geom_name=name)
 scene.export(OUT / "assembly.glb")
 
@@ -224,11 +247,15 @@ volume = base.volume() + lid.volume()
 dims = {
     "outer_mm": [round(v, 1) for v in OUTER],
     "tail_width_mm": round(TAIL_OUT_Y, 1),
+    "stl_mm": {name: [round(float(v), 1) for v in to_trimesh(part).extents]
+               for name, part in (("clip-base", base), ("clip-lid", lid), ("hud-arm", hud_arm))},
     "shell_volume_cm3": round(volume / 1000, 2),
     "shell_mass_g_pla_100pct": round(volume / 1000 * 1.24, 1),
     "hud_arm_mass_g_pla_100pct": round(hud_arm.volume() / 1000 * 1.24, 1),
     "camera_center_yz": [round(v, 2) for v in CAM_C],
     "temple_channel": {"width": TEMPLE_W, "depth": RIB_H, "center_z": round(temple_z, 2)},
+    "clamp_pin": {"screw": "M3 x %d mm" % PIN_LEN, "temple_height_mm": [TEMPLE_MIN, TEMPLE_MAX],
+                  "block_x_mm": [list(b) for b in PIN_XS], "top_rib_z_mm": round(rib_z0, 2), "block_top_z_mm": round(pin_top, 2)},
     "parts": {
         "xiao_stack": [XIAO[0], XIAO[1], STACK_D + LENS_L],
         "camera": [CAM[0], CAM[1]], "usb_c": list(USB_C), "battery": list(BATTERY),

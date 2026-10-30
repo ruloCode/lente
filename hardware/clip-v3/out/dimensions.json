@@ -1,0 +1,131 @@
+{
+  "outer_mm": [
+    64.6,
+    21.6,
+    30.7
+  ],
+  "tail_width_mm": 15.4,
+  "stl_mm": {
+    "clip-base": [
+      64.6,
+      25.6,
+      29.1
+    ],
+    "clip-lid": [
+      64.3,
+      21.3,
+      3.1
+    ],
+    "hud-arm": [
+      40.0,
+      21.0,
+      14.0
+    ]
+  },
+  "shell_volume_cm3": 10.65,
+  "shell_mass_g_pla_100pct": 13.2,
+  "hud_arm_mass_g_pla_100pct": 2.5,
+  "camera_center_yz": [
+    10.8,
+    6.3
+  ],
+  "camera_below_temple_mm": 6.5,
+  "usb_c_ports": {
+    "x_mm": [
+      45.35,
+      52.15
+    ],
+    "pitch_mm": 6.8,
+    "recess_mm": 0.6,
+    "order_back_to_front": [
+      "charger",
+      "xiao"
+    ]
+  },
+  "switch": {
+    "wall": "back",
+    "center_yz": [
+      11.55,
+      23.0
+    ],
+    "travel_mm": 2.0
+  },
+  "temple_channel": {
+    "width": 7.0,
+    "depth": 3.0,
+    "center_z": 12.8
+  },
+  "clamp_pin": {
+    "screw": "M3 x 16 mm",
+    "temple_height_mm": [
+      2.0,
+      10.0
+    ],
+    "block_x_mm": [
+      [
+        10.0,
+        18.0
+      ],
+      [
+        34.0,
+        42.0
+      ]
+    ],
+    "top_rib_z_mm": 16.0,
+    "block_top_z_mm": 6.0
+  },
+  "parts": {
+    "xiao_stack": [
+      21.0,
+      17.8,
+      15.0
+    ],
+    "camera": [
+      9.0,
+      9.0
+    ],
+    "usb_c": [
+      8.9,
+      3.3,
+      7.3
+    ],
+    "battery": [
+      40.0,
+      7.5,
+      25.0
+    ],
+    "charger": [
+      17.0,
+      25.0,
+      1.0
+    ],
+    "motor": [
+      10.0,
+      2.7
+    ],
+    "switch": [
+      8.6,
+      3.5,
+      4.0
+    ],
+    "antenna": [
+      28.0,
+      6.6,
+      0.3
+    ],
+    "oled": [
+      38.0,
+      3.5,
+      12.0
+    ],
+    "magnifier": [
+      11.0,
+      2.0
+    ],
+    "combiner": [
+      13.0,
+      1.5,
+      9.0
+    ]
+  }
+}

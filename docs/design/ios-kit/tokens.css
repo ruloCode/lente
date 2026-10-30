@@ -1,0 +1,113 @@
+/* Lente iOS kit: design tokens.
+   Every value was measured from the reference renders at 4× (see README.md, "Method").
+   Light is the measured theme; dark keeps the same geometry with WCAG AAA (7:1) text. */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg: #EFF0F7;
+  --bg-cool: #F4F8FE;
+  --card: #FEFEFE;
+  --card-glass: rgba(250, 252, 255, .86);
+  --group: rgba(247, 248, 252, .92);
+  --list: #FFFFFF;
+  --sep: #EBEDF3;
+  --glass-top: rgba(250, 251, 254, .92);
+  --glass-bottom: rgba(237, 239, 246, .92);
+  --glass-edge: rgba(255, 255, 255, .95);
+
+  /* Text */
+  --ink: #0A0C16;
+  --ink-strong: #0B1430;
+  --ink-2: #5E6578;
+  --ink-3: #7F8597;
+  --ink-section: #6C7389;
+  --ink-meta: #6D7D9C;
+
+  /* Accent and states */
+  --accent: #1F6EFB;
+  --accent-soft: #EDF2FD;
+  --accent-tag: #E9F0FE;
+  --accent-ink: #FFFFFF;
+  --accent-fill: linear-gradient(180deg, #5C9BFE, #3A82FB);
+  --neutral-soft: #EFF1F6;
+  --neutral-ink: #364057;
+  --chev: #A3A7B6;
+  --rec: #F81E3C;
+  --rec-halo: rgba(250, 60, 85, .28);
+  --tab-ink: #7A8296;
+  --tab-on: #0B68FF;
+  --tab-pill: rgba(224, 234, 252, .95);
+
+  /* Topic tags (text + fill) */
+  --topic-product: #5C19E8;  --topic-product-bg: #DDD8FD;
+  --topic-client: #0F6E5E;   --topic-client-bg: #CDF2E9;
+  --topic-team: #974108;     --topic-team-bg: #F9E5D4;
+
+  /* Logo and active tab glyph */
+  --logo-1a: #14389E; --logo-1b: #1E55CF; --logo-2a: #3B87F3; --logo-2b: #70B3FB;
+  --home-a: #3D8BFF; --home-b: #0E63F5;
+
+  /* Elevation */
+  --shadow-card: 0 10px 28px rgba(36, 48, 98, .075), 0 2px 6px rgba(36, 48, 98, .04), 0 0 0 .5px rgba(210, 214, 228, .35);
+  --shadow-soft: 0 6px 18px rgba(36, 48, 98, .05), 0 1px 2px rgba(36, 48, 98, .03);
+  --shadow-float: 0 8px 22px rgba(36, 48, 98, .08), 0 1px 3px rgba(36, 48, 98, .05);
+
+  /* Type: SF Pro through the system stack; .disp forces the Display optical size */
+  --font: -apple-system, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+
+  /* Motion */
+  --spring: cubic-bezier(.32, 1.25, .5, 1);
+  --ease-out: cubic-bezier(.22, .8, .24, 1);
+  --t-fast: 140ms;
+  --t-med: 320ms;
+  --t-slow: 520ms;
+}
+
+/* Dark: same geometry, AAA contrast. Body text ≥ 7:1 on its surface. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #000000;
+  --bg-cool: #000000;
+  --card: #1C1C1E;
+  --card-glass: rgba(28, 28, 30, .9);
+  --group: #111113;
+  --list: #1C1C1E;
+  --sep: #38383A;
+  --glass-top: rgba(36, 36, 40, .92);
+  --glass-bottom: rgba(24, 24, 28, .92);
+  --glass-edge: rgba(255, 255, 255, .10);
+
+  --ink: #FFFFFF;
+  --ink-strong: #FFFFFF;
+  --ink-2: #D1D1D6;
+  --ink-3: #C7C7CC;
+  --ink-section: #C7C7CC;
+  --ink-meta: #C7C7CC;
+
+  --accent: #8CC8FF;
+  --accent-soft: rgba(140, 200, 255, .16);
+  --accent-tag: rgba(140, 200, 255, .18);
+  --accent-ink: #000000;
+  --accent-fill: linear-gradient(180deg, #9ED2FF, #8CC8FF);
+  --neutral-soft: #2C2C2E;
+  --neutral-ink: #FFFFFF;
+  --chev: #AEAEB2;
+  --rec: #FF6B6B;
+  --rec-halo: rgba(255, 107, 107, .30);
+  --tab-ink: #C7C7CC;
+  --tab-on: #8CC8FF;
+  --tab-pill: rgba(140, 200, 255, .18);
+
+  --topic-product: #D3C4FF;  --topic-product-bg: #2E2550;
+  --topic-client: #8CEBD0;   --topic-client-bg: #12382F;
+  --topic-team: #FFC892;     --topic-team-bg: #3D2814;
+
+  --logo-1a: #5E9BFF; --logo-1b: #7DB2FF; --logo-2a: #8CC8FF; --logo-2b: #B5DDFF;
+  --home-a: #A9D6FF; --home-b: #8CC8FF;
+
+  --shadow-card: 0 0 0 1px #2C2C2E;
+  --shadow-soft: 0 0 0 1px #242426;
+  --shadow-float: 0 10px 30px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .08);
+}

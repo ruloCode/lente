@@ -83,7 +83,7 @@ One question, end to end: the clip sends 80 ms audio frames → the hub paces th
 | Storage | Append-only JSONL and JSON files in `data/` (git-ignored) | Readable, zero deps; long context + prompt caching instead of RAG | Vector DB/embeddings (generic pattern, extra dependency) |
 | Agents | Own two-phase loop (plan → approve → act), tool registry, JSONL traces | Small, auditable, approval enforced in code | Agent frameworks |
 | Extension | MCP server and client | Open standard; consent enforced in tool handlers | Plugin store |
-| Hosting | Laptop on LAN; Modal for always-on (spike first) | Credits available; same code with config | |
+| Hosting | Laptop on LAN; Modal for always-on (spike first) | Modal token set 2026-10-28; same code with config | |
 | Tooling | OpenSpec (specs and changes), `node --test`, `tsc --noEmit`, arduino-cli, GitHub Actions | Spec-driven work judges can follow | |
 
 ## 4. Interfaces
@@ -140,7 +140,7 @@ docs/           architecture, PROTOCOL, benchmarks, kb  firmware/, hardware/, op
 | Thu 29 | Finish `add-app-navigation` (1.2) and `add-evals` (stage timestamps, CI) | Numbers for the video from day one; CI green early |
 | Fri 30 | `add-record-only-mode`; motor on the clip when the hardware arrives (`add-addressed-to-you` 3.3) | Small, hub-side; episodes feed the agent's memory |
 | Sat 31 | `add-closing-agent` | Agentic bonus |
-| Sun 1 | `add-phone-capture` (WebSocket ingest, HTTPS), `add-fast-reply-lane` if Baseten keys hold | Lente without the clip; the ingest is reused by desktop mode |
+| Sun 1 | `add-phone-capture` (WebSocket ingest, HTTPS), `add-fast-reply-lane` (Baseten hackathon key set) | Lente without the clip; the ingest is reused by desktop mode |
 | Mon 2 | `add-glasses-mcp` or `add-desktop-mode`, full eval run, CI green | Extension surface or the judges' no-hardware path |
 | Tue 3 | Video, README, submission, X post | |
 | Wed 4 | Buffer | |

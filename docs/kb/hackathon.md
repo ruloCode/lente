@@ -86,6 +86,8 @@ Startups (USD 550k): 1st 250k · 2nd 150k · 3rd 75k · 4th 50k · 5th 25k.
 | Modal | USD 100 per team | Request form; up to 1,000 selected teams (the form says it is not first come, first served); needs a Modal workspace first | For open-weight models via Endpoints, GPUs, sandboxes |
 | Fireworks | USD 100 per team | Request form; shortlist of teams reviewed with Fireworks; email if selected | Workshop Fri Oct 30 (the guide raised this from USD 25) |
 
+Status (2026-10-28): every key a task needs is in `.env` (`pnpm auto --dry-run` lists them by name): `MODEL_API_KEY` (Meta), `BASETEN_API_KEY` (the hackathon key, carries the USD 100 credit) and `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (a Modal account token on the Starter plan, which includes USD 30 of compute a month; the hackathon credit is not confirmed). Fireworks has no key and no task needs it. Still to do by hand: each person claims the Meta USD 150 credit by Nov 4, 9 PM ET.
+
 ## Community
 
 Discord: `#announcements` (official), `#intros`, `#questions` (Cerebral Valley), `#office-hours` (Meta team), plus partner channels (Baseten, Modal, Fireworks).

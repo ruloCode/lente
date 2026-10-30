@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Lente · Reuniones</title>
+<script>
+  (() => { const p = new URLSearchParams(location.search).get("theme"); let s = null; try { s = localStorage.getItem("lente-theme"); } catch {}
+    document.documentElement.dataset.theme = p || s || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();
+</script>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<link rel="stylesheet" href="nav.css">
+<link rel="icon" href="assets/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+</head>
+<body>
+<main class="l-screen l-screen--cool" aria-label="Lente, Reuniones" data-listen-start="12:48">
+<div class="l-stage">
+
+  <div class="l-status" aria-hidden="true">
+    <span class="t">9:41</span>
+    <svg class="sig"><use href="#i-sig"/></svg><svg class="wifi"><use href="#i-wifi"/></svg><svg class="bat"><use href="#i-bat"/></svg>
+  </div>
+
+  <div class="l-scroll">
+    <div class="l-topbar" data-enter>
+      <button class="l-brand" data-theme-toggle aria-label="Lente. Cambiar entre modo claro y oscuro">
+        <svg viewBox="0 0 27 18" aria-hidden="true">
+          <defs>
+            <linearGradient id="b1" x1="0" x2="1"><stop offset="0" stop-color="#3E7BFA"/><stop offset="1" stop-color="#6FA6FD"/></linearGradient>
+            <linearGradient id="b2" x1="0" x2="1"><stop offset="0" stop-color="#7FD3F5"/><stop offset="1" stop-color="#7CE0E8"/></linearGradient>
+          </defs>
+          <circle cx="9" cy="9" r="8.6" fill="url(#b1)"/>
+          <circle cx="18" cy="9" r="8.6" fill="url(#b2)" fill-opacity=".85"/>
+        </svg>
+        <b>Lente</b>
+      </button>
+      <button class="l-avatar" data-menu-open aria-label="Abrir menú" aria-controls="menu" aria-expanded="false"><svg><use href="#i-person"/></svg></button>
+    </div>
+
+    <h1 class="l-title l-title--sm" data-enter>Reuniones</h1>
+
+    <label class="l-search" data-enter>
+      <svg class="ico"><use href="#i-search"/></svg>
+      <input type="search" placeholder="Buscar en títulos, notas y transcripciones" aria-label="Buscar reuniones">
+    </label>
+
+    <div class="l-chips" role="group" aria-label="Filtrar por tema" data-enter>
+      <button class="l-chip disp" data-topic="all" aria-pressed="true" style="--cp:17.65px">Todas</button>
+      <button class="l-chip disp" data-topic="product" aria-pressed="false" style="--cp:21px">Producto</button>
+      <button class="l-chip disp" data-topic="client" aria-pressed="false" style="--cp:21px">Clientes</button>
+      <button class="l-chip disp" data-topic="team" aria-pressed="false" style="--cp:21px">Equipo</button>
+    </div>
+
+    <div data-meetings>
+      <h2 class="l-section">HOY</h2>
+      <a class="l-mcard" href="asistir.html" data-topic="product" data-enter>
+        <span class="t disp">Fecha de lanzamiento con QA</span>
+        <span class="l-topic l-topic--product disp">Producto</span>
+        <span class="l-meta disp"><svg class="ico"><use href="#i-cal"/></svg>10:24–10:36 &nbsp;·&nbsp; 12 min</span>
+        <p class="l-sum disp">Se revisaron los últimos bloqueos y el plan para el lanzamiento.</p>
+        <svg class="ico l-chev"><use href="#i-chev"/></svg>
+      </a>
+      <a class="l-mcard" href="asistir.html" data-topic="product" data-enter>
+        <span class="t disp">Diseño de la experiencia móvil</span>
+        <span class="l-topic l-topic--product disp">Producto</span>
+        <span class="l-meta disp"><svg class="ico"><use href="#i-cal"/></svg>11:02–11:18 &nbsp;·&nbsp; 16 min</span>
+        <p class="l-sum disp" style="width:224px">Se discutieron los flujos de usuario y los próximos ajustes de UI.</p>
+        <svg class="ico l-chev"><use href="#i-chev"/></svg>
+      </a>
+      <h2 class="l-section">AYER</h2>
+      <a class="l-mcard" href="asistir.html" data-topic="client" data-enter>
+        <span class="t disp">Revisión del presupuesto Q4</span>
+        <span class="l-topic l-topic--client disp">Clientes</span>
+        <span class="l-meta disp"><svg class="ico"><use href="#i-cal"/></svg>16:20–16:42 &nbsp;·&nbsp; 22 min</span>
+        <p class="l-sum disp" style="width:226px">Se validaron las cifras finales y los próximos pasos con el cliente.</p>
+        <svg class="ico l-chev"><use href="#i-chev"/></svg>
+      </a>
+      <a class="l-mcard" href="asistir.html" data-topic="team" data-enter>
+        <span class="t disp">Retro del sprint</span>
+        <span class="l-topic l-topic--team disp">Equipo</span>
+        <span class="l-meta disp"><svg class="ico"><use href="#i-cal"/></svg>14:05–14:32 &nbsp;·&nbsp; 27 min</span>
+        <p class="l-sum disp">Se compartieron aprendizajes y se definieron acciones para el próximo sprint.</p>
+        <svg class="ico l-chev"><use href="#i-chev"/></svg>
+      </a>
+      <p class="l-section l-empty" hidden>Sin resultados. Prueba con otra palabra.</p>
+    </div>
+  </div>
+
+  <div class="l-dock">
+    <nav class="l-tabs l-glass" aria-label="Secciones principales">
+      <button class="l-menubtn" data-menu-open aria-label="Abrir menú" aria-controls="menu" aria-expanded="false"><svg class="ico"><use href="#i-menu"/></svg></button>
+      <i class="div" aria-hidden="true"></i>
+      <i class="l-pill"></i>
+      <a class="l-tab" href="asistir.html"><svg class="ico"><use href="#i-wave"/></svg><span>Ahora</span></a>
+      <a class="l-tab" href="reuniones.html" aria-current="page"><svg class="ico"><use href="#i-cal"/></svg><span>Reuniones</span></a>
+      <a class="l-tab" href="#"><svg class="ico"><use href="#i-ask"/></svg><span>Preguntar</span></a>
+      <a class="l-tab" href="#"><svg class="ico"><use href="#i-checkc"/></svg><b class="l-badge" aria-label="3 pendientes">3</b><span>Acciones</span></a>
+      <a class="l-tab" href="#"><svg class="ico"><use href="#i-brain"/></svg><b class="l-badge" aria-label="2 pendientes">2</b><span>Memoria</span></a>
+    </nav>
+  </div>
+</div>
+  <div class="l-scrim" aria-hidden="true"></div>
+  <aside class="l-drawer" id="menu" role="dialog" aria-modal="true" aria-label="Menú de Lente">
+    <div class="l-dhead" data-row><svg class="mark" aria-hidden="true"><use href="#i-logo"/></svg><b>Lente</b>
+      <button class="l-iconbtn" data-menu-close aria-label="Cerrar menú"><svg class="ico"><use href="#i-close"/></svg></button></div>
+    <div class="l-drawer-scroll">
+      <div class="l-live" data-row role="status"><span class="state"><i></i><span>Escuchando · 12:48</span></span><button class="l-pillbtn">Pausar</button></div>
+      <a class="l-device" href="#" data-row><img src="assets/clip-glasses@720.png" alt="" width="58" height="38"><span class="tx"><b>Clip Lente</b><span><svg class="ico"><use href="#i-ok"/></svg>Conectado</span></span><span class="bat" aria-label="Batería 82 por ciento">82 %</span></a>
+      <nav class="l-nav l-nav--main" aria-label="Secciones">
+        <a class="l-navrow" href="asistir.html" data-row><svg class="ico"><use href="#i-wave"/></svg><span class="lab">Ahora</span></a>
+        <a class="l-navrow" href="reuniones.html" aria-current="page" data-row><svg class="ico"><use href="#i-cal"/></svg><span class="lab">Reuniones</span></a>
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-ask"/></svg><span class="lab">Preguntar</span><span class="l-soon">Pronto</span></a>
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-checkc"/></svg><span class="lab">Acciones</span><span class="l-count" aria-label="3 pendientes">3</span></a>
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-brain"/></svg><span class="lab">Memoria</span><span class="l-count" aria-label="2 pendientes">2</span></a>
+      </nav>
+      <p class="l-dlabel" data-row>MÁS</p>
+      <nav class="l-nav" aria-label="Más">
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-agents"/></svg><span class="lab">Agentes</span><span class="l-soon">Pronto</span></a>
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-glasses"/></svg><span class="lab">Dispositivos</span></a>
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-gear"/></svg><span class="lab">Ajustes</span></a>
+        <a class="l-navrow" href="#" data-row><svg class="ico"><use href="#i-a11y"/></svg><span class="lab">Accesibilidad</span></a>
+      </nav>
+      <p class="l-dlabel" data-row>RECIENTES</p>
+      <a class="l-recent" href="reuniones.html" data-row><span class="lab">Fecha de lanzamiento con QA</span><time>10:24</time></a>
+      <a class="l-recent" href="reuniones.html" data-row><span class="lab">Diseño de la experiencia móvil</span><time>11:02</time></a>
+      <a class="l-recent" href="reuniones.html" data-row><span class="lab">Revisión del presupuesto Q4</span><time>Ayer</time></a>
+      <p class="l-dlabel" data-row>APARIENCIA</p>
+      <div class="l-seg" role="radiogroup" aria-label="Tema" data-row><i class="thumb"></i>
+        <button role="radio" data-mode="light" aria-checked="false"><svg class="ico"><use href="#i-sun"/></svg>Claro</button>
+        <button role="radio" data-mode="dark" aria-checked="false"><svg class="ico"><use href="#i-moon"/></svg>Oscuro</button>
+        <button role="radio" data-mode="auto" aria-checked="false"><svg class="ico"><use href="#i-auto"/></svg>Auto</button></div>
+    </div>
+  </aside>
+</main>
+<script src="lente-kit.js"></script>
+<script src="lente-nav.js"></script>
+</body>
+</html>

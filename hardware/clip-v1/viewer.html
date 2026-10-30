@@ -93,6 +93,12 @@
   .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .toggles input { accent-color: var(--accent); }
 
+  .dl { margin: 16px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .dl h3 { margin: 0 0 8px; font: 600 15px/1.2 var(--font-body); }
+  .dl a { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-top: 8px; border-radius: 10px; background: var(--accent-soft); color: var(--ink); text-decoration: none; font: 500 14px/1.3 var(--font-body); min-height: 24px; }
+  .dl a:hover, .dl a:focus-visible { outline: 2px solid var(--accent); }
+  .dl small { color: var(--muted); display: block; font-weight: 400; }
+  .dl .num { font: 500 13px/1.3 var(--font-mono); white-space: nowrap; }
   aside {
     background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; min-height: 0;
     padding-block: 16px 24px; padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-left: 16px;
@@ -190,6 +196,7 @@
   <aside>
     <div class="detail" id="detail" aria-live="polite"></div>
     <div id="groups"></div>
+    <section class="dl" id="dl" aria-label="Archivos para imprimir"></section>
     <p class="foot">Generado por <code>hardware/clip-v1/clip.py</code>. Cambia las medidas ahí y vuelve a correrlo: el STL, este visor y las cifras salen del mismo modelo.</p>
   </aside>
 </main>
@@ -210,7 +217,7 @@ const $ = (id) => document.getElementById(id);
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-const GROUPS = { print: "Se imprime", elec: "Electrónica", hud: "HUD · opcional", ref: "Referencia" };
+const GROUPS = { print: "Se imprime", elec: "Electrónica", hw: "Tornillería", hud: "HUD · opcional", ref: "Referencia" };
 const mm = (...v) => v.join(" × ") + " mm";
 
 // Explode offsets are in model axes (mm): X forward, Y outward from the head, Z up.
@@ -219,7 +226,7 @@ function partsFrom(d) {
   return [
     { id: "shell_base", group: "print", nodes: ["shell_base"], color: "#3a3f47", name: "Carcasa",
       size: mm(...o), src: `~${Math.round(d.shell_mass_g_pla_100pct)} g con la tapa, en PLA`,
-      note: "Base impresa: canal de 7 mm para la patilla, ventana del USB-C en el piso y ranuras para dos bandas de silicona.", explode: [0, 0, 0] },
+      note: "Base impresa: canal para la patilla con costilla fija arriba y dos bloques roscados abajo (tornillos M3 de ajuste, sin amarres), ventana del USB-C y ranura del interruptor en el piso.", explode: [0, 0, 0] },
     { id: "shell_lid", group: "print", nodes: ["shell_lid"], color: "#4a505a", name: "Tapa",
       size: `${o[0]} × ${o[1]} mm`, src: "Se imprime con la cara exterior contra la cama",
       note: "Tres rejillas sobre la XIAO: la placa se calienta cuando transmite video.", explode: [0, 0, 44] },
@@ -235,15 +242,18 @@ function partsFrom(d) {
     { id: "antenna", group: "elec", nodes: ["antenna"], color: "#c08a2c", name: "Antena 2.4 GHz",
       size: mm(p.antenna[0], p.antenna[1]) + " · por confirmar", src: "Viene con la placa, conector U.FL",
       note: "Va pegada bajo la tapa. Sin ella el Wi-Fi no alcanza para mandar video.", explode: [0, 0, 36] },
-    { id: "battery", group: "elec", nodes: ["battery"], color: "#c4c8ce", name: "Batería LiPo 502030",
-      size: mm(p.battery[0], p.battery[2], p.battery[1]) + " · ~250 mAh", src: "Nominal · con placa de protección",
+    { id: "battery", group: "elec", nodes: ["battery"], color: "#c4c8ce", name: "Batería LiPo 502540",
+      size: "Bahía de " + mm(p.battery[0], p.battery[2], p.battery[1]) + " · ~550 mAh", src: "Cabe también la BATLI 400 mAh de Sigma (35 × 20 × 6) · con placa de protección",
       note: "Contra la patilla, del lado de tu cabeza. Se suelda a los pads de batería de la XIAO, que la carga.", explode: [-4, -16, 2] },
     { id: "motor", group: "elec", nodes: ["motor"], color: "#9aa0a8", name: "Vibrador de moneda",
       size: `Ø${p.motor[0]} × ${p.motor[1]} mm`, src: "Nominal · con transistor S8050 y diodo",
       note: "Te avisa con un zumbido cuando alguien te habla a ti, antes de que mires la tarjeta.", explode: [0, 16, 18] },
     { id: "switch", group: "elec", nodes: ["switch", "switch_lever"], color: "#1b1c20", name: "Interruptor SS12D00",
       size: mm(...p.switch), src: "Nominal",
-      note: "Corta la batería. La palanca sale por el piso del clip.", explode: [0, 16, 2] },
+      note: "Va en serie con el positivo de la batería: batería + al pin del centro, un pin de extremo al pad BAT+ de la XIAO. La palanca sale por el piso del clip. Con el interruptor apagado el USB no carga.", explode: [0, 16, 2] },
+    { id: "pin", group: "hw", nodes: ["pin_screw_1", "pin_head_1", "pin_screw_2", "pin_head_2"], color: "#c9ced3", name: "Tornillos de ajuste M3 × 16 (2)",
+      size: `Patillas de ${d.clamp_pin.temple_height_mm[0]} a ${d.clamp_pin.temple_height_mm[1]} mm de alto`, src: "Rosca directa en el plástico, sin tuerca",
+      note: "Suben por un bloque bajo el canal y empujan el borde de abajo de la patilla contra la costilla fija. Girándolos, el mismo clip se ajusta a cualquier gafa sin amarres.", explode: [0, 0, -24] },
     { id: "hud_arm", group: "hud", nodes: ["hud_arm"], color: "#3a3f47", name: "Brazo HUD",
       size: `~${d.hud_arm_mass_g_pla_100pct} g en PLA`, src: "Segunda impresión, independiente del clip",
       note: "Se engancha a la patilla delante del clip y pasa por fuera de la bisagra hasta la esquina exterior del lente.", explode: [10, 0, 0] },
@@ -258,8 +268,17 @@ function partsFrom(d) {
       note: "Refleja el texto hacia tu ojo y deja ver a través. La óptica es un concepto sin validar.", explode: [10, -22, 0] },
     { id: "glasses", group: "ref", nodes: ["temple_right", "temple_left", "hinge", "frame", "lens_right", "lens_left"], color: "#121214",
       name: "Gafas", size: "Montura genérica de 140 mm", src: "Solo referencia, no se imprime",
-      note: "Cualquier gafa con patilla de hasta 7 mm de alto.", explode: [0, 0, 0] },
+      note: "Cualquier gafa con patilla de 2 a 10 mm de alto (el brazo HUD solo agarra patillas de unos 6 mm).", explode: [0, 0, 0] },
   ];
+}
+
+function renderDownloads(d) {
+  const files = [["clip-base", "Base", "Se imprime con la cara abierta hacia arriba"], ["clip-lid", "Tapa", "Se imprime con la cara plana contra la cama"]];
+  if (version === "hud") files.push(["hud-arm", "Brazo HUD", "Opcional, segunda impresión"]);
+  const board = d.parts.xiao_stack;
+  $("dl").innerHTML = `<h3>Descargar para imprimir</h3>` + files.map(([f, name, how]) =>
+    `<a href="out/${f}.stl" download><span>${name}<small>${how}</small></span><span class="num">${d.stl_mm[f].join(" × ")} mm</span></a>`).join("") +
+    `<p class="foot" style="margin-top:12px">Diseñado para la XIAO ESP32-S3 Sense (${board[0]} × ${board[1]} mm con la placa Sense y la cámara). Capa de 0.12 a 0.16 mm, relleno al 100 %, sin soportes. Los tornillos de ajuste son M3 × 16 mm.</p>`;
 }
 
 const renderer = new THREE.WebGLRenderer({ canvas: $("c"), antialias: true });
@@ -596,6 +615,7 @@ try {
   for (const b of document.querySelectorAll("[data-version]")) b.setAttribute("aria-pressed", String(b.dataset.version === version));
   $("v-hud").hidden = version === "simple";
   renderStats(dims);
+  renderDownloads(dims);
   renderList();
   renderDetail();
   resize();

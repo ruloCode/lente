@@ -1,21 +1,57 @@
 {
   "outer_mm": [
-    49.8,
+    57.8,
     21.6,
-    26.2
+    30.7
   ],
-  "tail_width_mm": 13.0,
-  "shell_volume_cm3": 7.09,
-  "shell_mass_g_pla_100pct": 8.8,
+  "tail_width_mm": 15.4,
+  "stl_mm": {
+    "clip-base": [
+      57.8,
+      25.6,
+      29.1
+    ],
+    "clip-lid": [
+      57.5,
+      21.3,
+      3.1
+    ],
+    "hud-arm": [
+      40.0,
+      21.0,
+      14.0
+    ]
+  },
+  "shell_volume_cm3": 9.74,
+  "shell_mass_g_pla_100pct": 12.1,
   "hud_arm_mass_g_pla_100pct": 2.5,
   "camera_center_yz": [
     10.8,
-    14.3
+    18.3
   ],
   "temple_channel": {
     "width": 7.0,
     "depth": 3.0,
-    "center_z": 14.3
+    "center_z": 18.3
+  },
+  "clamp_pin": {
+    "screw": "M3 x 16 mm",
+    "temple_height_mm": [
+      2.0,
+      10.0
+    ],
+    "block_x_mm": [
+      [
+        10.0,
+        18.0
+      ],
+      [
+        34.0,
+        42.0
+      ]
+    ],
+    "top_rib_z_mm": 21.5,
+    "block_top_z_mm": 11.5
   },
   "parts": {
     "xiao_stack": [
@@ -24,8 +60,8 @@
       15.0
     ],
     "camera": [
-      8.5,
-      8.5
+      9.0,
+      9.0
     ],
     "usb_c": [
       8.9,
@@ -33,9 +69,9 @@
       7.3
     ],
     "battery": [
-      33.0,
-      5.2,
-      20.0
+      40.0,
+      7.5,
+      25.0
     ],
     "motor": [
       10.0,

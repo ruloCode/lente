@@ -1,0 +1,139 @@
+{
+  "outer_mm": [
+    78.2,
+    27.0,
+    33.8
+  ],
+  "tail_width_mm": 15.1,
+  "head_mm": [
+    10.8,
+    27.0
+  ],
+  "lens_bezel_mm": 2.42,
+  "stl_mm": {
+    "clip-base": [
+      80.6,
+      31.0,
+      32.2
+    ],
+    "clip-lid": [
+      77.8,
+      26.7,
+      3.1
+    ],
+    "hud-arm": [
+      37.6,
+      21.0,
+      14.0
+    ]
+  },
+  "shell_volume_cm3": 14.51,
+  "shell_mass_g_pla_100pct": 18.0,
+  "hud_arm_mass_g_pla_100pct": 2.4,
+  "camera_center_yz": [
+    13.5,
+    19.0
+  ],
+  "camera_below_temple_mm": 0.0,
+  "ports": {
+    "charger_usb_c_x": 57.1,
+    "pi_otg_x": 43.2,
+    "microsd": "back wall"
+  },
+  "switch": {
+    "where": "top, back, lever through the lid",
+    "center_xy": [
+      7.7,
+      5.05
+    ],
+    "travel_mm": 2.0
+  },
+  "temple_channel": {
+    "width": 7.0,
+    "depth": 3.0,
+    "center_z": 19.0
+  },
+  "clamp_pin": {
+    "screw": "M3 x 16 mm",
+    "temple_height_mm": [
+      2.0,
+      10.0
+    ],
+    "block_x_mm": [
+      [
+        10.0,
+        18.0
+      ],
+      [
+        34.0,
+        42.0
+      ]
+    ],
+    "top_rib_z_mm": 22.2,
+    "block_top_z_mm": 12.2
+  },
+  "parts": {
+    "pi": [
+      65.0,
+      30.0
+    ],
+    "camera": [
+      25.0,
+      23.862,
+      11.3
+    ],
+    "battery": [
+      43.0,
+      5.2,
+      25.0
+    ],
+    "charger": [
+      17.0,
+      25.0,
+      1.0
+    ],
+    "boost": [
+      20.0,
+      12.0,
+      3.0
+    ],
+    "mic": [
+      14.0,
+      14.0,
+      3.0
+    ],
+    "motor": [
+      10.0,
+      2.7
+    ],
+    "switch": [
+      8.6,
+      3.5,
+      4.0
+    ],
+    "usb_c": [
+      8.9,
+      3.3,
+      7.3
+    ],
+    "micro_b": [
+      7.5,
+      2.7,
+      5.0
+    ],
+    "oled": [
+      38.0,
+      3.5,
+      12.0
+    ],
+    "magnifier": [
+      11.0,
+      2.0
+    ],
+    "combiner": [
+      13.0,
+      1.5,
+      9.0
+    ]
+  }
+}

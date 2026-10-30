@@ -1,6 +1,6 @@
 # Lente clip v0
 
-> **Superseded by [clip v1](clip-v1/)** (2026-10-27), built around the Seeed XIAO ESP32-S3 Sense: 49.8 × 21.6 × 26.2 mm, camera, microphone and charging on one board. Open `clip-v1/viewer.html` (served over HTTP) for the interactive 3D model and exploded view. This page documents v0.
+> **Superseded by [clip v1](clip-v1/)** (2026-10-27), built around the Seeed XIAO ESP32-S3 Sense: 49.8 × 21.6 × 26.2 mm, camera, microphone and charging on one board. Open `clip-v1/viewer.html` (served over HTTP) for the interactive 3D model and exploded view. **[Clip v3](clip-v3/)** (2026-10-29) follows the first working bench rig: both USB-C ports (XIAO and a 1S charger) at the bottom, the switch at the top of the back wall. **[Clip Pi](clip-pi/)** (2026-10-29) packs a Raspberry Pi Zero W and a Camera Module 3 (12 MP, autofocus) for a sharper camera. This page documents v0.
 
 A pod that straps to the temple of **any** pair of glasses: a forward-facing camera at eye level, a microphone, a vibration motor for silent cues, and a battery. Built from parts you can buy in Bogotá this week, modelled at their real dimensions.
 

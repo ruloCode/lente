@@ -38,6 +38,7 @@
 #define MOTOR_PIN D0   // vibration motor through an S8050 transistor (high = on); nothing happens if it is not fitted yet
 #define MOTOR_PULSE_MS 300
 #define BUTTON_PIN 0   // BOOT button, free to use once running
+#define CAMERA_ROTATE_180 1  // 1 for the v3 case (XIAO upside down); 0 for the v1 case
 
 static const size_t AUDIO_FRAME_SAMPLES = 1280;  // 80 ms at 16 kHz
 
@@ -96,7 +97,15 @@ static bool initCamera() {
   c.fb_count = 1;
   c.fb_location = CAMERA_FB_IN_PSRAM;
   c.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // only capture when asked: no overflow warnings
-  return esp_camera_init(&c) == ESP_OK;
+  if (esp_camera_init(&c) != ESP_OK) return false;
+  // The v3 case holds the XIAO upside down, so the picture comes out turned 180 degrees. Flipping
+  // both axes against the sensor's defaults turns it back, and the models get it upright too.
+  sensor_t *s = esp_camera_sensor_get();
+  if (CAMERA_ROTATE_180 && s) {
+    s->set_vflip(s, !s->status.vflip);
+    s->set_hmirror(s, !s->status.hmirror);
+  }
+  return true;
 }
 
 // Starting the sensor takes a moment and its first frames are dark while exposure settles.

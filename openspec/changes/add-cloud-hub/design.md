@@ -2,7 +2,7 @@
 
 ## Context
 
-The hub is a single Node process with TCP (clip) and HTTP/SSE (phone). Cloud platforms generally expose HTTP(S) and WebSocket ingress, not raw TCP. Whether Modal's web endpoints support long-lived WebSocket and SSE connections for a custom Node container, and how its volumes behave across deploys, is **not yet verified**: task 1.1 is a spike that settles it before anything else is built. MentraOS's audio path (primary transport plus a WebSocket fallback with the same server code) informed the "same frames, two transports" choice.
+The hub is a single Node process with TCP (clip) and HTTP/SSE (phone). Cloud platforms generally expose HTTP(S) and WebSocket ingress, not raw TCP. Whether Modal's web endpoints support long-lived WebSocket and SSE connections for a custom Node container, and how its volumes behave across deploys, is **not yet verified**: task 1.1 is a spike that settles it before anything else is built. A Modal token (`MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`) is in `.env` and the Modal CLI is set up on the author's laptop since 2026-10-28; the account is on the Starter plan, so cap spending with a workspace budget. MentraOS's audio path (primary transport plus a WebSocket fallback with the same server code) informed the "same frames, two transports" choice.
 
 ## Goals / Non-Goals
 
