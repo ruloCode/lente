@@ -6,8 +6,8 @@ Depends on: `add-agent-harness`
 
 - [x] 1.1 `docs/kb/claude-managed-agents.md`: endpoints, headers, agent, environment, repository resource, budget, stop reasons, cost and the key rule, from the official docs; linked from `docs/kb/README.md`
 - [ ] 1.2 Owner: rotate the Claude Platform key in the Console and write the new one to `~/.config/lente/anthropic-cloud.key` (mode 600); create a fine-grained GitHub token with `Contents: Read` on `ruloCode/lente` only into `~/.config/lente/github-read.token`; note the workspace id from the Console URL [human]
-- [ ] 1.3 `scripts/auto/cloud.ts` as pure code with tests (`node --test test/cloud.test.ts`): agent, environment and session bodies, budget in cents, event reducer (status, stop reason, tool names, list cost), patch path check against the guard policy
-- [ ] 1.4 `pnpm auto:cloud-setup` creates or updates the agent and environment and records ids in `data/auto/cloud.json`; `--dry-run` prints the bodies with no key; verify with a fake `fetch` in tests that a second run updates instead of creating
+- [x] 1.3 `scripts/auto/cloud.ts` as pure code with tests (`node --test test/cloud.test.ts`): agent, environment and session bodies, budget in cents, event reducer (status, stop reason, tool names, list cost), patch path check against the guard policy
+- [x] 1.4 `pnpm auto:cloud-setup` creates or updates the agent and environment and records ids in `data/auto/cloud.json`; `--dry-run` prints the bodies with no key; verify with a fake `fetch` in tests that a second run updates instead of creating
 
 ## 2. Runner
 
