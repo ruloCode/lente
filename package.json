@@ -24,6 +24,7 @@
     "smoke": "node scripts/smoke.ts",
     "progress": "node scripts/progress/serve.ts",
     "auto": "node scripts/auto/run.ts",
+    "auto:cloud-setup": "node scripts/auto/cloud-setup.ts",
     "stub": "node scripts/stub-serve.ts",
     "android:build": "cd android && ./gradlew assembleDebug --console=plain -q",
     "android:test": "cd android && ./gradlew testDebugUnitTest --console=plain -q",
