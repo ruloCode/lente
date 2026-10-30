@@ -33,6 +33,7 @@ import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
 import { DeviceAuth, SESSION_COOKIE, cookieValue, deviceTokenOf } from "./device-auth.ts";
 import { HealthTracker } from "./health.ts";
 import { PAIR_PAGE } from "./pair-page.ts";
+import { decideUpgrade, decideWeb } from "./access-gate.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -1123,29 +1124,33 @@ function healthReport() {
 /** Web gate: /health, and on a cloud hub TLS and pairing. Returns true when the request was answered here. */
 async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const path = req.url?.split("?")[0];
-  if (path === "/health" && req.method === "GET") {
-    const report = healthReport();
-    res.writeHead(report.ok ? 200 : 503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    res.end(JSON.stringify(report));
-    return true;
+  const paired = Boolean(auth?.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE)));
+  switch (decideWeb({ method: req.method, path, plainHttp: plainHttp(req), paired }, Boolean(auth))) {
+    case "health": {
+      const report = healthReport();
+      res.writeHead(report.ok ? 200 : 503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(report));
+      return true;
+    }
+    case "pass":
+      return false;
+    case "redirect-https":
+      res.writeHead(308, { Location: `https://${req.headers.host ?? ""}${req.url}` }).end();
+      return true;
+    case "pair": {
+      const { code } = JSON.parse((await readBody(req)) || "{}") as { code?: string };
+      const token = typeof code === "string" ? auth?.pair(code) : undefined;
+      if (!token) res.writeHead(403, { "Cache-Control": "no-store" }).end();
+      else res.writeHead(204, { "Set-Cookie": `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=31536000` }).end();
+      return true;
+    }
+    case "pair-page":
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(PAIR_PAGE);
+      return true;
+    default:
+      res.writeHead(401, { "Cache-Control": "no-store" }).end();
+      return true;
   }
-  if (!auth) return false;
-  if (plainHttp(req)) {
-    res.writeHead(308, { Location: `https://${req.headers.host ?? ""}${req.url}` }).end();
-    return true;
-  }
-  if (auth.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE))) return false;
-  if (req.method === "POST" && path === "/pair") {
-    const { code } = JSON.parse((await readBody(req)) || "{}") as { code?: string };
-    const token = typeof code === "string" ? auth.pair(code) : undefined;
-    if (!token) res.writeHead(403, { "Cache-Control": "no-store" }).end();
-    else res.writeHead(204, { "Set-Cookie": `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=31536000` }).end();
-    return true;
-  }
-  // Unpaired: the pairing screen and nothing else.
-  if (req.method === "GET" && path === "/") res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(PAIR_PAGE);
-  else res.writeHead(401, { "Cache-Control": "no-store" }).end();
-  return true;
 }
 
 const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -1288,12 +1293,18 @@ if (Boolean(TLS_CERT) !== Boolean(TLS_KEY)) {
 }
 const web = TLS_CERT && TLS_KEY ? createHttpsServer({ cert: readFileSync(TLS_CERT), key: readFileSync(TLS_KEY) }, handleWeb) : createHttpServer(handleWeb);
 web.on("upgrade", (req, raw, head) => {
-  if (req.url?.split("?")[0] !== DEVICE_WS_PATH) return void raw.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
-  if (auth) {
-    if (plainHttp(req)) return void raw.end("HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\n\r\n");
-    const known = auth.checkDevice(deviceTokenOf(req.headers, req.url)) || auth.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE));
-    if (!known) return void raw.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-  }
+  const status = decideUpgrade(
+    {
+      path: req.url?.split("?")[0],
+      plainHttp: plainHttp(req),
+      deviceKnown: Boolean(auth?.checkDevice(deviceTokenOf(req.headers, req.url ?? ""))),
+      paired: Boolean(auth?.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE))),
+    },
+    DEVICE_WS_PATH,
+    Boolean(auth),
+  );
+  const refusals: Record<number, string> = { 401: "Unauthorized", 404: "Not Found", 426: "Upgrade Required" };
+  if (status !== 200) return void raw.end(`HTTP/1.1 ${status} ${refusals[status]}\r\nConnection: close\r\n\r\n`);
   const socket = acceptDevice(req, raw, head);
   if (!socket) return;
   webDevices.add(socket);
