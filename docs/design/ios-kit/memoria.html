@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Lente · Memoria</title>
+<script>
+  // Theme before first paint (same rule as lente-kit.js); reduced motion chosen in Accesibilidad.
+  (() => { const p = new URLSearchParams(location.search).get("theme"); let s = null, d = null; try { s = localStorage.getItem("lente-theme"); d = JSON.parse(localStorage.getItem("lente-demo-v1") || "{}"); } catch {}
+    document.documentElement.dataset.theme = p || s || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    if (d?.settings?.["reduce-motion"]) document.documentElement.classList.add("reduce-motion"); })();
+</script>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="components.css">
+<link rel="stylesheet" href="nav.css">
+<link rel="stylesheet" href="pages.css">
+<link rel="icon" href="assets/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+</head>
+<body>
+<main class="l-screen" data-page="memoria" data-tab="memoria" aria-label="Lente, Memoria">
+<div class="l-stage">
+  <div class="l-page" id="page"></div>
+</div>
+</main>
+<script src="lente-kit.js"></script>
+<script src="lente-data.js"></script>
+<script src="lente-shell.js"></script>
+<script src="lente-pages.js"></script>
+<script src="lente-nav.js"></script>
+</body>
+</html>

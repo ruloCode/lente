@@ -63,19 +63,29 @@ const FACTS_KNOWN = {
 };
 const GLOSSARY = ["sign off", "rollout", "code freeze", "forecast", "deadline", "onboarding"];
 
+// Tu equipo: the lead (Lente) first. `look` picks the character drawn in lente-pages.js.
 const AGENTS = [
-  { id: "constructor", name: "Constructor", where: "Nube", whereIcon: "i-cloud", sub: "Claude Managed Agents", task: "add-meeting-library 2.1", status: "work", mins: "14 min", cost: "US$1.20",
+  { id: "lente", name: "Lente", look: "lead", lead: true, role: "Reparte el trabajo y te avisa", where: "Teléfono", whereIcon: "i-phone", sub: "Este teléfono", task: "Coordina a 5 agentes", status: "work", when: "ahora", mins: "—", cost: "US$0.04",
+    progress: "Tengo a Constructor y a Investigador trabajando; Despliegue espera tu permiso.", remaining: "Que apruebes la publicación y que tu Mac vuelva a conectarse.",
+    log: [["agent", "Hoy repartí 4 encargos. Te aviso solo cuando algo necesite tu permiso."]] },
+  { id: "constructor", name: "Constructor", look: "builder", role: "Escribe código", where: "Nube", whereIcon: "i-cloud", sub: "Claude Managed Agents", task: "add-meeting-library 2.1", status: "work", when: "hace 2 min", mins: "14 min", cost: "US$1.20",
+    progress: "Terminé la búsqueda de reuniones; 212 pruebas pasan.", remaining: "El detalle de reunión: unos 20 minutos.",
     log: [["user", "Construye el grupo 2 de add-meeting-library."], ["tool", "Leyó openspec/changes/add-meeting-library/tasks.md"], ["agent", "Voy con la búsqueda de reuniones; primero el texto plano, sin acentos."], ["tool", "Editó src/meetings.ts (+48 −6)"], ["tool", "Corrió pnpm test · 212 pasaron"], ["diff", "+ export function searchMeetings(q) {\n+   const k = fold(q);\n+   return meetings.filter((m) => fold(m.text).includes(k));\n+ }\n- export function search(q) { return []; }"], ["agent", "Listo: la búsqueda ignora acentos y mayúsculas. ¿Sigo con el detalle de reunión?"]] },
-  { id: "investigador", name: "Investigador", where: "Nube", whereIcon: "i-cloud", sub: "Claude Managed Agents", task: "Resume las juntas de octubre", status: "work", mins: "1 h 03", cost: "US$1.87",
+  { id: "investigador", name: "Investigador", look: "scout", role: "Lee y resume", where: "Nube", whereIcon: "i-cloud", sub: "Claude Managed Agents", task: "Resume las juntas de octubre", status: "work", when: "hace 6 min", mins: "1 h 03", cost: "US$1.87",
+    progress: "Llevo 6 de 9 reuniones resumidas.", remaining: "3 reuniones y armar la página: unos 15 minutos.",
     log: [["user", "Resume las juntas de octubre en una página."], ["tool", "Leyó 9 reuniones"], ["agent", "Llevo 6 de 9. Tema común: fecha de lanzamiento y presupuesto de QA."]] },
-  { id: "code", name: "Claude Code", where: "Este Mac", whereIcon: "i-laptop", sub: "~/dev/side/lente", task: "Arreglar test de pausa", status: "ask", mins: "47 min", cost: "US$0.96",
+  { id: "code", name: "Claude Code", look: "coder", role: "Trabaja en tu Mac", where: "Este Mac", whereIcon: "i-laptop", sub: "~/dev/side/lente", task: "Arreglar test de pausa", status: "ask", offline: true, when: "hace 47 min", mins: "47 min", cost: "US$0.96",
+    progress: "Encontré por qué falla el test de pausa: usa 15 min y el umbral es 20.", remaining: "Que me digas si cambio el test o el umbral.",
     log: [["user", "Arregla el test de pausa automática."], ["tool", "Corrió pnpm test · 211 pasaron, 1 falló: idle-pause.test.ts"], ["agent", "El test usa 15 min y el umbral es 20. ¿Cambio el test o el umbral?"]] },
-  { id: "deploy", name: "Despliegue", where: "VPS", whereIcon: "i-server", sub: "vps-1 · Fráncfort", task: "Publicar v0.9 en producción", status: "perm", mins: "3 h 26", cost: "US$0.40",
+  { id: "deploy", name: "Despliegue", look: "launcher", role: "Publica versiones", where: "VPS", whereIcon: "i-server", sub: "vps-1 · Fráncfort", task: "Publicar v0.9 en producción", status: "perm", when: "hace 3 min", mins: "3 h 26", cost: "US$0.40",
+    progress: "La versión 0.9 pasó CI y está lista.", remaining: "Tu permiso para publicar: reinicia el hub 10 segundos.",
     log: [["agent", "La rama main pasó CI. Listo para publicar v0.9."], ["tool", "docker build … done"], ["perm", "Quiere publicar v0.9 en producción. Efecto: reinicia el hub (10 s sin escuchar)."]] },
-  { id: "voz", name: "Asistente de voz", where: "Teléfono", whereIcon: "i-phone", sub: "Este teléfono", task: "En pausa", status: "idle", mins: "—", cost: "US$0.00",
+  { id: "voz", name: "Voz", look: "voice", role: "Te escucha por el clip", where: "Teléfono", whereIcon: "i-phone", sub: "Este teléfono", task: "En pausa", status: "idle", when: "hace 1 h", mins: "—", cost: "US$0.00",
+    progress: "Estoy en pausa.", remaining: "Nada: di «Lente, …» cuando me necesites.",
     log: [["agent", "En pausa. Di «Lente, …» para preguntarme algo."]] },
 ];
-const STATUS = { work: ["Trabajando", "i-spin"], ask: ["Te pregunta", "i-hand"], perm: ["Pide permiso", "i-hand"], idle: ["En pausa", "i-pause"], done: ["Listo", "i-ok"] };
+const STATUS = { work: ["Trabajando", "i-spin"], ask: ["Te pregunta", "i-hand"], perm: ["Pide permiso", "i-hand"], idle: ["En pausa", "i-pause"], done: ["Listo", "i-ok"], offline: ["Sin conexión", "i-offline"] };
+const TEAM_SUGGESTED = ["¿En qué vas?", "¿Qué te falta?"];
 
 const ANSWERS = [
   { match: /promet|ana|ventas/i, text: "Le prometiste a Ana mandar los números de ventas antes del viernes, y confirmaste que el lanzamiento queda para el 14 si QA aprueba el lunes.", cites: [["qa", 5, "Fecha de lanzamiento · 10:31"], ["qa", 4, "Fecha de lanzamiento · 10:29"]] },
@@ -89,7 +99,7 @@ const SUGGESTED = ["¿Qué le prometí a Ana?", "¿Cuándo es el lanzamiento?", 
 const Demo = {
   s: (() => { try { return JSON.parse(localStorage.getItem(DEMO_KEY)) || {}; } catch { return {}; } })(),
   save() { try { localStorage.setItem(DEMO_KEY, JSON.stringify(this.s)); } catch {} },
-  get(key, id) { return (this.s[key] || {})[id]; },
+  get(key, id) { const o = this.s[key]; return o && Object.hasOwn(o, id) ? o[id] : undefined; },   // own keys only: an id like "constructor" must not hit Object.prototype
   set(key, id, v) { (this.s[key] ||= {})[id] = v; this.save(); document.dispatchEvent(new CustomEvent("lente:demo")); },
   reset() { this.s = {}; this.save(); },
   pendingActions() { return ACTIONS.filter((a) => !this.get("actions", a.id)).length; },

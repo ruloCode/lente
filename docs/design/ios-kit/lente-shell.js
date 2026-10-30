@@ -17,7 +17,7 @@ const MENU_MAIN = [
   ["acciones.html", "i-checkc", "Acciones", "acciones", () => Demo.pendingActions()], ["memoria.html", "i-brain", "Memoria", "memoria", () => Demo.pendingFacts()],
 ];
 const MENU_MORE = [
-  ["agentes.html", "i-agents", "Agentes", "agentes", () => Demo.pendingAgents()], ["dispositivos.html", "i-glasses", "Dispositivos", "dispositivos"],
+  ["agentes.html", "i-agents", "Tu equipo", "agentes", () => Demo.pendingAgents()], ["dispositivos.html", "i-glasses", "Dispositivos", "dispositivos"],
   ["ajustes.html", "i-gear", "Ajustes", "ajustes"], ["accesibilidad.html", "i-a11y", "Accesibilidad", "accesibilidad"],
 ];
 
@@ -27,6 +27,7 @@ if (!shellStage.querySelector(".l-status")) shellStage.insertAdjacentHTML("after
   `<div class="l-status" aria-hidden="true"><span class="t">9:41</span><svg class="sig"><use href="#i-sig"/></svg><svg class="wifi"><use href="#i-wifi"/></svg><svg class="bat"><use href="#i-bat"/></svg></div>`);
 
 if (CHROME !== "none") {
+  shellStage.insertAdjacentHTML("beforeend", `<div class="l-topfade" aria-hidden="true"></div>`);
   const back = shellScreen.dataset.back;
   shellStage.insertAdjacentHTML("beforeend", back
     ? `<a class="l-fab l-glass" href="${back}" aria-label="Volver">${ico("i-back")}</a>`

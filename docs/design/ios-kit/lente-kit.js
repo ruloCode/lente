@@ -39,6 +39,30 @@ const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden=
 <symbol id="i-auto" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.6"/><path d="M10 2.4v15.2A7.6 7.6 0 0 0 10 2.4Z" fill="currentColor"/></symbol>
 <symbol id="i-a11y" viewBox="0 0 24 24"><circle cx="12" cy="4.4" r="1.8" fill="currentColor"/><path d="M4.5 8.4c2.5.8 5 1.2 7.5 1.2s5-.4 7.5-1.2M12 9.6v4.6M12 14.2l-3.4 6.6M12 14.2l3.4 6.6"/></symbol>
 <symbol id="i-ok" viewBox="0 0 14 14"><path d="M2.5 7.4l2.8 2.8 6.2-6.6"/></symbol>
+<symbol id="i-back" viewBox="0 0 20 20"><path d="M12.5 3.5 6 10l6.5 6.5"/></symbol>
+<symbol id="i-down" viewBox="0 0 20 20"><path d="M4 7.5l6 6 6-6"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="2.8" y="5" width="18.4" height="14" rx="3"/><path d="M3.5 7l8.5 6 8.5-6"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2H4.4Z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.5 9.6 4.5 4.5 0 0 0 7 18.5Z"/></symbol>
+<symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2.5 19h19"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="7" rx="2"/><rect x="3.5" y="13" width="17" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01" stroke-width="2.6"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.8"/><path d="M10.5 18h3"/></symbol>
+<symbol id="i-spin" viewBox="0 0 14 14"><path d="M7 1.6a5.4 5.4 0 1 1-5.2 4"/></symbol>
+<symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11M11 10.5V4a1.5 1.5 0 0 1 3 0v6.5M14 10.5V5.5a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6.2 7-2.4 0-4-1.2-5.4-3.2L3.6 14a1.5 1.5 0 0 1 2.5-1.6L8 15"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3.5v11M8 7.5l4-4 4 4"/><path d="M6.5 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13h9l1-13M10 10.5v6M14 10.5v6"/></symbol>
+<symbol id="i-send" viewBox="0 0 20 20"><path d="M10 16V4.5M5 9l5-5 5 5" stroke-width="2.2"/></symbol>
+<symbol id="i-mic" viewBox="0 0 20 20"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></symbol>
+<symbol id="i-stop" viewBox="0 0 20 20"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor"/></symbol>
+<symbol id="i-play" viewBox="0 0 20 20"><path d="M6.5 4.5v11l9-5.5Z" fill="currentColor"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M14.5 5.5l4 4L8 20H4v-4Z"/><path d="M12.5 7.5l4 4"/></symbol>
+<symbol id="i-sparkle" viewBox="0 0 20 20"><path d="M10 2.5l1.6 4.4 4.4 1.6-4.4 1.6L10 14.5l-1.6-4.4L4 8.5l4.4-1.6Z" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-quote" viewBox="0 0 20 20"><path d="M4 11.5c0-3 1.5-5 4-6M11 11.5c0-3 1.5-5 4-6"/><circle cx="5.8" cy="12.8" r="1.8" fill="currentColor"/><circle cx="12.8" cy="12.8" r="1.8" fill="currentColor"/></symbol>
+<symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2.8 5 13.5h6l-1 7.7 8-10.7h-6Z"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-offline" viewBox="0 0 24 24"><path d="M2.5 8.5a14 14 0 0 1 4-2.4M9.8 5.3A14 14 0 0 1 21.5 8.5M5.5 12a9 9 0 0 1 3.2-1.8M14.6 10.6A9 9 0 0 1 18.5 12M8.8 15.4a4.5 4.5 0 0 1 6.4 0M12 19.2h.01M3 3l18 18"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3.5-3.5a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3.5 3.5a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
 </svg>`;
 document.body.insertAdjacentHTML("afterbegin", SPRITE);
 
@@ -90,23 +114,33 @@ const fold = (s) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCas
 // ── Entrance ──────────────────────────────────────────────────────────────
 if (!STATIC) $$("[data-enter]").forEach((el, i) => { el.style.setProperty("--i", i); el.classList.add("l-enter"); });
 
-// ── Listening state: one timer shared by the pill and the side menu ───────
+// ── Listening state, shared by every screen: idle (Lente starts paused) → listening ⇄ paused → idle ──
+const SESSION_KEY = "lente-session";
 const Listen = {
-  seconds: 0, paused: false, subs: new Set(),
+  state: "idle", mode: "asistir", seconds: 0, subs: new Set(),
+  load() { try { Object.assign(this, JSON.parse(localStorage.getItem(SESSION_KEY)) || {}); } catch {}
+    if (this.state === "listening" && this.tick) this.seconds += Math.round((Date.now() - this.tick) / 1000); },
+  save() { this.tick = Date.now(); try { localStorage.setItem(SESSION_KEY, JSON.stringify({ state: this.state, mode: this.mode, seconds: this.seconds, tick: this.tick })); } catch {} },
+  get paused() { return this.state !== "listening"; },
   fmt() { const s = this.seconds; return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; },
-  label() { return `${this.paused ? "En pausa" : "Escuchando"} · ${this.fmt()}`; },
-  emit() { this.subs.forEach((f) => f(this)); },
+  verb() { return this.state === "paused" ? "En pausa" : this.mode === "grabar" ? "Grabando" : "Escuchando"; },
+  label() { return `${this.verb()} · ${this.fmt()}`; },
+  emit() { this.save(); this.subs.forEach((f) => f(this)); },
+  start(mode = "asistir") { this.mode = mode; this.state = "listening"; this.seconds = 0; haptic([10, 40, 10]); this.emit(); },
   toggle() {
-    this.paused = !this.paused; this.emit(); haptic(this.paused ? [8, 40, 8] : 12);
+    if (this.state === "idle") return this.start(this.mode);
+    this.state = this.state === "listening" ? "paused" : "listening"; this.emit(); haptic(this.paused ? [8, 40, 8] : 12);
     toast(this.paused ? "Lente en pausa: no se envía nada" : "Escuchando de nuevo");
   },
+  stop() { this.state = "idle"; this.emit(); haptic(14); },
 };
-{ const [m, s] = (screen.dataset.listenStart || "12:48").split(":").map(Number); Listen.seconds = m * 60 + s; }
-if (!STATIC) setInterval(() => { if (!Listen.paused) { Listen.seconds++; Listen.emit(); } }, 1000);
+Listen.load();
+if (!STATIC) setInterval(() => { if (Listen.state === "listening") { Listen.seconds++; Listen.emit(); } }, 1000);
 $$(".l-listen").forEach((pill) => {
   const txt = $(".txt", pill);
-  Listen.subs.add((L) => { txt.textContent = L.label(); pill.setAttribute("aria-pressed", String(L.paused));
-    pill.setAttribute("aria-label", L.paused ? "En pausa. Toca para seguir escuchando" : "Escuchando. Toca para pausar"); });
+  const render = (L) => { txt.textContent = L.label(); pill.setAttribute("aria-pressed", String(L.paused));
+    pill.setAttribute("aria-label", L.paused ? "En pausa. Toca para seguir" : `${L.verb()}. Toca para pausar`); };
+  Listen.subs.add(render); render(Listen);
   pill.addEventListener("click", () => Listen.toggle());
 });
 

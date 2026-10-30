@@ -13,5 +13,5 @@
 
 ## 3. Agents in the kit ("Tu equipo")
 
-- [ ] 3.1 `agentes.html`: title "Tu equipo" with how many are working, a row of characters (lead agent first) with status badges, an offline note, the agent list with what each one is doing, and a composer; drawn new for Lente; verify renders in both themes
-- [ ] 3.2 `agente.html`: the agent's character, "Escríbele a …", where it answers from, suggested questions and a composer; verify renders in both themes and `tools/interact.mjs` passes
+- [x] 3.1 `agentes.html`: title "Tu equipo" with how many are working, a row of characters (lead agent first) with status badges, an offline note, the agent list with what each one is doing, and a composer; drawn new for Lente; verify renders in both themes
+- [x] 3.2 `agente.html`: the agent's character, "Escríbele a …", where it answers from, suggested questions and a composer; verify renders in both themes and `tools/interact.mjs` passes

@@ -18,18 +18,18 @@ $$(".l-tabs").forEach((bar) => {
   // The lens wraps the icon only; it is centred on the tab.
   const place = (tab) => pill.style.setProperty("--pill-x", `${tab.offsetLeft + (tab.offsetWidth - pill.offsetWidth) / 2}px`);
   const current = () => tabs.find((t) => t.getAttribute("aria-current") === "page");
-  pill.style.transition = "none"; place(current()); pill.offsetWidth; pill.style.transition = "";
-  addEventListener("resize", () => place(current()));
+  pill.style.transition = "none"; if (current()) place(current()); else pill.style.opacity = 0; pill.offsetWidth; pill.style.transition = "";
+  addEventListener("resize", () => current() && place(current()));
   tabs.forEach((tab) => tab.addEventListener("click", (e) => {
     e.preventDefault();
     const from = current();
     if (tab === from) return;
-    from?.removeAttribute("aria-current");
+    from?.removeAttribute("aria-current"); pill.style.opacity = "";
     tab.setAttribute("aria-current", "page");
     place(tab); haptic(8);
     if (!reduceMotion) {
       // Liquid stretch while travelling: wider and a little flatter mid-way, settles with the spring.
-      const dir = tabs.indexOf(tab) > tabs.indexOf(from) ? 1 : -1;
+      const dir = from && tabs.indexOf(tab) < tabs.indexOf(from) ? -1 : 1;
       pill.animate([{ scale: "1 1" }, { scale: "1.22 .92", transformOrigin: dir > 0 ? "0% 50%" : "100% 50%", offset: .4 }, { scale: "1 1" }],
         { duration: 380, easing: "cubic-bezier(.3,.7,.4,1)" });
       const bouncy = getComputedStyle(root).getPropertyValue("--spring-bouncy");
@@ -43,12 +43,13 @@ $$(".l-tabs").forEach((bar) => {
 });
 
 // Compact dock while scrolling down; full again on the way up or near the top.
-$$(".l-scroll").forEach((sc) => {
+$$(".l-scroll, .l-page").forEach((sc) => {
   const dock = $(".l-dock"); let last = 0, ticking = false;
   sc.addEventListener("scroll", () => {
     if (ticking) return; ticking = true;
     requestAnimationFrame(() => {
       const y = sc.scrollTop, dy = y - last;
+      stage.classList.toggle("is-scrolled", y > 6);
       if (y < COMPACT_AFTER_PX || dy < -6) dock.classList.remove("is-compact");
       else if (dy > 6) dock.classList.add("is-compact");
       last = y; ticking = false;
@@ -146,10 +147,10 @@ if (drawer) {
   const live = $(".l-live", drawer);
   if (live) {
     const state = $(".state span", live), btn = $(".l-pillbtn", live);
-    const render = (L) => { state.textContent = L.paused ? `En pausa · ${L.fmt()}` : `Escuchando · ${L.fmt()}`; live.classList.toggle("is-paused", L.paused);
-      btn.textContent = L.paused ? "Seguir" : "Pausar"; btn.setAttribute("aria-label", L.paused ? "Seguir escuchando" : "Pausar Lente"); };
+    const render = (L) => { state.textContent = L.state === "idle" ? "En pausa · nada se envía" : L.label(); live.classList.toggle("is-paused", L.paused);
+      btn.textContent = L.state === "idle" ? "Empezar" : L.paused ? "Seguir" : "Pausar"; btn.setAttribute("aria-label", L.state === "idle" ? "Empezar a escuchar" : L.paused ? "Seguir escuchando" : "Pausar Lente"); };
     Listen.subs.add(render); render(Listen);
-    btn.addEventListener("click", () => Listen.toggle());
+    btn.addEventListener("click", () => { const wasIdle = Listen.state === "idle"; Listen.toggle(); if (wasIdle && PAGE !== "asistir") { close(); setTimeout(() => { location.href = "asistir.html"; }, CLOSE_MS); } });
   }
 
   // Theme segmented control.

@@ -182,3 +182,8 @@
   .l-stage { translate: none; scale: none; border-radius: 0; }
   .l-drawer [data-row] { opacity: 1; translate: none; }
 }
+
+/* Under the floating top row: a fade that appears once the content scrolls beneath it */
+.l-topfade { position: absolute; left: 0; right: 0; top: 0; height: 100px; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 220ms ease-out;
+  background: linear-gradient(180deg, var(--screen-bg, var(--bg)) 0, var(--screen-bg, var(--bg)) 58%, transparent); }
+.l-stage.is-scrolled .l-topfade { opacity: 1; }
