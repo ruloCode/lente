@@ -210,6 +210,9 @@
   const STEPS = [["working", "build"], ["gates", "gates"], ["review", "review"], ["fixing", "fix"], ["committing", "merge"]];
   const RUNNING = new Set(["starting", "working", "gates", "review", "fixing", "committing"]);
   const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  // Where a node builds: a cloud session shows its status, list cost and a trace link; a local one is just a badge.
+  const where = (w) => (w === "cloud" ? '<span class="chip on">cloud</span>' : w === "local" ? '<span class="chip">local</span>' : "");
+  const cloudLine = (c) => c ? `<span class="lane-msg">· ${esc(c.status)} · list US$${(c.listCostUsd || 0).toFixed(2)}${c.trace ? ` · <a href="${esc(c.trace)}" target="_blank" rel="noopener">trace</a>` : ` · session ${esc(c.sessionId)}`}</span>` : "";
   const mins = (ms) => `${Math.max(0, Math.round(ms / 60000))} min`;
 
   function renderLane(r) {
@@ -220,7 +223,7 @@
     const cls = RUNNING.has(r.status) ? "run" : r.status === "done" ? "ok" : r.status === "blocked" ? "bad" : "";
     const at = STEPS.findIndex(([k]) => k === r.status);
     const steps = r.node ? `<div class="steps">${STEPS.map(([k, l], i) => `<span class="${i === at ? "now" : i < at && k !== "fixing" ? "done" : ""}">${l}${k === "fixing" && r.node.round ? " " + r.node.round : ""}</span>`).join("")}</div>` : "";
-    const node = r.node ? `<div class="lane-node"><span class="c">${esc(r.node.change)}</span> › ${esc(r.node.group)} · ${esc(r.node.tasks.join(", "))} <span class="lane-msg">· ${mins(Date.now() - r.node.startedAt)}</span></div>` : "";
+    const node = r.node ? `<div class="lane-node"><span class="c">${esc(r.node.change)}</span> › ${esc(r.node.group)} · ${esc(r.node.tasks.join(", "))} <span class="lane-msg">· ${mins(Date.now() - r.node.startedAt)}</span> ${where(r.node.where)} ${cloudLine(r.node.cloud)}</div>` : "";
     const b = r.bench || {};
     $("lane").innerHTML = `<div class="lane-head"><span class="k">AUTO LANE</span><span class="pill ${cls}">${esc(r.status)}</span></div>
       ${node}${steps}
@@ -231,7 +234,7 @@
         <span>keys<span class="chip">${esc((b.keys || []).join(", ") || "none")}</span></span></div>
       <ul class="feed">${(r.activity || []).slice(-14).reverse().map((a) => `<li><time>${clock(a.at)}</time>${esc(a.text)}</li>`).join("")}</ul>`;
     $("hist").innerHTML = (r.history || []).slice().reverse().slice(0, 12).map((h) =>
-      `<li><span class="${h.outcome === "merged" ? "ok" : "bad"}">${h.outcome === "merged" ? "✓" : "✗"}</span> <code>${esc(h.change)}</code> ${esc(h.group)}<div class="c" style="font:11px var(--mono);color:var(--faint)">${h.commit ? esc(h.commit) + " · " : ""}US$${h.costUsd.toFixed(2)}${h.review ? " · review " + esc(h.review) : ""}${h.reason ? " · " + esc(h.reason).slice(0, 120) : ""}</div></li>`
+      `<li><span class="${h.outcome === "merged" ? "ok" : "bad"}">${h.outcome === "merged" ? "✓" : "✗"}</span> <code>${esc(h.change)}</code> ${esc(h.group)} ${where(h.where)}<div class="c" style="font:11px var(--mono);color:var(--faint)">${h.commit ? esc(h.commit) + " · " : ""}US$${h.costUsd.toFixed(2)}${h.cloud?.trace ? ` · <a href="${esc(h.cloud.trace)}" target="_blank" rel="noopener">trace</a>` : ""}${h.review ? " · review " + esc(h.review) : ""}${h.reason ? " · " + esc(h.reason).slice(0, 120) : ""}</div></li>`
     ).join("") || '<li style="color:var(--faint)">Nothing yet.</li>';
   }
 

@@ -7,6 +7,7 @@
 //   pnpm auto --dry-run        show the bench and the ready nodes; change nothing
 //   pnpm auto --once           one node, then stop
 //   pnpm auto --watch          when nothing is ready, look again every 10 min (a human may unblock)
+//   pnpm auto --cloud          build bench-free nodes in Claude Managed Agents (read-only mount, patch back); the rest stay local
 //   pnpm auto --push           push main after each merged node (CI runs on GitHub)
 //   pnpm auto --budget 40 --node-budget 6 --model opus
 
@@ -19,6 +20,9 @@ import { type Bench, type Node, heldTasks, readyNodes } from "../progress/parse.
 import { keyNames, loadChanges } from "../progress/load.ts";
 import { lastJsonWith } from "./json.ts";
 import { commitMessage } from "./message.ts";
+import { budgetBody, childEnv, cloudEligible, traceUrl } from "./cloud.ts";
+import { type CloudSession, cloudApi, cloudRound, startSession } from "./cloud-run.ts";
+import { loadIds, readGithubToken, readKey } from "./cloud-setup.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const LANE = join(ROOT, ".claude", "worktrees", "auto");
@@ -49,6 +53,7 @@ const { values: opt } = parseArgs({
     once: { type: "boolean", default: false },
     watch: { type: "boolean", default: false },
     push: { type: "boolean", default: false },
+    cloud: { type: "boolean", default: false },
     budget: { type: "string", default: "40" },
     "node-budget": { type: "string", default: "6" },
     model: { type: "string" },
@@ -57,10 +62,12 @@ const { values: opt } = parseArgs({
 });
 const BUDGET_USD = Number(opt.budget);
 const NODE_BUDGET_USD = Number(opt["node-budget"]);
+const CLOUD_ROOT = "/workspace/lente";
 
 // ---------- state the progress page reads ----------
 
-type Outcome = { change: string; group: string; outcome: "merged" | "failed"; at: number; costUsd: number; commit?: string; reason?: string; review?: string; mainUpdated?: boolean; blocked?: string[] };
+type CloudInfo = { sessionId: string; trace?: string; status: string; listCostUsd: number };
+type Outcome = { where?: "cloud" | "local"; cloud?: CloudInfo; change: string; group: string; outcome: "merged" | "failed"; at: number; costUsd: number; commit?: string; reason?: string; review?: string; mainUpdated?: boolean; blocked?: string[] };
 const state = {
   status: "starting",
   message: "",
@@ -70,7 +77,7 @@ const state = {
   lane: relative(ROOT, LANE),
   branch: LANE_BRANCH,
   bench: { boardPort: null as string | null, phone: null as string | null, keys: [] as string[], keysOff: true },
-  node: null as null | { change: string; group: string; tasks: string[]; startedAt: number; round: number },
+  node: null as null | { change: string; group: string; tasks: string[]; startedAt: number; round: number; where?: "cloud" | "local"; cloud?: CloudInfo },
   spentUsd: 0,
   budgetUsd: BUDGET_USD,
   activity: [] as { at: number; text: string }[],
@@ -188,9 +195,27 @@ const RESULT_SCHEMA = {
 };
 type BuildResult = { commit_message: string; tasks: { id: string; status: string; evidence: string }[]; notes?: string };
 
-function buildPrompt(node: Node, boardPort: string | null, phone: string | null): string {
+const CLOUD_RULES = `Your environment: a read-only clone of the repository at ${CLOUD_ROOT} with Node, pnpm and the package registry only. There is no clip board, no phone, no .env, no model key and no push access; the stub (\`pnpm stub\`) and \`pnpm smoke\` run locally in the sandbox. Do not use git to commit, push or branch.`;
+
+function buildPrompt(node: Node, boardPort: string | null, phone: string | null, cloud?: { base: string }): string {
   const tasks = node.tasks.map((t) => `- ${t.id} ${t.text}${t.tags.length ? ` [${t.tags.join("] [")}]` : ""}`).join("\n");
   const held = node.held.length ? node.held.map((h) => `- ${h.id} (${h.reason}) ${h.text}`).join("\n") : "- none";
+  if (cloud) return `You are Lente's auto lane: an unattended cloud session building one node. No human is watching and nobody will answer questions, so decide with sensible defaults and say what you decided.
+
+Node: change \`${node.change}\`, task group "${node.group}".
+Do these tasks:
+${tasks}
+Leave these alone (they can't run unattended):
+${held}
+
+${CLOUD_RULES}
+
+How:
+1. Read CLAUDE.md, then the change's proposal.md, design.md (if any), specs/ and tasks.md. Read docs/kb files only as the tasks need them. If the code must differ from the spec, update the change first.
+2. Implement each task, run the verification it names, and tick it (\`- [x]\`) in tasks.md only once that verification passed. If a task can't be finished (needs hardware, a real model run, a person, or the spec is unclear), leave it unticked and report it blocked with the reason. Don't fake a verification and don't write a number you didn't measure.
+3. Finish green: \`pnpm typecheck && pnpm test && pnpm exec openspec validate ${node.change} --strict\`. If every task of the change is now ticked, run \`pnpm exec openspec archive ${node.change} --yes\`. Add or update today's row in README.md "What was built during the hackathon".
+4. Output contract. The base commit is ${cloud.base}. When done, stage everything (\`git add -A\`) and write the cumulative patch from the base with \`git diff --binary --cached ${cloud.base} > /mnt/session/outputs/node.patch\`. Also write /mnt/session/outputs/result.json: {"commit_message": "Subject line in the repo's style, blank line, short body", "tasks": [{"id", "status": "done"|"blocked", "evidence": "the verification you ran and what it showed, or why it is blocked"}], "notes": "for the reviewer"}. The runner re-runs every gate itself; your claims are not evidence.
+5. Never touch .env, secrets.h, the data directory or audio files.`;
   return `You are Lente's auto lane: an unattended Claude Code session in the worktree ${LANE} (branch ${LANE_BRANCH}). No human is watching and nobody will answer questions, so decide with sensible defaults and say what you decided.
 
 Node: change \`${node.change}\`, task group "${node.group}".
@@ -324,23 +349,72 @@ ${diff}`;
 
 // ---------- one node, end to end ----------
 
-async function runNode(node: Node, boardPort: string | null, phone: string | null): Promise<Outcome> {
+type Built = { sessionId?: string; costUsd: number; result?: BuildResult; error?: string };
+type CloudCtx = { api: ReturnType<typeof cloudApi>; sha: string; githubToken: string; workspaceId?: string; agentId: string; environmentId: string };
+const FIX_SUFFIX = "Fix it under the same rules, keep the tasks.md ticks honest, then give the same structured result.";
+
+async function runNode(node: Node, boardPort: string | null, phone: string | null, cloud?: CloudCtx): Promise<Outcome> {
   const base = git(["rev-parse", "HEAD"]).out.trim();
   const started = Date.now();
   const logPath = join(RUNS_DIR, `${new Date(started).toISOString().replace(/[:.]/g, "-")}-${node.change}.jsonl`);
   mkdirSync(RUNS_DIR, { recursive: true });
-  save({ status: "working", message: `building ${node.change} / ${node.group}`, node: { change: node.change, group: node.group, tasks: node.tasks.map((t) => t.id), startedAt: started, round: 0 } });
+  const where = cloud ? "cloud" : "local";
+  save({ status: "working", message: `building ${node.change} / ${node.group} (${where})`, node: { change: node.change, group: node.group, tasks: node.tasks.map((t) => t.id), startedAt: started, round: 0, where } });
   const noKeys = Object.fromEntries(MODEL_KEYS.map((k) => [k, ""]));
-  const env = { ...process.env, ...noKeys, LENTE_AUTO: "1", LENTE_LANE_ROOT: LANE, LENTE_BOARD_PORT: boardPort ?? "", LENTE_PHONE_SERIAL: phone ?? "", LENTE_HUB_URL: "http://localhost:8080" };
+  const env = { ...childEnv(process.env), ...noKeys, LENTE_AUTO: "1", LENTE_LANE_ROOT: LANE, LENTE_BOARD_PORT: boardPort ?? "", LENTE_PHONE_SERIAL: phone ?? "", LENTE_HUB_URL: "http://localhost:8080" };
 
   let costUsd = 0;
   const fail = (reason: string): Outcome => {
     git(["reset", "--hard", base]);
     git(["clean", "-fd"]);
-    return { change: node.change, group: node.group, outcome: "failed", at: Date.now(), costUsd, reason };
+    return { where, cloud: state.node?.cloud, change: node.change, group: node.group, outcome: "failed", at: Date.now(), costUsd, reason };
   };
 
-  let run = await claude(buildPrompt(node, boardPort, phone), env, logPath);
+  // Local: a headless Claude Code session edits the lane. Cloud: a Managed Agents session sends a cumulative patch, applied to the reset lane.
+  let first: () => Promise<Built>;
+  let fix: (problem: string, prev: Built) => Promise<Built>;
+  if (cloud) {
+    let sess: CloudSession | undefined;
+    let paid = 0;
+    const applyPatch = (patch: string): string | undefined => {
+      git(["reset", "--hard", base]);
+      git(["clean", "-fd"]);
+      const file = join(tmpdir(), `lente-cloud-${process.pid}.patch`);
+      writeFileSync(file, patch);
+      const r = git(["apply", "--index", "--binary", file]);
+      unlinkSync(file);
+      return r.ok ? undefined : `the cloud patch does not apply to ${base.slice(0, 7)}: ${tail(r.out, 5)}`;
+    };
+    const round = async (text: string): Promise<Built> => {
+      try {
+        const r = await cloudRound(cloud.api, sess!, text, LANE, (st) => {
+          const info = { sessionId: sess!.id, trace: cloud.workspaceId ? traceUrl(cloud.workspaceId, sess!.id) : undefined, status: st.phase === "idle" ? `idle: ${st.stopReason ?? "?"}` : st.phase, listCostUsd: st.listCostUsd };
+          if (state.node && JSON.stringify(state.node.cloud) !== JSON.stringify(info)) save({ node: { ...state.node, cloud: info } });
+        });
+        const costUsd = sess!.state.listCostUsd - paid;
+        paid = sess!.state.listCostUsd;
+        const error = r.error ?? (r.patch ? applyPatch(r.patch) : "no patch");
+        return { sessionId: sess!.id, costUsd, error, result: error ? undefined : (r.result as BuildResult | undefined) };
+      } catch (e) {
+        return { sessionId: sess?.id, costUsd: 0, error: `cloud call failed: ${(e as Error).message}` };
+      }
+    };
+    first = async () => {
+      try {
+        sess = await startSession(cloud.api, { agentId: cloud.agentId, environmentId: cloud.environmentId, sha: cloud.sha, githubToken: cloud.githubToken, budgetUsd: NODE_BUDGET_USD, title: `${node.change} / ${node.group}`, node: `${node.change}/${node.group}` });
+      } catch (e) {
+        return { costUsd: 0, error: `could not start the cloud session: ${(e as Error).message}` };
+      }
+      note(`cloud session ${sess.id}`);
+      return round(buildPrompt(node, null, null, { base: base }));
+    };
+    fix = (problem) => round(`The runner checked your work and it can't merge yet.\n\n${problem}\n\n${FIX_SUFFIX} The runner resets to the base commit and applies one patch: write the full cumulative patch again (git add -A, then git diff --binary --cached ${base} to /mnt/session/outputs/node.patch) and result.json.`);
+  } else {
+    first = () => claude(buildPrompt(node, boardPort, phone), env, logPath);
+    fix = (problem, prev) => claude(`The runner checked your work and it can't merge yet.\n\n${problem}\n\n${FIX_SUFFIX}`, env, logPath, prev.sessionId);
+  }
+
+  let run = await first();
   costUsd += run.costUsd;
   state.spentUsd += run.costUsd;
   let lastReview: Review | undefined;
@@ -367,7 +441,7 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
     if (state.spentUsd >= BUDGET_USD) return fail("run budget spent during fixes");
     save({ status: "fixing", node: { ...state.node!, round: round + 1 } });
     note(`fix round ${round + 1}: ${problem.split("\n")[0]}`);
-    run = await claude(`The runner checked your work and it can't merge yet.\n\n${problem}\n\nFix it under the same rules, keep the tasks.md ticks honest, then give the same structured result.`, env, logPath, run.sessionId);
+    run = await fix(problem, run);
     costUsd += run.costUsd;
     state.spentUsd += run.costUsd;
   }
@@ -394,7 +468,7 @@ async function runNode(node: Node, boardPort: string | null, phone: string | nul
     note(push.ok ? "pushed main; CI runs on GitHub" : `push failed: ${tail(push.out, 2)}`);
   }
   const blocked = run.result?.tasks.filter((t) => t.status === "blocked").map((t) => t.id) ?? [];
-  return { change: node.change, group: node.group, outcome: "merged", at: Date.now(), costUsd, commit: sha, review: lastReview?.verdict, mainUpdated: ff.ok, blocked };
+  return { where, cloud: state.node?.cloud, change: node.change, group: node.group, outcome: "merged", at: Date.now(), costUsd, commit: sha, review: lastReview?.verdict, mainUpdated: ff.ok, blocked };
 }
 
 // ---------- the human's hub ----------
@@ -417,7 +491,33 @@ function anotherRunner(): boolean {
   return r.out.split("\n").map(Number).some((pid) => pid && pid !== process.pid && pid !== process.ppid);
 }
 
+/** Why cloud nodes can't start now, or the commit the cloud would build from. Names paths only, never key content. */
+function cloudBase(): { sha: string } | { problem: string } {
+  if (!opt["dry-run"]) git(["fetch", "origin", "main"], ROOT); // a dry run changes nothing: it judges the origin/main it already has
+  const remote = git(["rev-parse", "origin/main"], ROOT);
+  if (!remote.ok) return { problem: "no origin/main to build from: the cloud builds from GitHub" };
+  const ahead = Number(git(["rev-list", "--count", "origin/main..main"], ROOT).out.trim());
+  if (ahead > 0 && opt.push && !opt["dry-run"]) {
+    const pushed = git(["push", "origin", "main"], ROOT);
+    if (!pushed.ok) return { problem: `push main first: the cloud builds from GitHub (push failed: ${tail(pushed.out, 2)})` };
+    return cloudBase();
+  }
+  if (ahead > 0) return { problem: `push main first: the cloud builds from GitHub (main is ${ahead} commit(s) ahead of origin/main; or pass --push)` };
+  const sha = remote.stdout.trim();
+  if (git(["rev-parse", "main"], ROOT).stdout.trim() !== sha) return { problem: "main is behind origin/main: fast-forward it first, the lane builds on main and the cloud on origin/main" };
+  return { sha };
+}
+
+function cloudContext(): { ids: ReturnType<typeof loadIds> } {
+  readKey(); // fails naming the path when the key file is missing; nothing is created before this passes
+  readGithubToken();
+  const ids = loadIds();
+  if (!ids.agentId || !ids.environmentId) throw new Error("no cloud agent yet: run `pnpm auto:cloud-setup` first");
+  return { ids };
+}
+
 async function main(): Promise<void> {
+  if (opt.cloud && !opt["dry-run"]) cloudContext(); // stop before anything is created when the key, token or ids are missing
   if (!opt["dry-run"] && anotherRunner()) throw new Error("another auto lane runner is already running (pgrep -f '^node .*scripts/auto/run.ts')");
   const failed = new Set<string>();
   for (;;) {
@@ -428,7 +528,9 @@ async function main(): Promise<void> {
 
     if (opt["dry-run"]) {
       console.log(`bench: board ${boardPort ?? "none"} · phone ${phone ?? "none"} · keys ${state.bench.keys.join(", ") || "none"} (of ${[...wanted].join(", ") || "none"})`);
-      for (const n of readyNodes(changes, bench)) console.log(`ready  ${n.change} / ${n.group}: ${n.tasks.map((t) => t.id).join(" ")}${n.held.length ? `  (held: ${n.held.map((h) => h.id).join(" ")})` : ""}`);
+      const cloudBaseNow = opt.cloud ? cloudBase() : undefined;
+      if (cloudBaseNow) console.log(`cloud: ${"sha" in cloudBaseNow ? `builds from origin/main ${cloudBaseNow.sha.slice(0, 7)}, read-only, budget ${JSON.stringify(budgetBody(NODE_BUDGET_USD).max_list_cost)}` : cloudBaseNow.problem}`);
+      for (const n of readyNodes(changes, bench)) console.log(`ready  ${opt.cloud ? (cloudEligible(n.tasks) ? "[cloud] " : "[local] ") : ""}${n.change} / ${n.group}: ${n.tasks.map((t) => t.id).join(" ")}${n.held.length ? `  (held: ${n.held.map((h) => h.id).join(" ")})` : ""}`);
       for (const h of heldTasks(changes, bench)) console.log(`held   ${h.change} ${h.id}: ${h.reason}`);
       return;
     }
@@ -454,7 +556,17 @@ async function main(): Promise<void> {
     const node = nodes[0];
     note(`▶ ${node.change} / ${node.group} (${node.tasks.map((t) => t.id).join(", ")})`);
     const hubWasUp = hubPid() !== null;
-    const outcome = await runNode(node, boardPort, phone);
+    let cloud: CloudCtx | undefined;
+    if (opt.cloud && cloudEligible(node.tasks)) {
+      const base = cloudBase();
+      if ("problem" in base) {
+        save({ status: "blocked", node: null, message: base.problem });
+        return;
+      }
+      const { ids } = cloudContext();
+      cloud = { api: cloudApi({ fetch, getKey: readKey }), sha: base.sha, githubToken: readGithubToken(), workspaceId: ids.workspaceId, agentId: ids.agentId!, environmentId: ids.environmentId! };
+    }
+    const outcome = await runNode(node, boardPort, phone, cloud);
     noteHub(hubWasUp);
     state.history.push(outcome);
     if (state.history.length > HISTORY_KEPT) state.history.shift();

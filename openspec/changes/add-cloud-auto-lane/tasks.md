@@ -11,10 +11,10 @@ Depends on: `add-agent-harness`
 
 ## 2. Runner
 
-- [ ] 2.1 Key handling: `readKey()` reads the file per request and fails naming only the path; local `claude` children run without `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`; the guard refuses reading the key and token files (`node --test test/policy.test.ts`)
-- [ ] 2.2 Cloud builder in `scripts/auto/run.ts` behind `--cloud`: bench-free nodes only, refuse when `main` is ahead of `origin/main`, session with budget and read-only mount, stream with reconnect and dedupe, outputs download with retry, path check, `git apply --index` onto a reset lane; verify with a fake API in tests and `pnpm auto --cloud --dry-run`
-- [ ] 2.3 Fix rounds as `user.message` to the same session (cumulative patch), `budget_reached`, `requires_action`, `session.error` and wall-clock timeout fail the node with the reason; tests with scripted event streams
-- [ ] 2.4 Progress page: cloud or local per node, trace link, session status and list cost; verify with a screenshot
+- [x] 2.1 Key handling: `readKey()` reads the file per request and fails naming only the path; local `claude` children run without `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`; the guard refuses reading the key and token files (`node --test test/policy.test.ts`)
+- [x] 2.2 Cloud builder in `scripts/auto/run.ts` behind `--cloud`: bench-free nodes only, refuse when `main` is ahead of `origin/main`, session with budget and read-only mount, stream with reconnect and dedupe, outputs download with retry, path check, `git apply --index` onto a reset lane; verify with a fake API in tests and `pnpm auto --cloud --dry-run`
+- [x] 2.3 Fix rounds as `user.message` to the same session (cumulative patch), `budget_reached`, `requires_action`, `session.error` and wall-clock timeout fail the node with the reason; tests with scripted event streams
+- [x] 2.4 Progress page: cloud or local per node, trace link, session status and list cost; verify with a screenshot
 
 ## 3. First run
 
