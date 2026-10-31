@@ -23,3 +23,4 @@ eval/audio/
 
 # Cloud hub host and device token for the clip
 firmware/**/cloud.h
+__pycache__/
