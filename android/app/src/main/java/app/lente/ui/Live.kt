@@ -3,6 +3,7 @@ package app.lente.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,15 +58,18 @@ fun Live(vm: LenteViewModel, hub: HubState) {
     val turns = hub.sessionTurns
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    // Follow new rows unless the wearer scrolled up; then offer "Nuevo".
-    val atEnd by remember { derivedStateOf { val info = list.layoutInfo; info.visibleItemsInfo.lastOrNull()?.index?.let { it >= info.totalItemsCount - 2 } ?: true } }
+    // Follow new words unless the wearer dragged the transcript; then offer "Nuevo". Only a drag stops
+    // following (not our own scrolling), and reaching the end again by hand resumes it.
+    val atEnd by remember { derivedStateOf { val info = list.layoutInfo; info.visibleItemsInfo.lastOrNull()?.index?.let { it >= info.totalItemsCount - 1 } ?: true } }
+    var following by remember { mutableStateOf(true) }
     var unseen by remember { mutableStateOf(false) }
     val rows = turns.size + if (hub.partial.isNotBlank()) 1 else 0
-    LaunchedEffect(rows) {
+    LaunchedEffect(list) { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) following = false } }
+    LaunchedEffect(atEnd, list.isScrollInProgress) { if (atEnd && !list.isScrollInProgress) { following = true; unseen = false } }
+    LaunchedEffect(rows, hub.partial.length) {
         if (rows == 0) return@LaunchedEffect
-        if (atEnd) list.animateScrollToItem(rows - 1) else unseen = true
+        if (following) list.scrollToItem(rows - 1, Int.MAX_VALUE) else unseen = true
     }
-    LaunchedEffect(atEnd) { if (atEnd) unseen = false }
     var stopArmed by remember { mutableStateOf(false) }
     LaunchedEffect(stopArmed) { if (stopArmed) { delay(4_000); stopArmed = false } }
 
@@ -116,7 +120,7 @@ fun Live(vm: LenteViewModel, hub: HubState) {
             if (unseen) Text(
                 "Nuevo ↓", style = Type.headline, color = c.onAccent,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).clip(RoundedCornerShape(50)).background(c.accentFill)
-                    .clickable { scope.launch { list.animateScrollToItem((rows - 1).coerceAtLeast(0)) } }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("live-new"),
+                    .clickable { following = true; unseen = false; scope.launch { list.scrollToItem((rows - 1).coerceAtLeast(0), Int.MAX_VALUE) } }.padding(horizontal = 16.dp, vertical = 8.dp).testTag("live-new"),
             )
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = Lente.gutter, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -152,6 +156,3 @@ fun Live(vm: LenteViewModel, hub: HubState) {
         if (stopArmed) Text("Toca otra vez para terminar", style = Type.caption, color = c.live, modifier = Modifier.align(Alignment.End).padding(end = 20.dp, bottom = 8.dp))
     }
 }
-
-@Suppress("unused")
-private val spacer = Modifier.height(0.dp)

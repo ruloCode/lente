@@ -27,7 +27,8 @@
     "stub": "node scripts/stub-serve.ts",
     "android:build": "cd android && ./gradlew assembleDebug --console=plain -q",
     "android:test": "cd android && ./gradlew testDebugUnitTest --console=plain -q",
-    "android:e2e": "node scripts/android-e2e.ts"
+    "android:e2e": "node scripts/android-e2e.ts",
+    "android:apk": "cd android && ./gradlew assembleRelease --console=plain -q && ls -l app/build/outputs/apk/release/app-release.apk"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.15.0",

@@ -63,6 +63,9 @@ class CaptureService : Service() {
         return START_NOT_STICKY
     }
 
+    // open, startMicrophone and stop run on the main thread, OkHttp's thread and the microphone thread:
+    // one lock, and every step checks it still belongs to the running capture.
+    @Synchronized
     private fun open(hub: String, cookie: String?, withCamera: Boolean) {
         running = true
         Capture.set(Capture.State.Starting)
@@ -71,8 +74,12 @@ class CaptureService : Service() {
         val req = Request.Builder().url(HubAddress.deviceSocket(hub)).apply { cookie?.let { header("Cookie", it) } }.build()
         socket = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send(ClipFrames.hello(fw = FIRMWARE, camera = camera != null).toByteString())
-                startMicrophone()
+                synchronized(this@CaptureService) {
+                    // Stopped while the socket was still opening: this socket is no longer ours.
+                    if (!running || webSocket !== socket) return
+                    webSocket.send(ClipFrames.hello(fw = FIRMWARE, camera = camera != null).toByteString())
+                    startMicrophone()
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
@@ -102,7 +109,9 @@ class CaptureService : Service() {
     }
 
     @SuppressLint("MissingPermission") // checked by the activity before it starts the service
+    @Synchronized
     private fun startMicrophone() {
+        if (!running) return
         val min = AudioRecord.getMinBufferSize(ClipFrames.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = try {
             AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, ClipFrames.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, ClipFrames.FRAME_SAMPLES * 2 * 4))
@@ -132,6 +141,7 @@ class CaptureService : Service() {
         }, "lente-mic").also { it.start() }
     }
 
+    @Synchronized
     private fun stop(after: Capture.State?) {
         if (!running) { stopSelf(); return }
         running = false
@@ -139,7 +149,8 @@ class CaptureService : Service() {
         runCatching { recorder?.stop() }
         recorder?.release()
         recorder = null
-        socket?.close(1000, "stopped")
+        // close() before the upgrade only queues the close and still calls onOpen; cancel() tears it down.
+        socket?.let { if (Capture.state.value == Capture.State.Starting) it.cancel() else it.close(1000, "stopped") }
         socket = null
         camera?.close()
         camera = null

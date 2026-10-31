@@ -11,6 +11,7 @@
 //   - the clip coming back takes over and the app says so.
 //
 //   pnpm android:e2e                 build, install and run (ANDROID_SERIAL picks the device)
+//   pnpm android:e2e --release       the shrunk release build instead of the debug one
 //   pnpm android:e2e --no-build      reuse the installed app
 //   pnpm android:e2e --shots <dir>   also save screenshots of every section in light and dark
 //   pnpm android:e2e --serve         leave the stubbed hub running afterwards, for a look by hand
@@ -23,7 +24,7 @@ import { parseArgs } from "node:util";
 import { SseParser } from "../src/sse.ts";
 import { STUB_REPLY, startStubMeta } from "./stub-meta.ts";
 
-const { values: opts } = parseArgs({ options: { "no-build": { type: "boolean", default: false }, shots: { type: "string" }, serve: { type: "boolean", default: false } } });
+const { values: opts } = parseArgs({ options: { "no-build": { type: "boolean", default: false }, release: { type: "boolean", default: false }, shots: { type: "string" }, serve: { type: "boolean", default: false } } });
 const DEVICE_PORT = 7076;
 const WEB_PORT = 8086;
 const APP = "app.lente";
@@ -32,7 +33,9 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const started = performance.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const adb = (...args: string[]): string => execFileSync("adb", args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+/** uiautomator can wait forever for an idle screen while the level bars move, so every adb call has a deadline. */
+const ADB_TIMEOUT_MS = 20_000;
+const adb = (...args: string[]): string => execFileSync("adb", args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: ADB_TIMEOUT_MS });
 const children: ChildProcess[] = [];
 const scratch = mkdtempSync(join(tmpdir(), "lente-android-"));
 const stub = await startStubMeta();
@@ -60,8 +63,9 @@ const devices = adb("devices").split("\n").slice(1).filter((l) => l.trim().endsW
 if (!devices.length) finish("no Android device or emulator on adb (start one, or plug in the phone)");
 if (!opts["no-build"]) {
   step("building the app");
-  execFileSync(join(ROOT, "android/gradlew"), ["-p", join(ROOT, "android"), "assembleDebug", "--console=plain", "-q"], { stdio: "inherit" });
-  adb("install", "-r", "-g", join(ROOT, "android/app/build/outputs/apk/debug/app-debug.apk"));
+  const variant = opts.release ? "release" : "debug";
+  execFileSync(join(ROOT, "android/gradlew"), ["-p", join(ROOT, "android"), opts.release ? "assembleRelease" : "assembleDebug", "--console=plain", "-q"], { stdio: "inherit" });
+  adb("install", "-r", "-g", join(ROOT, `android/app/build/outputs/apk/${variant}/app-${variant}.apk`));
 }
 adb("shell", "pm", "clear", APP);
 for (const p of ["RECORD_AUDIO", "CAMERA", "POST_NOTIFICATIONS"]) {
@@ -73,8 +77,13 @@ adb("shell", "cmd", "uimode", "night", "no");
 interface Node { id: string; text: string; desc: string; x: number; y: number }
 /** The screen as uiautomator sees it: Compose test tags come through as resource ids. */
 function screen(): Node[] {
-  adb("shell", "uiautomator", "dump", "/sdcard/lente-ui.xml");
-  const xml = adb("exec-out", "cat", "/sdcard/lente-ui.xml");
+  let xml: string;
+  try {
+    adb("shell", "uiautomator", "dump", "/sdcard/lente-ui.xml");
+    xml = adb("exec-out", "cat", "/sdcard/lente-ui.xml");
+  } catch {
+    return []; // the dump timed out; the caller tries again
+  }
   const attr = (n: string, a: string) => (n.match(new RegExp(`${a}="([^"]*)"`)) ?? [])[1] ?? "";
   return [...xml.matchAll(/<node [^>]*>/g)].map(([n]) => {
     const [x1, y1, x2, y2] = (attr(n, "bounds").match(/\d+/g) ?? ["0", "0", "0", "0"]).map(Number);
@@ -161,7 +170,9 @@ const hub = spawn(process.execPath, ["src/pilot.ts"], {
 children.push(hub);
 hub.stdout!.on("data", (c) => (hubLog += c));
 hub.stderr!.on("data", (c) => (hubLog += c));
-hub.on("exit", (code, signal) => finish(`the hub exited (${code ?? signal})`));
+/** Set once every check passed: then the hub stopping (Ctrl-C in --serve) is the end, not a failure. */
+let passed = false;
+hub.on("exit", (code, signal) => (passed ? finish() : finish(`the hub exited (${code ?? signal})`)));
 const web = `http://127.0.0.1:${WEB_PORT}`;
 for (let waited = 0; ; waited += 100) {
   try { if ((await fetch(`${web}/health`)).status) break; } catch { /* not listening yet */ }
@@ -232,7 +243,8 @@ await hubSaw("listening start", (e) => e.kind === "status" && e.listening === tr
 step("the DILO line appears and the app acknowledges it");
 const dilo = await waitFor("the DILO line", (n) => n.id === "dilo-text" && n.text === STUB_REPLY);
 const cue = await hubSaw("the DILO cue", (e) => e.kind === "cue" && e.label === "DILO" && typeof e.id === "string");
-await hubSaw("the app's acknowledgement", (e) => e.kind === "stages" && e.id === cue.id && typeof e.stages?.phone === "number");
+const ack = await hubSaw("the app's acknowledgement", (e) => e.kind === "stages" && e.id === cue.id && typeof e.stages?.phone === "number");
+console.log(`  DILO on the app: ${ack.stages.phone - ack.stages.sent} ms from the hub sending it to the app's acknowledgement (hub clock)`);
 if (!dilo) finish("no DILO");
 await sleep(800); // the live view opens for the new session; collapse it to see Ahora
 if (screen().some(byId("live"))) {
@@ -296,6 +308,7 @@ await hubSaw("the clip back as the device", (e) => e.kind === "status" && e.clip
 await waitFor("the takeover note", (n) => n.id === "phone-note" || n.text.startsWith("El clip tomó el control"));
 if (lastStatus().device !== "clip") finish("the phone is still the device");
 
+passed = true;
 if (streamDrops) console.log(`(this script's event stream reconnected ${streamDrops} time(s))`);
 console.log(`android-e2e: passed in ${((performance.now() - started) / 1000).toFixed(1)} s`);
 if (opts.serve) {

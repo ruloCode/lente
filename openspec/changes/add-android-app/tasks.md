@@ -32,4 +32,4 @@
 
 ## 6. Landing
 
-- [ ] 6.1 Decision, architecture table and README (how to build and install the APK, "What was built during the hackathon" row)
+- [x] 6.1 Decision, architecture table and README (how to build and install the APK, "What was built during the hackathon" row)

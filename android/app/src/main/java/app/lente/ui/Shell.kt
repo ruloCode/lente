@@ -293,6 +293,3 @@ val SOON = mapOf(
     "computadora" to Triple("Modo computadora", "Lente en Meet, Teams o Zoom desde la computadora, sin el clip.", "add-desktop-mode"),
     "nube" to Triple("Hub en la nube", "Lente funciona fuera de casa, sin la computadora encendida.", "add-cloud-hub"),
 )
-
-@Suppress("unused")
-private fun captureOn() = Capture.state.value is Capture.State.On

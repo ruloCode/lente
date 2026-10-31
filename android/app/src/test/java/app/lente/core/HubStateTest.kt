@@ -94,3 +94,18 @@ class HubStateTest {
         assertEquals("EN PANTALLA", s.view?.badge)
     }
 }
+
+class SpeakerAfterResumeTest {
+    /** Turn ids restart when listening resumes; a label must not land on an older turn with the same id. */
+    @Test fun aLabelAfterResumeWaitsForItsOwnTurn() {
+        val s = HubState()
+            .reduce(HubEvent.StatusEvent(Status(listening = true)), 0)
+            .reduce(HubEvent.Day(Entry("turn", 10, "old", turnId = "0", speaker = "A")), 0)
+            .reduce(HubEvent.StatusEvent(Status(listening = false)), 0)
+            .reduce(HubEvent.StatusEvent(Status(listening = true)), 0)
+            .reduce(HubEvent.Speaker("0", "B"), 0)
+            .reduce(HubEvent.Day(Entry("turn", 20, "new", turnId = "0")), 0)
+        org.junit.Assert.assertEquals("A", s.entries.first { it.text == "old" }.speaker)
+        org.junit.Assert.assertEquals("B", s.entries.first { it.text == "new" }.speaker)
+    }
+}

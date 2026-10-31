@@ -110,6 +110,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connect(base: String) {
+        // The phone streams to one hub: moving to another stops it.
+        if (client != null && client?.base != base) CaptureService.stop(getApplication())
         stream?.cancel()
         _hub.value = HubState()
         val c = HubClient(base) { prefs.cookie }
@@ -171,7 +173,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (liveOpen.value) { closeLive(); return true }
         val s = _screen.value
         return when {
-            s.size > 1 -> { _screen.value = s.dropLast(1); true }
+            s.size > 1 -> {
+                _screen.value = s.dropLast(1)
+                (_screen.value.last() as? Screen.Reunion)?.let { openMeeting(it.id) }
+                true
+            }
             s.last() != Screen.Ahora -> { _screen.value = listOf(Screen.Ahora); true }
             else -> false
         }
@@ -191,7 +197,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { then(c.post(path, body)) }
     }
 
-    private fun say(text: String) {
+    /** A one-line notice that goes away by itself. */
+    fun say(text: String) {
         toast.value = text
         viewModelScope.launch { delay(TOAST_MS); if (toast.value == text) toast.value = null }
     }

@@ -265,6 +265,3 @@ fun Notice(text: String, modifier: Modifier = Modifier, action: String? = null, 
         }
     }
 }
-
-@Suppress("unused")
-private fun Modifier.outline(color: Color) = border(1.dp, color, RoundedCornerShape(Lente.card))

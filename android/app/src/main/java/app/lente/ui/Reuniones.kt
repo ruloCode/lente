@@ -134,7 +134,8 @@ fun Reunion(vm: LenteViewModel, screen: Screen.Reunion) {
     }
     val m = d.summary
     LaunchedEffect(tab, focus, d) {
-        if (tab == "tr" && focus != null) d.turns.indexOfFirst { it.id == focus }.takeIf { it >= 0 }?.let { list.scrollToItem(it + 3) }
+        // The turns come after the header card and the tabs.
+        if (tab == "tr" && focus != null) d.turns.indexOfFirst { it.id == focus }.takeIf { it >= 0 }?.let { list.scrollToItem(it + 2) }
     }
     LazyColumn(state = list, modifier = Modifier.fillMaxSize().testTag("reunion"), contentPadding = PaddingValues(Lente.gutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {

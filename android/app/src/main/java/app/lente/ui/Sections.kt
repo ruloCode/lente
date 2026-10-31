@@ -75,7 +75,7 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
         }
         if (a.pending.isNotEmpty()) {
             item { SectionTitle("Por aprobar", trailing = "${a.pending.size}") }
-            items(a.pending, key = { it.id }) { p -> ActionCard(p) { approve, args -> vm.decide(p.id, approve, args) { mailto -> ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))) } } }
+            items(a.pending, key = { it.id }) { p -> ActionCard(p) { approve, args -> vm.decide(p.id, approve, args) { mailto -> runCatching { ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))) }.onFailure { vm.say("No hay una app de correo para abrir el borrador.") } } } }
         }
         item { SectionTitle("Pendientes", trailing = "${todo.size}") }
         item {
@@ -337,6 +337,3 @@ fun Pronto(what: String) {
         if (change.isNotBlank()) Text(change, style = Type.measured, color = c.muted, modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(8.dp)).background(c.raised).padding(horizontal = 10.dp, vertical = 4.dp))
     }
 }
-
-@Suppress("unused")
-private val weight = FontWeight.Normal

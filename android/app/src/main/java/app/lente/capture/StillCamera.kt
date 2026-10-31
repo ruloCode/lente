@@ -41,50 +41,79 @@ class StillCamera(context: Context) {
         return sizes.filter { maxOf(it.width, it.height) <= MAX_SIDE_PX }.maxByOrNull { it.width * it.height } ?: sizes.minBy { it.width * it.height }
     }
 
+    /** What one still holds open; released by `release` whichever way the still ends. */
+    private var device: CameraDevice? = null
+    private var session: CameraCaptureSession? = null
+    private var reader: ImageReader? = null
+    private var previewSurface: Surface? = null
+    private var preview: SurfaceTexture? = null
+
+    /** Runs on the camera thread. */
+    private fun release() {
+        handler.removeCallbacksAndMessages(null)
+        runCatching { session?.close() }
+        runCatching { device?.close() }
+        runCatching { reader?.close() }
+        previewSurface?.release()
+        preview?.release()
+        session = null; device = null; reader = null; previewSurface = null; preview = null
+        busy = false
+    }
+
     @SuppressLint("MissingPermission") // the service only builds a StillCamera with the camera permission
     fun take(done: (ByteArray) -> Unit) {
         if (busy) return
         busy = true
-        val id = rearCamera() ?: return fail("no camera")
+        handler.post { start(done) }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun start(done: (ByteArray) -> Unit) {
+        val id = runCatching { rearCamera() }.getOrNull() ?: return fail("no camera")
         val size = size(id)
         val orientation = manager.getCameraCharacteristics(id).get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
-        val reader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 1)
-        val preview = SurfaceTexture(0).apply { setDefaultBufferSize(640, 480) }
-        val previewSurface = Surface(preview)
+        val r = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 1).also { reader = it }
+        val texture = SurfaceTexture(0).apply { setDefaultBufferSize(640, 480) }.also { preview = it }
+        val surface = Surface(texture).also { previewSurface = it }
+        // A still that never arrives (a failed capture, a stuck camera) still lets the camera go.
+        handler.postDelayed({ fail("no image within $GIVE_UP_MS ms") }, GIVE_UP_MS)
         try {
             manager.openCamera(id, executor, object : CameraDevice.StateCallback() {
-                override fun onOpened(device: CameraDevice) {
-                    val outputs = listOf(OutputConfiguration(previewSurface), OutputConfiguration(reader.surface))
-                    device.createCaptureSession(SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputs, executor, object : CameraCaptureSession.StateCallback() {
-                        override fun onConfigured(session: CameraCaptureSession) {
-                            val repeat = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply { addTarget(previewSurface) }.build()
-                            session.setRepeatingRequest(repeat, null, handler)
-                            reader.setOnImageAvailableListener({ r ->
-                                val image = r.acquireLatestImage()
+                override fun onOpened(d: CameraDevice) {
+                    device = d
+                    val outputs = listOf(OutputConfiguration(surface), OutputConfiguration(r.surface))
+                    d.createCaptureSession(SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputs, executor, object : CameraCaptureSession.StateCallback() {
+                        override fun onConfigured(s: CameraCaptureSession) {
+                            session = s
+                            val repeat = d.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply { addTarget(surface) }.build()
+                            s.setRepeatingRequest(repeat, null, handler)
+                            r.setOnImageAvailableListener({ ir ->
+                                val image = ir.acquireLatestImage()
                                 val bytes = image?.planes?.get(0)?.buffer?.let { b -> ByteArray(b.remaining()).also { b.get(it) } }
                                 image?.close()
-                                session.close(); device.close(); reader.close(); previewSurface.release(); preview.release()
-                                busy = false
+                                release()
                                 if (bytes != null) done(bytes)
                             }, handler)
                             handler.postDelayed({
                                 runCatching {
-                                    val still = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
-                                        addTarget(reader.surface)
+                                    val still = d.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
+                                        addTarget(r.surface)
                                         set(CaptureRequest.JPEG_ORIENTATION, orientation)
                                         set(CaptureRequest.JPEG_QUALITY, JPEG_QUALITY)
                                     }.build()
-                                    session.capture(still, null, handler)
-                                }.onFailure { fail("capture: ${it.message}"); device.close() }
+                                    s.capture(still, object : CameraCaptureSession.CaptureCallback() {
+                                        override fun onCaptureFailed(session: CameraCaptureSession, request: CaptureRequest, failure: android.hardware.camera2.CaptureFailure) = fail("capture failed (${failure.reason})")
+                                    }, handler)
+                                }.onFailure { fail("capture: ${it.message}") }
                             }, SETTLE_MS)
                         }
 
-                        override fun onConfigureFailed(session: CameraCaptureSession) { device.close(); fail("session") }
+                        override fun onConfigureFailed(s: CameraCaptureSession) = fail("session")
                     }))
                 }
 
-                override fun onDisconnected(device: CameraDevice) { device.close(); fail("disconnected") }
-                override fun onError(device: CameraDevice, error: Int) { device.close(); fail("error $error") }
+                override fun onDisconnected(d: CameraDevice) { device = d; fail("disconnected") }
+                override fun onError(d: CameraDevice, error: Int) { device = d; fail("error $error") }
             })
         } catch (e: Exception) {
             fail(e.message ?: "open")
@@ -93,14 +122,18 @@ class StillCamera(context: Context) {
 
     private fun fail(why: String) {
         Log.w("LenteCamera", "no still: $why")
-        busy = false
+        release()
     }
 
-    fun close() = thread.quitSafely()
+    /** Lets go of the camera even with a still in flight, then stops the camera thread. */
+    fun close() {
+        handler.post { release(); thread.quitSafely() }
+    }
 
     companion object {
         const val MAX_SIDE_PX = 1024
         const val SETTLE_MS = 500L
         const val JPEG_QUALITY: Byte = 80
+        const val GIVE_UP_MS = 5_000L
     }
 }

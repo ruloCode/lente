@@ -13,13 +13,14 @@ One hub, several ways in. Every source of audio and pictures speaks the same cli
 | **Clip firmware** | Hear, see, signal (LED, vibration) | Seeed XIAO ESP32-S3 Sense on the glasses | C++ on Arduino-ESP32 3.3.x, `esp32-camera`, `ESP_I2S` (PDM) | Pilot running (`firmware/lente-clip`) |
 | **Hub** | Transcription, cues, vision, memory, agents, MCP | Laptop on the LAN today, Modal later | Node 22.18+, TypeScript run natively, zero runtime deps (`node:http`, `node:net`, `fetch`, `WebSocket`) | Pilot running (`src/pilot.ts`) |
 | **Companion app** | Read the Dilo card, see the camera, control modes, approve actions | The wearer's phone | One HTML page served by the hub, SSE down, POST up, installable (manifest); side menu, sections, first-run introduction, all copy in Spanish | Running (`src/pilot-page.ts`, `add-app-navigation`) |
+| **Android app** | The same companion, native, and the phone as an all-day stand-in for the clip | The wearer's Android phone | Kotlin, Jetpack Compose, OkHttp; same SSE and routes as the page, clip protocol v2 over the `/device` WebSocket from a foreground service (screen off) | Running (`android/`, `add-android-app`) |
 | **Phone capture** | Use the phone's microphone and camera when the clip is missing | The wearer's phone | The same page: `getUserMedia` → 16 kHz PCM → clip protocol over WebSocket; needs HTTPS or localhost | Planned (`add-phone-capture`) |
 | **Clip emulator** | Run Lente with no hardware (judges, CI, demo fallback) | Any computer | Node script speaking the clip protocol | Done (`harden-clip-protocol`, archived) |
 | **Desktop mode** | Use Lente on Meet/Teams/Zoom without the clip | Chrome on a computer | Browser page: tab capture → 16 kHz PCM → clip protocol over WebSocket (the ingest `add-phone-capture` builds) | Planned (`add-desktop-mode`) |
 | **MCP server** | Glasses and memory as tools for any agent | Inside the hub | JSON-RPC over Streamable HTTP at `/mcp`, bearer key | Planned (`add-glasses-mcp`) |
 | **Site** | Landing with the video, open-hardware build guide, 3D viewer | Static hosting | Static HTML, three.js viewer from `hardware/clip-v1` | Partly built (viewer, guide) |
 
-Native mobile app (Expo/React Native with BLE provisioning and background audio) is a post-hackathon step; the web app covers the demo.
+The native Android app (`add-android-app`) renders the same events as the page, with no logic of its own, and adds what a browser cannot do: capture with the screen off, vibration and the share sheet. BLE provisioning of the clip and an iOS app are post-hackathon steps.
 
 ## 2. How it fits together
 
@@ -74,7 +75,7 @@ One question, end to end: the clip sends 80 ms audio frames → the hub paces th
 | Firmware | Arduino-ESP32 3.3.12, C++ | Mature camera and I2S drivers, fast iteration with arduino-cli | ESP-IDF (slower for a 7-day build), Zephyr |
 | Wire protocol | Typed frames (type, length, payload), versioned hello, sequenced audio; TCP on the LAN, WebSocket in the cloud | One readable contract, two transports, testable with fixtures | Opus (codec id reserved; PCM16 at 256 kbps fits Wi-Fi), BLE streaming |
 | Hub runtime | Node 22.18+, native TypeScript, zero runtime deps | Judges run it with one install; every line is visible | Bun/Deno, frameworks |
-| Phone UI | Server-rendered HTML + vanilla JS, SSE + POST | No build step, works on any phone on the LAN | React app, native app (later) |
+| Phone UI | Server-rendered HTML + vanilla JS, SSE + POST; a native Android app on the same contract (`docs/kb/hub-api.md`) | No build step, works on any phone on the LAN; the app adds background capture | React app; React Native or Flutter for the app (a JS or Dart bridge for the microphone service, the camera and vibration) |
 | Speech in | Muse Voice Transcribe, realtime, DIARIZATION, PCM 16 kHz | Speaker labels make "addressed to you" possible | Other STT vendors (not Meta) |
 | Fast reply | Muse Spark Open on Baseten → Fireworks → Muse Spark 1.3 minimal | Lowest latency; open-weights bonus | Single provider |
 | Vision, memory, agent | Muse Spark 1.3 (image input, structured output, function calling, prompt caching) | One model family, measured 1.1 s per photo | Separate vision model |

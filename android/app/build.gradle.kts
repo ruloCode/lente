@@ -15,6 +15,15 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    buildTypes {
+        release {
+            // Shrunk and signed with the debug key: a build to sideload on the wearer's phone, not a store release.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
     buildFeatures {
         compose = true
         buildConfig = true

@@ -29,6 +29,11 @@ data class HubState(
     val level: Int = 0,
     /** Speaker labels that arrived before their turn. */
     val pendingSpeakers: Map<String, String> = emptyMap(),
+    /**
+     * The newest entry time when listening last resumed. The hub restarts transcription on every
+     * resume and turn ids restart with it, so a speaker label only matches turns after this.
+     */
+    val labelsSince: Long = 0,
 ) {
     /** Turns of this listening session, for En vivo. */
     val sessionTurns: List<Entry> get() = entries.filter { it.kind == "turn" && it.at >= (status.session?.startedAt ?: 0) }
@@ -47,12 +52,14 @@ data class HubState(
         is HubEvent.StatusEvent -> {
             val since = event.status.session?.startedAt
             val newSession = since != null && since != status.session?.startedAt
+            val resumed = event.status.listening && !status.listening
             copy(
                 status = event.status,
                 statusAt = now,
                 partial = if (event.status.listening) partial else "",
                 level = if (event.status.listening) level else 0,
-                pendingSpeakers = if (newSession) emptyMap() else pendingSpeakers,
+                pendingSpeakers = if (newSession || resumed) emptyMap() else pendingSpeakers,
+                labelsSince = if (resumed) entries.lastOrNull()?.at ?: labelsSince else labelsSince,
             )
         }
         is HubEvent.History -> {
@@ -63,7 +70,7 @@ data class HubState(
         }
         is HubEvent.Partial -> if (!status.listening) this else copy(partial = event.text)
         is HubEvent.Speaker -> {
-            val i = entries.indexOfLast { it.kind == "turn" && it.turnId == event.turnId }
+            val i = entries.indexOfLast { it.kind == "turn" && it.turnId == event.turnId && it.at > labelsSince }
             if (i < 0) copy(pendingSpeakers = pendingSpeakers + (event.turnId to event.speaker))
             else copy(entries = entries.toMutableList().also { it[i] = it[i].copy(speaker = event.speaker) })
         }
