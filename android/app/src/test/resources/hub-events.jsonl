@@ -1,0 +1,82 @@
+{"kind":"status","clip":false,"device":"","mode":"mic","listening":false,"pause":{"reason":"start"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":null,"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"waiting for the clip…","modelDown":"","session":null}
+{"kind":"history","items":[]}
+{"kind":"meetings","items":[],"language":{"glossary":[],"phrases":[],"asked":0,"answered":0}}
+{"kind":"actions","pending":[],"decided":[],"tasks":[]}
+{"kind":"recorded","ms":0}
+{"kind":"spend","day":"2026-10-30","audioSeconds":0,"models":{},"usd":0,"unpriced":[]}
+{"kind":"status","clip":true,"device":"","mode":"mic","listening":false,"pause":{"reason":"start"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":null,"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"paused","modelDown":"","session":null}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":false,"pause":{"reason":"start"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":null,"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"paused","modelDown":"","session":null}
+{"kind":"recorded","ms":0}
+{"kind":"level","rms":5639}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":false,"pause":{"reason":"start"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":0,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"paused","modelDown":"","session":null}
+{"kind":"meetings","items":[{"id":"m20261031012801","title":"Sprint review","auto":false,"startedAt":1793410081558,"status":"running","turns":0}],"language":{"glossary":[],"phrases":[],"asked":0,"answered":0}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":0,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"paused","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":0,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":0,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening · nothing sent in silence","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":0,"running":true}}
+{"kind":"level","rms":4005}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":0,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":89,"running":true}}
+{"kind":"recorded","ms":160}
+{"kind":"level","rms":4470}
+{"kind":"speaker","turnId":"0","speaker":"B"}
+{"kind":"partial","text":"Rulo, can we"}
+{"kind":"level","rms":2846}
+{"kind":"level","rms":5302}
+{"kind":"level","rms":4}
+{"kind":"recorded","ms":1200}
+{"kind":"level","rms":5669}
+{"kind":"level","rms":5}
+{"kind":"level","rms":5659}
+{"kind":"level","rms":7}
+{"kind":"recorded","ms":2240}
+{"kind":"level","rms":5642}
+{"kind":"level","rms":9}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":2431,"running":true}}
+{"at":1793410083992,"kind":"turn","turnId":"0","speaker":"B","text":"Rulo, can we ship the beta on Friday?","question":true,"audioStartMs":400,"audioEndMs":2400,"spokeAt":1793410081017}
+{"kind":"address","turnId":"0","verdict":"addressed","rule":"name"}
+{"kind":"usage","label":"cue","model":"spark-1.3-minimal","provider":"Meta","ms":13,"promptTokens":120,"cachedTokens":0,"completionTokens":12}
+{"kind":"spend","day":"2026-10-30","audioSeconds":2.4,"models":{"muse-spark-1.3":{"calls":1,"input":120,"cached":0,"output":12}},"usd":0.000321,"unpriced":[]}
+{"at":1793410084009,"kind":"cue","label":"DILO","text":"Yes, Friday works if QA signs off Thursday.","ms":14,"asker":"B","why":"name","model":"muse-spark-1.3","provider":"Meta","stages":{"heard":1793410083818,"turn":1793410083990,"asked":1793410083995,"firstToken":1793410084007,"done":1793410084009,"sent":1793410084009},"turnId":"0","id":"s1"}
+{"kind":"level","rms":5641}
+{"kind":"level","rms":13}
+{"kind":"level","rms":5658}
+{"kind":"recorded","ms":3280}
+{"kind":"level","rms":18}
+{"kind":"spend","day":"2026-10-30","audioSeconds":3.36,"models":{"muse-spark-1.3":{"calls":1,"input":120,"cached":0,"output":12}},"usd":0.00036899999999999997,"unpriced":[]}
+{"kind":"level","rms":5668}
+{"kind":"level","rms":25}
+{"kind":"level","rms":5659}
+{"kind":"recorded","ms":4320}
+{"kind":"level","rms":34}
+{"kind":"level","rms":5643}
+{"kind":"level","rms":47}
+{"kind":"level","rms":5640}
+{"kind":"recorded","ms":5360}
+{"kind":"level","rms":1982}
+{"kind":"level","rms":4885}
+{"kind":"level","rms":3444}
+{"kind":"level","rms":4005}
+{"kind":"level","rms":4470}
+{"kind":"recorded","ms":6400}
+{"kind":"level","rms":2846}
+{"kind":"level","rms":5302}
+{"kind":"level","rms":4}
+{"kind":"spend","day":"2026-10-30","audioSeconds":8.32,"models":{"muse-spark-1.3":{"calls":1,"input":120,"cached":0,"output":12}},"usd":0.0006169999999999999,"unpriced":[]}
+{"kind":"usage","label":"help","model":"spark-1.3-minimal","provider":"Meta","ms":4,"promptTokens":120,"cachedTokens":0,"completionTokens":12}
+{"kind":"spend","day":"2026-10-30","audioSeconds":8.48,"models":{"muse-spark-1.3":{"calls":2,"input":240,"cached":0,"output":24}},"usd":0.000826,"unpriced":[]}
+{"at":1793410090572,"kind":"cue","label":"Pregunta","text":"Yes, Friday works if QA signs off Thursday.","ms":5,"stages":{"asked":1793410090568,"firstToken":1793410090572,"done":1793410090572,"sent":1793410090572},"id":"s2"}
+{"kind":"usage","label":"summary","model":"spark-1.3-minimal","provider":"Meta","ms":4,"promptTokens":50,"completionTokens":1}
+{"kind":"spend","day":"2026-10-30","audioSeconds":8.48,"models":{"muse-spark-1.3":{"calls":3,"input":290,"cached":0,"output":25}},"usd":0.00089275,"unpriced":[]}
+{"at":1793410090614,"kind":"summary","text":"no","ms":39}
+{"kind":"status","clip":true,"device":"clip","mode":"camera","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10559,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10563,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":true,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10567,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10569,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"record","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10572,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":true,"pause":null,"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10573,"running":true}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":false,"pause":{"reason":"manual"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"listening","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10575,"running":false}}
+{"kind":"recorded","ms":7040}
+{"kind":"spend","day":"2026-10-30","audioSeconds":8.48,"models":{"muse-spark-1.3":{"calls":3,"input":290,"cached":0,"output":25}},"usd":0.00089275,"unpriced":[]}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":false,"pause":{"reason":"manual"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":{"id":"m20261031012801","title":"Sprint review","startedAt":1793410081558,"turns":1,"auto":false},"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"paused","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10575,"running":false}}
+{"kind":"status","clip":true,"device":"clip","mode":"mic","listening":false,"pause":{"reason":"manual"},"live":false,"voice":"device","audioLost":0,"audioLate":0,"meeting":null,"names":["Rulo"],"everyQuestion":false,"assistMode":"assist","wearer":"","clipError":"","asr":"paused","modelDown":"","session":{"startedAt":1793410081560,"listenedMs":10575,"running":false}}
+{"kind":"meetings","items":[{"id":"m20261031012801","title":"Sprint review","auto":false,"startedAt":1793410081558,"endedAt":1793410092137,"status":"too-short","turns":1,"stats":{"asked":1,"answered":0}}],"language":{"glossary":[],"phrases":[],"asked":1,"answered":0}}
+{"kind":"usage","label":"briefing","model":"spark-1.3-minimal","provider":"Meta","ms":1,"promptTokens":50,"completionTokens":1}
+{"kind":"spend","day":"2026-10-30","audioSeconds":8.48,"models":{"muse-spark-1.3":{"calls":4,"input":340,"cached":0,"output":26}},"usd":0.0009595,"unpriced":[]}

@@ -24,7 +24,10 @@
     "smoke": "node scripts/smoke.ts",
     "progress": "node scripts/progress/serve.ts",
     "auto": "node scripts/auto/run.ts",
-    "stub": "node scripts/stub-serve.ts"
+    "stub": "node scripts/stub-serve.ts",
+    "android:build": "cd android && ./gradlew assembleDebug --console=plain -q",
+    "android:test": "cd android && ./gradlew testDebugUnitTest --console=plain -q",
+    "android:e2e": "node scripts/android-e2e.ts"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.15.0",
