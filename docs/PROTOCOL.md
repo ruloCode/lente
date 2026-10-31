@@ -82,6 +82,13 @@ Single bytes, no framing:
 The hub sends the camera and listen state right after a clip connects, so a reconnecting clip picks up the
 current settings.
 
+## Discovery
+
+When `HUB_HOST` does not answer (the Mac got a new DHCP address), the clip broadcasts the ASCII text
+`lente-hub?` on UDP port 7071 and waits 600 ms. A hub on the same LAN replies `lente-hub <port>` from its own
+address; the clip connects there and keeps that address until it stops answering, then asks again. A cloud hub
+does not answer. Implemented by [`discoveryReply`](../src/clip-protocol.ts) and `discoverHub()` in the firmware.
+
 ## Handshake
 
 1. The clip connects and sends `H`.

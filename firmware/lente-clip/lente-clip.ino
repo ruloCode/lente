@@ -13,6 +13,7 @@
 #include "esp_camera.h"
 #include <ESP_I2S.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <string.h>
 #include "secrets.h"
 
@@ -41,8 +42,14 @@
 #define CAMERA_ROTATE_180 1  // 1 for the v3 case (XIAO upside down); 0 for the v1 case
 
 static const size_t AUDIO_FRAME_SAMPLES = 1280;  // 80 ms at 16 kHz
+#define DISCOVERY_PORT 7071          // UDP; see DISCOVERY_QUERY in src/clip-protocol.ts
+#define DISCOVERY_WAIT_MS 600
 
 static WiFiClient hub;
+static WiFiUDP discovery;
+static IPAddress hubIp;               // learned by discovery
+static bool hubFound = false;         // false: use HUB_HOST
+static uint16_t hubPort = HUB_PORT;
 static SemaphoreHandle_t sendLock;
 static I2SClass i2s;
 static volatile bool photoRequested = false;
@@ -139,6 +146,29 @@ static void takePhoto() {
   if (!cameraWanted) setCamera(false);
 }
 
+// Broadcasts "lente-hub?" and waits for "lente-hub <port>"; on a reply, remembers the sender.
+static bool discoverHub() {
+  if (!discovery.begin(0)) return false;
+  discovery.beginPacket(IPAddress(255, 255, 255, 255), DISCOVERY_PORT);
+  discovery.print("lente-hub?");
+  discovery.endPacket();
+  bool found = false;
+  for (uint32_t start = millis(); millis() - start < DISCOVERY_WAIT_MS && !found; delay(20)) {
+    if (!discovery.parsePacket()) continue;
+    char reply[32] = {0};
+    discovery.read(reply, sizeof(reply) - 1);
+    int port = 0;
+    if (sscanf(reply, "lente-hub %d", &port) == 1 && port > 0 && port < 65536) {
+      hubIp = discovery.remoteIP();
+      hubPort = port;
+      found = hubFound = true;
+    }
+  }
+  discovery.stop();
+  Serial.printf("[hub] discovery: %s\n", found ? hubIp.toString().c_str() : "no answer");
+  return found;
+}
+
 static void ensureConnected() {
   static uint32_t lastTry = 0;
   if (hub.connected() || millis() - lastTry < 2000) return;
@@ -147,9 +177,11 @@ static void ensureConnected() {
     Serial.printf("[wifi] connecting to %s… (status %d)\n", WIFI_SSID, WiFi.status());
     return;
   }
-  if (!hub.connect(HUB_HOST, HUB_PORT, 2000)) {
-    Serial.printf("[hub] %s:%d unreachable\n", HUB_HOST, HUB_PORT);
-    return;
+  bool ok = hubFound ? hub.connect(hubIp, hubPort, 2000) : hub.connect(HUB_HOST, HUB_PORT, 2000);
+  if (!ok) {
+    Serial.printf("[hub] %s:%d unreachable\n", hubFound ? hubIp.toString().c_str() : HUB_HOST, hubPort);
+    // The Mac may have a new DHCP address: ask the LAN, then try whoever answered.
+    if (!discoverHub() || !hub.connect(hubIp, hubPort, 2000)) return;
   }
   hub.setNoDelay(true);
   // Protocol v2 hello: the hub checks the major version and refuses old clips
@@ -161,7 +193,7 @@ static void ensureConnected() {
                    "\"codec\":\"pcm16\",\"rate\":16000,\"rssi\":%d,\"camera\":%s}",
                    WiFi.RSSI(), cameraOn ? "true" : "false");
   sendFrame('H', (const uint8_t *)hello, n);
-  Serial.printf("[hub] connected to %s:%d (wifi %d dBm)\n", HUB_HOST, HUB_PORT, WiFi.RSSI());
+  Serial.printf("[hub] connected to %s:%d (wifi %d dBm)\n", hub.remoteIP().toString().c_str(), hubPort, WiFi.RSSI());
 }
 
 void setup() {

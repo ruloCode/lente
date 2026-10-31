@@ -14,7 +14,9 @@ import {
   AudioTimeline,
   BYTES_PER_MS,
   ClipFrameParser,
+  DISCOVERY_QUERY,
   JitterBuffer,
+  discoveryReply,
   StreamMap,
   encodeAudioFrame,
   encodeFrame,
@@ -283,4 +285,11 @@ test("every hex example in docs/PROTOCOL.md decodes to the fixture it names", ()
     assert.equal(rest.length, 0);
     assert.equal(frame.type, fixture.type);
   }
+});
+
+test("the hub answers a discovery query with its clip port and ignores anything else", () => {
+  assert.equal(discoveryReply(Buffer.from(DISCOVERY_QUERY), 7070)?.toString(), "lente-hub 7070");
+  assert.equal(discoveryReply(Buffer.from(`${DISCOVERY_QUERY}\n`), 7072)?.toString(), "lente-hub 7072");
+  assert.equal(discoveryReply(Buffer.from("lente-hub"), 7070), null);
+  assert.equal(discoveryReply(Buffer.from([0xff, 0x00, 0x13]), 7070), null);
 });

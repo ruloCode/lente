@@ -123,6 +123,20 @@ export const COMMANDS = {
 /** The `device` a phone page declares in its hello. */
 export const PHONE_DEVICE = "lente-phone";
 
+/**
+ * Hub discovery: when `HUB_HOST` does not answer (the Mac got a new DHCP address), the clip
+ * broadcasts `DISCOVERY_QUERY` on UDP `DISCOVERY_PORT` and connects to whoever replies, on the TCP
+ * port the reply names. Same LAN only; a cloud hub does not answer.
+ */
+export const DISCOVERY_PORT = 7071;
+export const DISCOVERY_QUERY = "lente-hub?";
+
+/** The reply to a discovery query, or null for anything else. */
+export function discoveryReply(datagram: Buffer, devicePort: number): Buffer | null {
+  if (datagram.toString("latin1").trim() !== DISCOVERY_QUERY) return null;
+  return Buffer.from(`lente-hub ${devicePort}`, "latin1");
+}
+
 export interface AudioFrame {
   seq: number;
   timeMs: number;

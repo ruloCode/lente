@@ -18,13 +18,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer as createTcpServer } from "node:net";
+import { createSocket } from "node:dgram";
 import type { Duplex } from "node:stream";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
-import { AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, JitterBuffer, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
+import { AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
@@ -1321,6 +1322,16 @@ const lanAddresses = Object.values(networkInterfaces())
 
 // A cloud hub takes clips over TLS WebSocket only: raw TCP carries no device token.
 if (!CLOUD) tcp.listen(DEVICE_PORT, () => console.log(`Clip port ${DEVICE_PORT} (set HUB_HOST to ${lanAddresses.join(" or ")})`));
+// A clip whose HUB_HOST went stale (new DHCP address) finds this hub by broadcast.
+if (!CLOUD) {
+  const discovery = createSocket("udp4");
+  discovery.on("message", (msg, from) => {
+    const reply = discoveryReply(msg, DEVICE_PORT);
+    if (reply) discovery.send(reply, from.port, from.address);
+  });
+  discovery.on("error", (error) => console.error(`[discovery] UDP ${DISCOVERY_PORT} unavailable: ${error.message}; clips need the right HUB_HOST`));
+  discovery.bind(DISCOVERY_PORT);
+}
 web.listen(WEB_PORT, () => {
   for (const ip of lanAddresses) console.log(`Phone: ${TLS_CERT ? "https" : "http"}://${ip}:${WEB_PORT}`);
   if (auth) console.log(`Cloud hub: pairing code ${auth.newPairingCode()} (valid 10 minutes; enter it on the phone's pairing screen). Clip tokens: node scripts/hub-token.ts add <name>`);
