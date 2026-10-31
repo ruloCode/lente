@@ -33,7 +33,7 @@ data class Status(
 ) {
     val recordOnly get() = assistMode == "record"
     val phoneIsDevice get() = clip && device == "phone"
-    val clipIsDevice get() = clip && device != "phone"
+    val clipIsDevice get() = clip && device == "clip"
 }
 
 /** One entry of the day: a turn, a card, a live read or a summary. */

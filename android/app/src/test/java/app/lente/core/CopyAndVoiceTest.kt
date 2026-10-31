@@ -48,3 +48,12 @@ class CopyAndVoiceTest {
         assertFalse(Voice.looksSpanish("Yes, Friday works if QA signs off Thursday."))
     }
 }
+
+class DeviceTest {
+    /** Between the socket opening and the hello, the hub says `clip: true, device: ""`: that is not the clip taking over. */
+    @Test fun aDeviceWithoutHelloIsNotTheClip() {
+        org.junit.Assert.assertFalse(Status(clip = true, device = "").clipIsDevice)
+        org.junit.Assert.assertTrue(Status(clip = true, device = "clip").clipIsDevice)
+        org.junit.Assert.assertTrue(Status(clip = true, device = "phone").phoneIsDevice)
+    }
+}

@@ -1,0 +1,312 @@
+package app.lente
+
+import android.app.Application
+import android.os.VibrationEffect
+import android.os.Vibrator
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import app.lente.capture.Capture
+import app.lente.capture.CaptureService
+import app.lente.core.Briefing
+import app.lente.core.Effect
+import app.lente.core.Fact
+import app.lente.core.HubAddress
+import app.lente.core.HubEvent
+import app.lente.core.HubJson
+import app.lente.core.HubState
+import app.lente.core.MeetingDetail
+import app.lente.core.SearchResult
+import app.lente.core.TraceStep
+import app.lente.core.effectsOf
+import app.lente.data.Answer
+import app.lente.data.HubClient
+import app.lente.data.Prefs
+import app.lente.data.Speech
+import app.lente.data.Stream
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
+
+/** Where the wearer is. Reunion carries the meeting and, optionally, the turn to show. */
+sealed interface Screen {
+    data object Ahora : Screen
+    data object Reuniones : Screen
+    data class Reunion(val id: String, val turnId: String? = null) : Screen
+    data object Acciones : Screen
+    data object Memoria : Screen
+    data object Dispositivos : Screen
+    data object Ajustes : Screen
+    data class Pronto(val what: String) : Screen
+}
+
+/** How the app is linked to the hub. */
+sealed interface Link {
+    data object None : Link
+    data object Connecting : Link
+    data object Live : Link
+    data class Reconnecting(val why: String) : Link
+    data object Unpaired : Link
+}
+
+class LenteViewModel(app: Application) : AndroidViewModel(app) {
+    val prefs = Prefs(app)
+    private var client: HubClient? = null
+    private var stream: Job? = null
+
+    private val _hub = MutableStateFlow(HubState())
+    val hub: StateFlow<HubState> = _hub
+    private val _link = MutableStateFlow<Link>(Link.None)
+    val link: StateFlow<Link> = _link
+    private val _screen = MutableStateFlow<List<Screen>>(listOf(Screen.Ahora))
+    val stack: StateFlow<List<Screen>> = _screen
+    val readAloud = MutableStateFlow(prefs.readAloud)
+    /** En vivo is open over everything. */
+    val liveOpen = MutableStateFlow(false)
+    val facts = MutableStateFlow<List<Fact>>(emptyList())
+    val detail = MutableStateFlow<MeetingDetail?>(null)
+    val trace = MutableStateFlow<List<TraceStep>?>(null)
+    val search = MutableStateFlow<List<SearchResult>?>(null)
+    val briefing = MutableStateFlow<Briefing?>(null)
+    /** One-line message for the wearer (a failed help request, a refused action…), cleared after a few seconds. */
+    val toast = MutableStateFlow<String?>(null)
+    val busy = MutableStateFlow<Set<String>>(emptySet())
+
+    private val speech = Speech(app) { text -> post("/narrated", JSONObject().put("text", text)) }
+    private val vibrator = app.getSystemService(Vibrator::class.java)
+
+    val hubAddress get() = client?.base ?: prefs.hub
+
+    init {
+        prefs.hub?.let { connect(it) }
+    }
+
+    // --- Connection -------------------------------------------------------------------------
+
+    /** Checks an address, and on success remembers it and follows its events. Returns why it failed. */
+    suspend fun tryHub(input: String): String? {
+        val base = HubAddress.normalize(input) ?: return "Eso no parece una dirección: escribe la IP de la computadora, por ejemplo 192.168.1.20."
+        if (base.startsWith("http://") && !HubAddress.isLocal(base)) return "Sin cifrar solo en tu red: para un hub en internet escribe https://."
+        val test = HubClient(base) { prefs.cookie }
+        val health = test.health()
+        if (health.code == 0) return "No pude llegar al hub en $base. Revisa que esté corriendo y en la misma red Wi-Fi."
+        if (health.code !in 200..503) return "En $base responde algo que no es Lente (${health.code})."
+        prefs.hub = base
+        connect(base)
+        return null
+    }
+
+    suspend fun pair(code: String): Boolean {
+        val c = client ?: return false
+        val cookie = c.pair(code.trim()) ?: return false
+        prefs.cookie = cookie
+        connect(c.base)
+        return true
+    }
+
+    fun connect(base: String) {
+        stream?.cancel()
+        _hub.value = HubState()
+        val c = HubClient(base) { prefs.cookie }
+        client = c
+        _link.value = Link.Connecting
+        stream = viewModelScope.launch {
+            c.events().collect { item ->
+                when (item) {
+                    Stream.Open -> _link.value = Link.Live
+                    is Stream.Down -> _link.value = Link.Reconnecting(item.why)
+                    Stream.Unpaired -> _link.value = Link.Unpaired
+                    is Stream.Event -> onEvent(item.event)
+                }
+            }
+        }
+    }
+
+    fun forgetHub() {
+        stream?.cancel()
+        CaptureService.stop(getApplication())
+        client = null
+        prefs.hub = null
+        prefs.cookie = null
+        _hub.value = HubState()
+        _link.value = Link.None
+    }
+
+    private fun onEvent(event: HubEvent) {
+        val before = _hub.value
+        val after = before.reduce(event, System.currentTimeMillis())
+        _hub.value = after
+        if (event is HubEvent.Meetings) loadFacts()
+        // A new listening session opens En vivo, unless the wearer collapsed it for that session.
+        val since = after.status.session?.startedAt
+        if (event is HubEvent.StatusEvent && since != null && since != before.status.session?.startedAt && before.statusAt != 0L && after.status.session?.running == true && prefs.collapsedSession != since) liveOpen.value = true
+        // The phone was the device and the hub now has the clip: release the microphone.
+        if (event is HubEvent.StatusEvent && after.status.clipIsDevice && Capture.state.value is Capture.State.On) CaptureService.stop(getApplication())
+        for (effect in effectsOf(event)) when (effect) {
+            is Effect.Ack -> post("/seen", JSONObject().put("id", effect.id))
+            Effect.Vibrate -> if (!after.status.recordOnly) vibrator?.vibrate(VibrationEffect.createOneShot(VIBRATE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
+            is Effect.Speak -> if (readAloud.value) speech.say(effect.text, effect.priority)
+        }
+        if (event is HubEvent.Day && event.entry.kind == "cue" && !event.entry.isPhoto) _screen.value = listOf(Screen.Ahora)
+    }
+
+    // --- Navigation -------------------------------------------------------------------------
+
+    fun go(screen: Screen) {
+        _screen.value = if (screen is Screen.Reunion) _screen.value + screen else listOf(screen)
+        when (screen) {
+            is Screen.Reunion -> openMeeting(screen.id)
+            Screen.Memoria -> loadFacts()
+            else -> {}
+        }
+    }
+
+    /** Back: closes En vivo, then a meeting, then returns to Ahora. False when there is nowhere to go. */
+    fun back(): Boolean {
+        if (liveOpen.value) { closeLive(); return true }
+        val s = _screen.value
+        return when {
+            s.size > 1 -> { _screen.value = s.dropLast(1); true }
+            s.last() != Screen.Ahora -> { _screen.value = listOf(Screen.Ahora); true }
+            else -> false
+        }
+    }
+
+    fun openLive() { liveOpen.value = true }
+
+    fun closeLive() {
+        liveOpen.value = false
+        _hub.value.status.session?.startedAt?.let { prefs.collapsedSession = it }
+    }
+
+    // --- Hub calls ----------------------------------------------------------------------------
+
+    private fun post(path: String, body: JSONObject? = null, then: (Answer) -> Unit = {}) {
+        val c = client ?: return
+        viewModelScope.launch { then(c.post(path, body)) }
+    }
+
+    private fun say(text: String) {
+        toast.value = text
+        viewModelScope.launch { delay(TOAST_MS); if (toast.value == text) toast.value = null }
+    }
+
+    private fun failed(a: Answer, what: String) { if (!a.ok) say("No se pudo $what (${if (a.code == 0) "sin conexión" else a.code}).") }
+
+    fun setListening(on: Boolean) = post(if (on) "/listen/on" else "/listen/off") { failed(it, if (on) "empezar a escuchar" else "pausar") }
+    fun toggleListening() = setListening(!_hub.value.status.listening)
+    fun stopSession() = post("/session/stop") { failed(it, "terminar") }
+    fun setAssist(mode: String) = post("/assist-mode/$mode")
+    fun setMode(mode: String) = post("/mode/$mode")
+    fun look() = post("/look") { failed(it, "mirar") }
+    fun setLive(on: Boolean) = post(if (on) "/live/on" else "/live/off")
+    fun summary() = post("/summary") { failed(it, "pedir el resumen") }
+    fun everyQuestion(on: Boolean) = post(if (on) "/cues/all" else "/cues/addressed")
+    fun startMeeting(title: String) = post("/meeting/start", JSONObject().put("title", title.trim())) { failed(it, "iniciar la reunión") }
+    fun endMeeting() = post("/meeting/end") { failed(it, "terminar la reunión") }
+    fun saveNames(names: String) = post("/profile", JSONObject().put("names", names)) { failed(it, "guardar tu nombre") }
+
+    fun setReadAloud(on: Boolean) {
+        readAloud.value = on
+        prefs.readAloud = on
+        if (on) speech.say("Voz activada.", app.lente.core.Voice.Priority.High) else speech.stop()
+    }
+
+    fun help(kind: String) {
+        busy.update { it + "help-$kind" }
+        post("/help", JSONObject().put("kind", kind)) { a ->
+            busy.update { it - "help-$kind" }
+            if (!a.ok) say(runCatching { HubJson.help(a.text).message }.getOrNull()?.ifBlank { null } ?: "No se pudo pedir la ayuda; prueba otra vez.")
+        }
+    }
+
+    fun deleteAll() = post("/meetings/delete-all") { failed(it, "borrar la memoria"); if (it.ok) { facts.value = emptyList(); say("Memoria borrada.") } }
+
+    fun deleteMeeting(id: String) = post("/meetings/delete", JSONObject().put("id", id)) {
+        if (it.ok) { _screen.value = listOf(Screen.Reuniones); say("Reunión borrada.") } else failed(it, "borrar la reunión")
+    }
+
+    fun loadFacts() {
+        val c = client ?: return
+        viewModelScope.launch { c.get("/facts").takeIf { it.ok }?.let { facts.value = HubJson.facts(it.text) } }
+    }
+
+    fun fact(id: String, keep: Boolean) = post(if (keep) "/facts/keep" else "/facts/discard", JSONObject().put("id", id)) { loadFacts() }
+
+    private fun openMeeting(id: String) {
+        val c = client ?: return
+        detail.value = null
+        trace.value = null
+        viewModelScope.launch { c.get("/meetings/get?id=${enc(id)}").takeIf { it.ok }?.let { detail.value = HubJson.meetingDetail(it.text) } }
+    }
+
+    fun loadTrace(id: String) {
+        val c = client ?: return
+        viewModelScope.launch { val a = c.get("/traces/get?id=${enc(id)}"); trace.value = if (a.ok) HubJson.trace(a.text) else emptyList() }
+    }
+
+    private var searchJob: Job? = null
+    fun search(q: String) {
+        searchJob?.cancel()
+        if (q.isBlank()) { search.value = null; return }
+        val c = client ?: return
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            c.get("/meetings/search?q=${enc(q.take(200))}").takeIf { it.ok }?.let { search.value = HubJson.search(it.text) }
+        }
+    }
+
+    fun prepareBriefing(title: String, names: String) {
+        busy.update { it + "briefing" }
+        briefing.value = null
+        post("/briefing", JSONObject().put("title", title).put("names", names)) { a ->
+            busy.update { it - "briefing" }
+            if (a.ok) briefing.value = HubJson.briefing(a.text) else say("No pude preparar el briefing. Intenta de nuevo.")
+        }
+    }
+
+    /** Approve (with the wearer's edits) or reject a proposed action. A drafted email opens in the mail app. */
+    fun decide(id: String, approve: Boolean, args: Map<String, String> = emptyMap(), openMail: (String) -> Unit = {}) {
+        val body = JSONObject().put("id", id).put("decision", if (approve) "approve" else "reject")
+        if (approve && args.isNotEmpty()) {
+            val a = JSONObject()
+            for ((k, v) in args) if (v.isNotBlank()) a.put(k, if (k == "to") JSONArray(v.split(',').map { it.trim() }.filter { it.isNotEmpty() }) else v.trim())
+            body.put("args", a)
+        }
+        post("/actions/decide", body) { r ->
+            if (!r.ok) return@post say(runCatching { JSONObject(r.text).optString("error") }.getOrNull()?.ifBlank { null }?.let { "No se pudo: $it." } ?: "No se pudo decidir (${r.code}).")
+            val outcome = runCatching { JSONObject(r.text).optJSONObject("outcome") }.getOrNull()
+            outcome?.optString("mailto")?.takeIf { it.isNotBlank() }?.let(openMail)
+            say(if (approve) "Hecho." else "Descartada.")
+        }
+    }
+
+    fun taskDone(id: String, done: Boolean) = post("/tasks/done", JSONObject().put("id", id).put("done", done))
+
+    // --- The phone as the device ------------------------------------------------------------
+
+    fun startPhone() {
+        val base = client?.base ?: return
+        CaptureService.start(getApplication(), base, prefs.cookie)
+    }
+
+    fun stopPhone() = CaptureService.stop(getApplication())
+
+    override fun onCleared() {
+        speech.shutdown()
+        super.onCleared()
+    }
+
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+    companion object {
+        const val VIBRATE_MS = 120L
+        const val TOAST_MS = 4_000L
+        const val SEARCH_DEBOUNCE_MS = 250L
+    }
+}

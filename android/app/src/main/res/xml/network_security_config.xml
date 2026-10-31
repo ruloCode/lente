@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A laptop hub on the LAN speaks plain HTTP; the app itself refuses plain HTTP to any address that is not private (HubAddress.isLocal). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
