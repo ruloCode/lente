@@ -151,5 +151,6 @@ The hub deployed with `deploy/modal/hub.py` (one container, `us-east`), driven f
 | Event stream held open (keep-alive every 15 s, no reconnect) | 1 | 30 min, 120 keep-alives |
 | Completed turn → DILO cue sent by the hub (Baseten `muse-spark-open-1026`) | 1 | 2,956 ms (first token at 2,930 ms) |
 | Day spend after the run (hub's own meter) | 1 | USD 0.0025 |
+| Native app on the Samsung SM-S931B paired with the cloud hub over home Wi-Fi: turn → card shown, as the card reports it | 1 | 2,209 ms total, of which first token 1,838 ms and hub → phone 319 ms |
 
 One sample for the cue: read it as a smoke check that the cloud path works, not as a latency figure. The cue's stages come from the hub's `cue` event (`turn`, `asked`, `firstToken`, `sent`), all on the container's clock.
