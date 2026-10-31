@@ -20,3 +20,6 @@ eval/audio/
 
 # The auto lane's worktree (its state and run logs live in data/auto/)
 .claude/worktrees/
+
+# Cloud hub host and device token for the clip
+firmware/**/cloud.h

@@ -140,3 +140,16 @@ What the run showed:
 - The row-render figure sits below what this method can resolve: the page's own handler draws the row before the injected listener sees the same event, so the stamps came out between -5 and 0 ms. Treat it as "no visible delay", not as zero.
 - Partial intervals measure the speech service's pace (the hub forwards each update as it arrives), not the page; gaps over 2 s (pauses between sentences) are left out.
 - USB `adb reverse` has no Wi-Fi hop, so over Wi-Fi the hub-to-phone figure will be larger; this run does not measure that.
+
+## Cloud hub on Modal — 2026-10-31
+
+The hub deployed with `deploy/modal/hub.py` (one container, `us-east`), driven from the Mac on home Wi-Fi by the clip emulator over `wss://` (`node scripts/fake-clip.ts <wav> --ws --tls --host <modal host> --token <token>`) with an event stream open on `/events` (`curl -N` with a paired session). Speech: one Spanish question from `say -v Paulina`, 7.3 s, 16 kHz. No real clip yet (task 3.1), so there is no clip→hub latency here (task 3.2).
+
+| Measure | n | Value |
+|---|---|---|
+| WebSocket held open, idle (no reconnect) | 1 | 30 min |
+| Event stream held open (keep-alive every 15 s, no reconnect) | 1 | 30 min, 120 keep-alives |
+| Completed turn → DILO cue sent by the hub (Baseten `muse-spark-open-1026`) | 1 | 2,956 ms (first token at 2,930 ms) |
+| Day spend after the run (hub's own meter) | 1 | USD 0.0025 |
+
+One sample for the cue: read it as a smoke check that the cloud path works, not as a latency figure. The cue's stages come from the hub's `cue` event (`turn`, `asked`, `firstToken`, `sent`), all on the container's clock.

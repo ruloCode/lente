@@ -2,8 +2,9 @@
 // sequenced audio frames at real-time pace, answers photo requests with the JPEGs of a
 // folder and obeys the hub's commands. Lets anyone run Lente without the hardware.
 //
-// Usage: node scripts/fake-clip.ts <speech.wav> [--photos <dir>] [--host 127.0.0.1] [--port 7070] [--loop] [--v1] [--linger-ms 8000] [--ws] [--token <device token>]
+// Usage: node scripts/fake-clip.ts <speech.wav> [--photos <dir>] [--host 127.0.0.1] [--port 7070] [--loop] [--v1] [--linger-ms 8000] [--ws] [--tls] [--token <device token>]
 // `--ws` connects like the phone page does: a WebSocket on the hub's web port (default 8080, path /device) carrying the same frames.
+// `--tls` makes that WebSocket wss:// (default port 443), as a cloud hub requires.
 // Make a WAV from any recording: ffmpeg -i in.m4a -ac 1 -ar 16000 -c:a pcm_s16le speech.wav
 //
 // Reproducible: frames depend only on the inputs (sequence from 0, capture time = sequence × 80 ms,
@@ -11,7 +12,8 @@
 // `--v1` sends the old hello without a version, to see how the hub refuses an outdated clip.
 
 import { readdirSync, readFileSync } from "node:fs";
-import { request } from "node:http";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { type Socket, connect } from "node:net";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -28,6 +30,7 @@ const { values, positionals } = parseArgs({
     host: { type: "string", default: "127.0.0.1" },
     port: { type: "string" },
     ws: { type: "boolean", default: false },
+    tls: { type: "boolean", default: false }, // wss:// to a cloud hub (with --ws)
     token: { type: "string" }, // device token for a cloud hub (with --ws)
     loop: { type: "boolean", default: false },
     v1: { type: "boolean", default: false },
@@ -58,7 +61,7 @@ let tick = 0; // frames elapsed on the clip's clock, sent or not
 let offset = 0; // read position in the WAV
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-const port = Number(values.port ?? (values.ws ? 8080 : 7070));
+const port = Number(values.port ?? (values.ws ? (values.tls ? 443 : 8080) : 7070));
 
 /** What the emulator needs of its link: write frames, hear commands, hear the end. TCP raw, or WebSocket messages. */
 interface Link {
@@ -89,6 +92,7 @@ function connectWs(): Link {
     },
     on: ((event: string, cb: () => void) => void (handlers[event] = cb)) as Link["on"],
   };
+  const request = values.tls ? httpsRequest : httpRequest;
   const req = request({
     host: values.host,
     port,

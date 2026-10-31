@@ -4,7 +4,7 @@ Depends on: `add-phone-capture`
 
 ## 1. Spike
 
-- [ ] 1.1 On Modal: a Node container with a WebSocket echo and an SSE stream held open 30 minutes, plus a volume surviving a redeploy; record findings in docs/kb and decide decisions 2 and 3 [key:MODAL_TOKEN_ID]
+- [x] 1.1 On Modal: a Node container with a WebSocket echo and an SSE stream held open 30 minutes, plus a volume surviving a redeploy; record findings in docs/kb and decide decisions 2 and 3 [key:MODAL_TOKEN_ID]
 
 ## 2. Hub
 
@@ -12,7 +12,7 @@ Depends on: `add-phone-capture`
 - [x] 2.2 Device tokens and phone pairing code; tests for unknown and revoked tokens and an unpaired browser
 - [x] 2.3 Health endpoint; verify it reports a broken key without exposing content
 - [x] 2.5 The hub's access gate has automated tests: with auth on, the web routes and the `/device` upgrade answer 401 or 403 without a valid token or session, `/health` stays reachable and exposes no content, and with auth off nothing changes; extract the gate into a pure function if the handler can't be tested directly (`pnpm test`)
-- [ ] 2.4 Deploy with secrets and a volume; verify data survives a redeploy [key:MODAL_TOKEN_ID]
+- [x] 2.4 Deploy with secrets and a volume; verify data survives a redeploy [key:MODAL_TOKEN_ID]
 
 ## 3. Clip
 

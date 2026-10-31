@@ -8,6 +8,8 @@
 // frame starts with an eight-byte header (u32 sequence, u32 capture ms).
 //
 // Setup: copy secrets.example.h to secrets.h and fill in your 2.4 GHz Wi-Fi.
+// Cloud hub: copy cloud.example.h to cloud.h (git-ignored) with the hub's host and a device token;
+// the clip then speaks the same frames over wss:// (one WebSocket message per frame) instead of TCP.
 // Build: arduino-cli compile -b esp32:esp32:XIAO_ESP32S3:PSRAM=opi --upload -p <port> firmware/lente-clip
 
 #include "esp_camera.h"
@@ -16,6 +18,16 @@
 #include <WiFiUdp.h>
 #include <string.h>
 #include "secrets.h"
+#if __has_include("cloud.h")
+#include "cloud.h"
+#endif
+#ifdef HUB_CLOUD_HOST
+#include <WiFiClientSecure.h>
+#include "isrg-roots.h"
+#define CLOUD 1
+#else
+#define CLOUD 0
+#endif
 
 // Camera pins for the XIAO ESP32-S3 Sense (from the core's CameraWebServer example).
 #define XCLK_GPIO_NUM 10
@@ -45,7 +57,14 @@ static const size_t AUDIO_FRAME_SAMPLES = 1280;  // 80 ms at 16 kHz
 #define DISCOVERY_PORT 7071          // UDP; see DISCOVERY_QUERY in src/clip-protocol.ts
 #define DISCOVERY_WAIT_MS 600
 
+#if CLOUD
+static WiFiClientSecure hub;
+#define CLOUD_PORT 443
+#define WS_PING_EVERY_MS 20000  // keeps the platform proxy and NAT from dropping a paused (silent) clip
+#define WS_HANDSHAKE_TIMEOUT_MS 5000
+#else
 static WiFiClient hub;
+#endif
 static WiFiUDP discovery;
 static IPAddress hubIp;               // learned by discovery
 static bool hubFound = false;         // false: use HUB_HOST
@@ -59,11 +78,51 @@ static bool cameraWanted = false;     // "C" / "c" from the hub; off saves batte
 static uint32_t blinkUntil = 0;
 static uint32_t motorUntil = 0;
 
+#if CLOUD
+// One client frame (RFC 6455): FIN and opcode, the length, a random mask, then the payload
+// (a followed by b) masked in small chunks so a photo is never copied whole.
+static bool wsWrite(uint8_t opcode, const uint8_t *a, size_t alen, const uint8_t *b, size_t blen) {
+  size_t len = alen + blen;
+  uint8_t head[14];
+  size_t n = 0;
+  head[n++] = 0x80 | opcode;
+  if (len < 126) {
+    head[n++] = 0x80 | len;
+  } else if (len < 65536) {
+    head[n++] = 0x80 | 126;
+    head[n++] = len >> 8;
+    head[n++] = len;
+  } else {
+    head[n++] = 0x80 | 127;
+    for (int i = 7; i >= 0; i--) head[n++] = i >= 4 ? 0 : (uint8_t)(len >> (8 * i));
+  }
+  uint32_t key = esp_random();
+  uint8_t mask[4];
+  memcpy(mask, &key, 4);
+  memcpy(head + n, mask, 4);
+  n += 4;
+  if (hub.write(head, n) != n) return false;
+  uint8_t chunk[512];
+  for (size_t i = 0; i < len;) {
+    size_t take = len - i < sizeof(chunk) ? len - i : sizeof(chunk);
+    for (size_t k = 0; k < take; k++, i++) chunk[k] = (i < alen ? a[i] : b[i - alen]) ^ mask[i & 3];
+    if (hub.write(chunk, take) != take) return false;
+  }
+  return true;
+}
+#endif
+
+// TLS is one mbedTLS context, not safe to read and write from two tasks at once:
+// sendLock guards every write and, on a cloud hub, every read too.
 static bool sendFrame(char type, const uint8_t *data, size_t len) {
   if (!hub.connected()) return false;
   uint8_t header[5] = {(uint8_t)type, (uint8_t)len, (uint8_t)(len >> 8), (uint8_t)(len >> 16), (uint8_t)(len >> 24)};
   xSemaphoreTake(sendLock, portMAX_DELAY);
+#if CLOUD
+  bool ok = wsWrite(0x2, header, 5, data, len);
+#else
   bool ok = hub.write(header, 5) == 5 && hub.write(data, len) == len;
+#endif
   xSemaphoreGive(sendLock);
   return ok;
 }
@@ -169,6 +228,33 @@ static bool discoverHub() {
   return found;
 }
 
+#if CLOUD
+// TLS to the cloud hub, then the WebSocket upgrade on /device with the device token.
+static bool connectCloud() {
+  hub.setCACert(ISRG_ROOTS);
+  if (!hub.connect(HUB_CLOUD_HOST, CLOUD_PORT, WS_HANDSHAKE_TIMEOUT_MS)) {
+    Serial.printf("[hub] %s:%d unreachable over TLS\n", HUB_CLOUD_HOST, CLOUD_PORT);
+    return false;
+  }
+  hub.printf("GET /device HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+             "Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: bGVudGUtY2xpcC1rZXkhIQ==\r\n"
+             "Authorization: Bearer %s\r\n\r\n",
+             HUB_CLOUD_HOST, HUB_DEVICE_TOKEN);
+  hub.setTimeout(WS_HANDSHAKE_TIMEOUT_MS);
+  String status = hub.readStringUntil('\n');
+  for (String line = hub.readStringUntil('\n'); line.length() > 1; line = hub.readStringUntil('\n')) {
+  }
+  hub.setTimeout(1000);
+  if (status.indexOf(" 101 ") < 0) {
+    status.trim();
+    Serial.printf("[hub] cloud hub refused the clip: \"%s\" (401: the device token is unknown or revoked)\n", status.c_str());
+    hub.stop();
+    return false;
+  }
+  return true;
+}
+#endif
+
 static void ensureConnected() {
   static uint32_t lastTry = 0;
   if (hub.connected() || millis() - lastTry < 2000) return;
@@ -177,12 +263,16 @@ static void ensureConnected() {
     Serial.printf("[wifi] connecting to %s… (status %d)\n", WIFI_SSID, WiFi.status());
     return;
   }
+#if CLOUD
+  if (!connectCloud()) return;
+#else
   bool ok = hubFound ? hub.connect(hubIp, hubPort, 2000) : hub.connect(HUB_HOST, HUB_PORT, 2000);
   if (!ok) {
     Serial.printf("[hub] %s:%d unreachable\n", hubFound ? hubIp.toString().c_str() : HUB_HOST, hubPort);
     // The Mac may have a new DHCP address: ask the LAN, then try whoever answered.
     if (!discoverHub() || !hub.connect(hubIp, hubPort, 2000)) return;
   }
+#endif
   hub.setNoDelay(true);
   // Protocol v2 hello: the hub checks the major version and refuses old clips
   // with a plain-language "update the firmware" message. rssi/camera stay as
@@ -193,8 +283,80 @@ static void ensureConnected() {
                    "\"codec\":\"pcm16\",\"rate\":16000,\"rssi\":%d,\"camera\":%s}",
                    WiFi.RSSI(), cameraOn ? "true" : "false");
   sendFrame('H', (const uint8_t *)hello, n);
+#if CLOUD
+  Serial.printf("[hub] connected to %s over wss (wifi %d dBm)\n", HUB_CLOUD_HOST, WiFi.RSSI());
+#else
   Serial.printf("[hub] connected to %s:%d (wifi %d dBm)\n", hub.remoteIP().toString().c_str(), hubPort, WiFi.RSSI());
+#endif
 }
+
+static void handleCommand(int cmd) {
+  if (cmd == 'P') photoRequested = true;
+  if (cmd == 'B') {
+    blinkUntil = millis() + 900;
+    motorUntil = millis() + MOTOR_PULSE_MS;
+  }
+  if (cmd == 'C' || cmd == 'c') {
+    cameraWanted = cmd == 'C';
+    setCamera(cameraWanted);
+    Serial.printf("[cam] %s\n", cameraWanted ? "on" : "off (mic only)");
+  }
+  if (cmd == 'M' || cmd == 'm') {
+    micOn = cmd == 'M';
+    Serial.printf("[mic] %s\n", micOn ? "listening" : "paused");
+  }
+}
+
+#if CLOUD
+// Server frames are unmasked; the hub sends each command as a short binary message and answers
+// our pings with pongs. Commands run after the lock is released (a photo takes it to send).
+static void readCommands() {
+  uint8_t cmds[16];
+  size_t count = 0;
+  xSemaphoreTake(sendLock, portMAX_DELAY);
+  while (hub.connected() && hub.available() >= 2 && count < sizeof(cmds)) {
+    uint8_t h[2];
+    hub.readBytes(h, 2);
+    uint8_t opcode = h[0] & 0x0f;
+    uint64_t len = h[1] & 0x7f;
+    uint8_t ext[8];
+    if (len == 126 && hub.readBytes(ext, 2) == 2) {
+      len = (ext[0] << 8) | ext[1];
+    } else if (len == 127 && hub.readBytes(ext, 8) == 8) {
+      len = 0;
+      for (int i = 0; i < 8; i++) len = (len << 8) | ext[i];
+    }
+    uint8_t ping[125];
+    size_t pingLen = 0;
+    bool cut = false;
+    for (uint64_t i = 0; i < len; i++) {
+      uint8_t b;
+      if (hub.readBytes(&b, 1) != 1) {
+        cut = true;
+        break;
+      }
+      if (opcode == 0x2 && count < sizeof(cmds)) cmds[count++] = b;
+      if (opcode == 0x9 && pingLen < sizeof(ping)) ping[pingLen++] = b;
+    }
+    if (opcode == 0x9) wsWrite(0xA, ping, pingLen, nullptr, 0);
+    if (cut || opcode == 0x8) {
+      Serial.println(cut ? "[hub] message cut short; reconnecting" : "[hub] cloud hub closed the WebSocket");
+      hub.stop();
+    }
+  }
+  static uint32_t lastPing = 0;
+  if (hub.connected() && millis() - lastPing > WS_PING_EVERY_MS) {
+    lastPing = millis();
+    wsWrite(0x9, nullptr, 0, nullptr, 0);
+  }
+  xSemaphoreGive(sendLock);
+  for (size_t i = 0; i < count; i++) handleCommand(cmds[i]);
+}
+#else
+static void readCommands() {
+  while (hub.connected() && hub.available()) handleCommand(hub.read());
+}
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -249,23 +411,7 @@ void loop() {
   }
   lastButton = button;
 
-  while (hub.connected() && hub.available()) {
-    int cmd = hub.read();
-    if (cmd == 'P') photoRequested = true;
-    if (cmd == 'B') {
-      blinkUntil = millis() + 900;
-      motorUntil = millis() + MOTOR_PULSE_MS;
-    }
-    if (cmd == 'C' || cmd == 'c') {
-      cameraWanted = cmd == 'C';
-      setCamera(cameraWanted);
-      Serial.printf("[cam] %s\n", cameraWanted ? "on" : "off (mic only)");
-    }
-    if (cmd == 'M' || cmd == 'm') {
-      micOn = cmd == 'M';
-      Serial.printf("[mic] %s\n", micOn ? "listening" : "paused");
-    }
-  }
+  readCommands();
 
   if (photoRequested) {
     photoRequested = false;
