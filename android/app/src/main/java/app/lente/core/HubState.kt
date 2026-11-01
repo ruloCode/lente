@@ -1,7 +1,7 @@
 package app.lente.core
 
 /** The card in the Dilo slot, or the photo and caption under it. */
-data class View(val badge: String, val text: String, val ms: Long?, val photo: String?, val id: String?, val stages: Map<String, Long>)
+data class View(val badge: String, val text: String, val ms: Long?, val photo: String?, val id: String?, val stages: Map<String, Long>, val at: Long = 0)
 
 /**
  * Everything the screens show, rebuilt from the hub's events by `reduce`. Immutable: each event
@@ -34,6 +34,10 @@ data class HubState(
      * resume and turn ids restart with it, so a speaker label only matches turns after this.
      */
     val labelsSince: Long = 0,
+    /** The camera's described reads since live view last turned on, newest first. */
+    val liveReads: List<View> = emptyList(),
+    /** When live view last turned on, on this phone's clock, for the reads' elapsed times. */
+    val liveSince: Long = 0,
 ) {
     /** Turns of this listening session, for En vivo. */
     val sessionTurns: List<Entry> get() = entries.filter { it.kind == "turn" && it.at >= (status.session?.startedAt ?: 0) }
@@ -53,7 +57,10 @@ data class HubState(
             val since = event.status.session?.startedAt
             val newSession = since != null && since != status.session?.startedAt
             val resumed = event.status.listening && !status.listening
+            val liveStarted = event.status.live && !status.live
             copy(
+                liveReads = if (liveStarted) emptyList() else liveReads,
+                liveSince = if (liveStarted) now else liveSince,
                 status = event.status,
                 statusAt = now,
                 partial = if (event.status.listening) partial else "",
@@ -92,12 +99,15 @@ data class HubState(
         e.kind == "turn" -> addAll(listOf(e)).copy(partial = "")
         e.kind == "summary" -> addAll(listOf(e)).copy(summary = e)
         e.kind == "live" -> {
-            val v = View("EN VIVO", e.text, e.ms, e.photo, e.id, e.stages)
-            (if (e.text.isNotBlank()) addAll(listOf(e)) else this).copy(view = v)
+            val v = View("EN VIVO", e.text, e.ms, e.photo, e.id, e.stages, e.at)
+            if (e.text.isBlank()) copy(view = v)
+            else addAll(listOf(e)).copy(view = v, liveReads = (listOf(v) + liveReads).take(MAX_LIVE_READS))
         }
         e.isPhoto -> {
-            val v = View(if (e.label == "ON SCREEN") "EN PANTALLA" else "FOTO", e.text, e.ms, e.photo, e.id, e.stages)
-            (if (e.label == "ON SCREEN") addAll(listOf(e)) else this).copy(view = v)
+            val v = View(if (e.label == "ON SCREEN") "EN PANTALLA" else "FOTO", e.text, e.ms, e.photo, e.id, e.stages, e.at)
+            // A Mirar during live view joins the session's reads.
+            val reads = if (status.live && e.text.isNotBlank()) (listOf(v) + liveReads).take(MAX_LIVE_READS) else liveReads
+            (if (e.label == "ON SCREEN") addAll(listOf(e)) else this).copy(view = v, liveReads = reads)
         }
         e.kind == "cue" -> addAll(listOf(e)).copy(card = e)
         else -> this
@@ -117,6 +127,8 @@ data class HubState(
 
     companion object {
         const val MAX_ENTRIES = 300
+        /** Each read keeps its photo (about 30 KB of base64), so the list stays short. */
+        const val MAX_LIVE_READS = 20
     }
 }
 

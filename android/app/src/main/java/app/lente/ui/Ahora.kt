@@ -1,7 +1,5 @@
 package app.lente.ui
 
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
@@ -38,7 +36,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -203,11 +200,12 @@ private fun ViewCard(vm: LenteViewModel, hub: HubState) {
     val v = hub.view
     val s = hub.status
     if (v == null && s.mode == "camera") return
-    Card(padding = PaddingValues(0.dp)) {
+    // While live reads run, the card opens the camera's full live view.
+    Card(Modifier.then(if (s.live) Modifier.clickable { vm.openCamera() }.testTag("view-open") else Modifier), padding = PaddingValues(0.dp)) {
         if (v != null) {
-            val bitmap = remember(v.photo) { v.photo?.substringAfter("base64,", "")?.takeIf { it.isNotEmpty() }?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() }?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }
+            val bitmap = rememberPhoto(v.photo)
             if (bitmap != null) Box {
-                Image(bitmap.asImageBitmap(), contentDescription = v.text.ifBlank { "Foto del clip" }, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).testTag("photo"))
+                Image(bitmap, contentDescription = v.text.ifBlank { "Foto del clip" }, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).testTag("photo"))
                 Tag(v.badge, Modifier.padding(12.dp), bg = c.glass, fg = c.ink)
             }
             if (v.text.isNotBlank() || v.ms != null) Column(Modifier.padding(16.dp)) {

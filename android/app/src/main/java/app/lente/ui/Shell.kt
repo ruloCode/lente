@@ -107,13 +107,14 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     val stack by vm.stack.collectAsState()
     val link by vm.link.collectAsState()
     val live by vm.liveOpen.collectAsState()
+    val camera by vm.cameraOpen.collectAsState()
     val toast by vm.toast.collectAsState()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val screen = stack.last()
     val s = hub.status
 
-    BackHandler(enabled = drawer.isOpen || live || stack.size > 1 || screen != Screen.Ahora) {
+    BackHandler(enabled = drawer.isOpen || live || camera || stack.size > 1 || screen != Screen.Ahora) {
         if (drawer.isOpen) scope.launch { drawer.close() } else vm.back()
     }
 
@@ -122,7 +123,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     ModalNavigationDrawer(
         drawerState = drawer,
         scrimColor = c.scrim,
-        gesturesEnabled = !live,
+        gesturesEnabled = !live && !camera,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = c.surface, drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp), modifier = Modifier.width(304.dp)) {
                 Drawer(vm, screen) { target -> vm.go(target); scope.launch { drawer.close() } }
@@ -156,6 +157,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
             }
             AnimatedVisibility(live, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
                 Live(vm, hub)
+            }
+            AnimatedVisibility(camera, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
+                Camera(vm, hub)
             }
         }
     }
@@ -265,7 +269,7 @@ private fun Dock(vm: LenteViewModel, hub: app.lente.core.HubState) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         DockButton("Mirar", Glyph.Eye, enabled = s.clip, pressed = false, Modifier.weight(1f), "dock-look") { vm.look() }
-        DockButton("En vivo", Glyph.Wave, enabled = s.clip, pressed = s.live, Modifier.weight(1f), "dock-live") { vm.setLive(!s.live) }
+        DockButton("En vivo", Glyph.Wave, enabled = s.clip, pressed = s.live, Modifier.weight(1f), "dock-live") { vm.openCamera() }
         DockButton("Voz", Glyph.Speaker, enabled = true, pressed = voice, Modifier.weight(1f), "dock-voice") { vm.setReadAloud(!voice) }
         DockButton("Resumen", Glyph.Summary, enabled = true, pressed = false, Modifier.weight(1f), "dock-summary") { vm.summary() }
     }

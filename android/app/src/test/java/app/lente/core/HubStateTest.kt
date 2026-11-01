@@ -108,4 +108,26 @@ class SpeakerAfterResumeTest {
         org.junit.Assert.assertEquals("A", s.entries.first { it.text == "old" }.speaker)
         org.junit.Assert.assertEquals("B", s.entries.first { it.text == "new" }.speaker)
     }
+
+    @Test fun liveViewKeepsTheSessionsReadsNewestFirst() {
+        fun read(at: Long, text: String) = HubEvent.Day(Entry("live", at, text, photo = "data:image/jpeg;base64,AAAA"))
+        val on = HubState().reduce(HubEvent.StatusEvent(Status(live = true, mode = "camera")), 5_000)
+        assertEquals(5_000, on.liveSince)
+        val s = listOf(read(6_000, "Una pizarra."), read(7_000, ""), read(8_000, "Una sala."))
+            .fold(on) { st, e -> st.reduce(e, 0) }
+        assertEquals(listOf("Una sala.", "Una pizarra."), s.liveReads.map { it.text })
+        assertEquals(8_000, s.liveReads.first().at)
+        // An unchanged scene (blank text) only refreshes the photo.
+        assertEquals("", s.reduce(read(9_000, ""), 0).view?.text)
+        assertEquals(2, s.reduce(read(9_000, ""), 0).liveReads.size)
+        // A Mirar while live joins the reads; turning live off and on again starts a new list.
+        val looked = s.reduce(HubEvent.Day(Entry("cue", 9_500, "Dice 14 de noviembre.", label = "ON SCREEN", photo = "data:image/jpeg;base64,AAAA")), 0)
+        assertEquals("EN PANTALLA", looked.liveReads.first().badge)
+        val again = looked.reduce(HubEvent.StatusEvent(Status(live = false)), 0).reduce(HubEvent.StatusEvent(Status(live = true)), 20_000)
+        assertTrue(again.liveReads.isEmpty())
+        assertEquals(20_000, again.liveSince)
+        val many = (1..30).fold(on) { st, n -> st.reduce(read(6_000L + n, "lectura $n"), 0) }
+        assertEquals(HubState.MAX_LIVE_READS, many.liveReads.size)
+        assertEquals("lectura 30", many.liveReads.first().text)
+    }
 }

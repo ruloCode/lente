@@ -17,12 +17,13 @@ import app.lente.core.HubState
 import app.lente.core.MeetingDetail
 import app.lente.core.SearchResult
 import app.lente.core.TraceStep
+import app.lente.core.Voice
 import app.lente.core.effectsOf
-import app.lente.data.Answer
-import app.lente.data.HubClient
-import app.lente.data.Prefs
-import app.lente.data.Speech
-import app.lente.data.Stream
+import app.lente.platform.Answer
+import app.lente.platform.HubClient
+import app.lente.platform.Prefs
+import app.lente.platform.Speech
+import app.lente.platform.Stream
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,6 +69,9 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val readAloud = MutableStateFlow(prefs.readAloud)
     /** En vivo is open over everything. */
     val liveOpen = MutableStateFlow(false)
+    /** The camera's live view is open over everything. */
+    val cameraOpen = MutableStateFlow(false)
+    val narrateLive = MutableStateFlow(prefs.narrateLive)
     val facts = MutableStateFlow<List<Fact>>(emptyList())
     val detail = MutableStateFlow<MeetingDetail?>(null)
     val trace = MutableStateFlow<List<TraceStep>?>(null)
@@ -152,7 +156,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         for (effect in effectsOf(event)) when (effect) {
             is Effect.Ack -> post("/seen", JSONObject().put("id", effect.id))
             Effect.Vibrate -> if (!after.status.recordOnly) vibrator?.vibrate(VibrationEffect.createOneShot(VIBRATE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
-            is Effect.Speak -> if (readAloud.value) speech.say(effect.text, effect.priority)
+            // Live descriptions (low priority) follow Narrar en voz alta; everything else follows Voz.
+            is Effect.Speak -> if (if (effect.priority == Voice.Priority.Low) narrateLive.value else readAloud.value) speech.say(effect.text, effect.priority)
         }
         if (event is HubEvent.Day && event.entry.kind == "cue" && !event.entry.isPhoto) _screen.value = listOf(Screen.Ahora)
     }
@@ -170,6 +175,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Back: closes En vivo, then a meeting, then returns to Ahora. False when there is nowhere to go. */
     fun back(): Boolean {
+        if (cameraOpen.value) { cameraOpen.value = false; return true }
         if (liveOpen.value) { closeLive(); return true }
         val s = _screen.value
         return when {
@@ -184,6 +190,27 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openLive() { liveOpen.value = true }
+
+    /** Opens the camera's live view, turning live reads on if they are off. */
+    fun openCamera() {
+        if (!_hub.value.status.live) setLive(true)
+        cameraOpen.value = true
+    }
+
+    fun closeCamera() { cameraOpen.value = false }
+
+    /** Detener en vivo: live reads off, back to where the wearer was. */
+    fun stopCamera() {
+        setLive(false)
+        cameraOpen.value = false
+        speech.stop()
+    }
+
+    fun setNarrateLive(on: Boolean) {
+        narrateLive.value = on
+        prefs.narrateLive = on
+        if (!on) speech.stop()
+    }
 
     fun closeLive() {
         liveOpen.value = false

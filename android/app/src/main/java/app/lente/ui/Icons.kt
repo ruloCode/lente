@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** Lente's line icons, drawn on a 24-unit grid with a 2-unit stroke. Drawn fresh, no icon set. */
-enum class Glyph { Menu, Back, Close, Eye, Wave, Speaker, Summary, Pause, Play, Stop, Check, Search, Share, Trash, ChevronDown, ChevronRight, Phone, Mic, Calendar, Tasks, Brain, Device, Gear, Link, Team, Plus }
+enum class Glyph { Menu, Back, Close, Eye, Wave, Speaker, Summary, Pause, Play, Stop, Check, Search, Share, Trash, ChevronDown, ChevronRight, Phone, Mic, Calendar, Tasks, Brain, Device, Gear, Link, Team, Plus, Camera }
 
 @Composable
 fun Icon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 24.dp) {
@@ -59,6 +59,7 @@ fun Icon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 24
             Glyph.Link -> { line(10f, 14f, 14f, 10f); line(8.5f, 11.5f, 6f, 14f, 6f, 17f, 7f, 18f, 10f, 18f, 12.5f, 15.5f); line(11.5f, 8.5f, 14f, 6f, 17f, 6f, 18f, 7f, 18f, 10f, 15.5f, 12.5f) }
             Glyph.Team -> { ring(9f, 9f, 3f); ring(16.5f, 10f, 2.5f); line(3.5f, 19f, 5f, 15.5f, 9f, 14f, 13f, 15.5f, 14.5f, 19f); line(15f, 14.5f, 18f, 14.5f, 20.5f, 17.5f) }
             Glyph.Plus -> { line(12f, 5f, 12f, 19f); line(5f, 12f, 19f, 12f) }
+            Glyph.Camera -> { box(3f, 7f, 18f, 13f, 3f); line(8f, 7f, 9.5f, 4.5f, 14.5f, 4.5f, 16f, 7f); ring(12f, 13.5f, 3.5f) }
         }
     }
 }

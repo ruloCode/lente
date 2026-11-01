@@ -33,3 +33,8 @@
 ## 6. Landing
 
 - [x] 6.1 Decision, architecture table and README (how to build and install the APK, "What was built during the hackathon" row)
+
+## 7. Camera live view
+
+- [x] 7.1 Core: the session's described reads, newest first, at most 20, cleared when live reads start again; a Mirar during live reads joins them; a test
+- [x] 7.2 Full-screen camera view (frame, "Lente dice", descriptions with thumbnails, Narrar, Mirar otra vez, Detener), opened from the dock and the photo card; verified on the emulator against the hub with the clip emulator, light and dark, picking an earlier read and Detener

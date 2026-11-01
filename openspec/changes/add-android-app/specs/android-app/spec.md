@@ -41,6 +41,17 @@ The app SHALL open a full-screen live view with the elapsed time, the card slot,
 - **WHEN** the wearer scrolls up in the live transcript and a new turn arrives
 - **THEN** the view stays where it is and offers "Nuevo ↓"
 
+### Requirement: Camera live view
+The app SHALL open a full-screen camera view from the dock's En vivo, and from the photo card while live reads run: the newest frame large, "Lente dice" with the newest description and how long the model took, the session's earlier descriptions with their thumbnail and time since live reads started, a switch to read descriptions aloud apart from Voz, Mirar otra vez, and Detener. Opening it turns live reads on; leaving it keeps them running; Detener turns them off.
+
+#### Scenario: Wearer opens the camera view
+- **WHEN** the wearer taps En vivo in the dock with live reads off
+- **THEN** the app asks the hub to start live reads and shows each new frame with its description, newest first in the list
+
+#### Scenario: Wearer looks back at an earlier read
+- **WHEN** the wearer taps an earlier description
+- **THEN** its frame and text replace the newest ones under "Lente dijo" until the wearer taps "Volver a lo último"
+
 ### Requirement: Memory sections
 Reuniones SHALL prepare a briefing, list and search past meetings and open a meeting's notes and transcript, share its notes through the Android share sheet and delete it after a confirmation. Acciones SHALL show cards to approve or reject and the task list with done toggles. Memoria SHALL show facts to keep or discard, what Lente remembers with a search, the wearer's phrases and vocabulary, and the asked and answered counts. Each section SHALL show the page's empty state when it has nothing.
 
