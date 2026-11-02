@@ -98,6 +98,7 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 ## 8. Web page
 
 - [ ] 8.1 Sign-in screen with the Google button for the hub page; the page works with the session cookie; verify in Chrome against the Modal hub [human]
+  - 2026-11-02: built by `add-web-desktop` at `/app` (sign-in screen, `/auth/google?next=/app` back to the app) and deployed to Modal; the redirect chain reaches Google. The owner's own sign-in is what is left.
 
 ## 9. Account rights and docs
 
