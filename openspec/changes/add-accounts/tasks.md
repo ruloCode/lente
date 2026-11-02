@@ -4,13 +4,14 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 
 ## 1. Supabase project and schema
 
-- [ ] 1.1 Verify on the live service and Supabase's docs, and record in `docs/kb/supabase.md`:
+- [x] 1.1 Verify on the live service and Supabase's docs, and record in `docs/kb/supabase.md`:
   - the Auth endpoints for ID-token sign-in, refresh, PKCE authorize and code exchange
   - the JWKS URL and the algorithm of the project's signing key
   - PostgREST headers for the secret key, and RPC calls
   - from the pricing page, the Free plan's limits: database size, Auth MAU, egress, backups, pausing after inactivity, active free projects per owner
 
   [key:SUPABASE_URL]
+  - 2026-11-02: probed on the project and recorded in `docs/kb/supabase.md` (endpoints, ES256 JWKS, the secret key in `apikey` only, RPC, Free limits). `deleteAuthUser` no longer sends the secret key as a Bearer token.
 - [x] 1.2 Owner: free a Free-plan project slot (pause one of the organization's projects, or pick another organization) and say which; the agent never pauses or deletes another project [human]
   - 2026-11-01: the owner asked to pause `cotizacion-al-instante` (Kuadra, us-east-1); paused through the Supabase MCP at the owner's request
 - [x] 1.3 Create the project `lente` on the Free plan in `us-east-1` through the Supabase MCP, after showing the cost and getting the owner's yes; record the project ref (not any key) in `docs/kb/supabase.md` [human]
@@ -30,8 +31,8 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 - [x] 2.2 KEK canary: sealed at setup, checked at start; the hub refuses to start with a KEK that cannot open it; test both cases (`pnpm test`)
 - [x] 2.3 Log guard: a test that runs a stubbed meeting through the Supabase backend and asserts no turn, title or note text appears in the hub's stdout or in any plain column (`pnpm test`)
   - `test/log-guard.test.ts`: the real hub in accounts mode, the stubbed Meta API, a fake clip on the WebSocket with the user's device token and a fake PostgREST; it fails if the stubbed question, the DILO line or the meeting title shows in the hub's output or anywhere in the database outside sealed columns (checked to fail with the redaction turned off). A hub with accounts logs content only by its length, and no longer opens the raw TCP clip port, which carries no token.
-- [ ] 2.4 `scripts/rotate-kek.ts`: re-wraps every DEK under a new KEK version without touching content; verify on the project with two test accounts [key:SUPABASE_SECRET_KEY]
-  - 2026-11-02 written: `node scripts/new-kek.ts --rotate` moves the key to `LENTE_KEK_PREVIOUS` and writes a new one a version up; `scripts/rotate-kek.ts` checks both canaries, re-wraps each `user_keys` row only if its version is unchanged, and proves every key opens under the new KEK alone. `test/rotate-kek.test.ts`: two accounts, memory still opens, no content row written, a wrong previous KEK changes nothing. Left: the run on the project, which needs a working `SUPABASE_SECRET_KEY`.
+- [x] 2.4 `scripts/rotate-kek.ts`: re-wraps every DEK under a new KEK version without touching content; verify on the project with two test accounts [key:SUPABASE_SECRET_KEY]
+  - 2026-11-02 written: `node scripts/new-kek.ts --rotate` moves the key to `LENTE_KEK_PREVIOUS` and writes a new one a version up; `scripts/rotate-kek.ts` checks both canaries, re-wraps each `user_keys` row only if its version is unchanged, and proves every key opens under the new KEK alone. `test/rotate-kek.test.ts`: two accounts, memory still opens, no content row written, a wrong previous KEK changes nothing. On the project (2026-11-02), two synthetic accounts under throwaway KEK versions 60001 → 60002: 2 keys re-wrapped, content unchanged, memory opens under the new KEK alone. The live run showed a wrong previous KEK could leave the new version's canary behind; the previous KEK is now checked before anything is written.
 
 ## 3. Identity in the hub
 
@@ -96,7 +97,8 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 ## 9. Account rights and docs
 
 - [x] 9.1 `GET /account/export` streams the user's decrypted memory as JSON; `POST /account/delete` deletes the key first, then the rows, the Auth user and the devices; tests with the fake PostgREST for the order and for another user untouched (`pnpm test`)
-- [ ] 9.2 Verify on the project: after deletion, the user's rows are gone, a dump of what remains holds nothing of theirs, and a copy of their sealed rows cannot be opened without the deleted key [key:SUPABASE_SECRET_KEY]
+- [x] 9.2 Verify on the project: after deletion, the user's rows are gone, a dump of what remains holds nothing of theirs, and a copy of their sealed rows cannot be opened without the deleted key [key:SUPABASE_SECRET_KEY]
+  - 2026-11-02, on the project with two synthetic accounts: after `deleteAccount` the user had 0 rows in all 18 tables and their sign-in answered 404; the other user's memory still opened; the deleted user's key could not be recovered, and a copy of their sealed turn opened with no other key. The project held 0 rows and 0 users afterwards.
 - [ ] 9.3 Privacy note in the app and the README. It covers:
   - what is encrypted and what stays plain
   - which models see the content, and that the hackathon's Meta credit carries only the owner's data

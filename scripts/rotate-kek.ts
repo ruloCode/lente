@@ -7,7 +7,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkKekAtStart, keksFromEnv } from "../src/kek-check.ts";
-import { type Kek, unwrapDek, wrapDek } from "../src/seal.ts";
+import { type Kek, opensCanary, unwrapDek, wrapDek } from "../src/seal.ts";
 import { fromBytea, SupabaseRest } from "../src/supabase-rest.ts";
 import { supabaseCanaries } from "../src/supabase-stores.ts";
 
@@ -19,15 +19,20 @@ export interface RotationReport {
 }
 
 /**
- * Brings every wrapped key to the current KEK (`keks[0]`). The canary of the new version is sealed
- * first and the previous one checked, so a wrong key stops before any row changes. Each row is
+ * Brings every wrapped key to the current KEK (`keks[0]`). The previous KEK's canary is checked
+ * first, so a wrong key stops before anything is written; then the new version's canary is sealed. Each row is
  * replaced only if it still has the version that was read, and at the end every key must open
  * under the current KEK alone.
  */
 export async function rotateKeys(rest: SupabaseRest, keks: readonly Kek[], now = Date.now()): Promise<RotationReport> {
   const [current] = keks;
   if (!current || keks.length < 2) throw new Error("a rotation needs the new LENTE_KEK and LENTE_KEK_PREVIOUS; run node scripts/new-kek.ts --rotate first");
-  await checkKekAtStart(keks, supabaseCanaries(rest));
+  const canaries = supabaseCanaries(rest);
+  for (const kek of keks.slice(1)) {
+    const sealed = await canaries.read(kek.version);
+    if (!sealed || !opensCanary(kek, sealed)) throw new Error(`KEK canary check failed for version ${kek.version}: LENTE_KEK_PREVIOUS is not the key the database was set up with; nothing was changed`);
+  }
+  await checkKekAtStart(keks, canaries);
   const at = new Date(now).toISOString();
   const report: RotationReport = { version: current.version, users: 0, rewrapped: 0, alreadyCurrent: 0 };
   for (const row of await rest.system.wrappedKeys()) {

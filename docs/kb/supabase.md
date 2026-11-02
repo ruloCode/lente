@@ -45,7 +45,17 @@ Auth calls carry the publishable key in `apikey`.
 - The secret key goes in the `apikey` header only. Supabase's API keys guide: an `sb_secret_`/`sb_publishable_` key is not a JWT, so it cannot be sent as `Authorization: Bearer` (unless it equals `apikey`, and then the database rejects it as not a JWT). `src/supabase-rest.ts` and `deleteAuthUser` send `apikey` only.
 - PostgREST: `GET|POST|PATCH|DELETE /rest/v1/<table>`, `Prefer: return=representation|minimal`, filters such as `user_id=eq.<uuid>`; RPC is `POST /rest/v1/rpc/<function>` with the arguments as a JSON object.
 - Auth admin: `DELETE /auth/v1/admin/users/<id>`.
-- Pending: the secret-key calls (table read, RPC, admin) answered 401 "Invalid API key" on 2026-11-02 because `.env` held the CLI's masked key. Re-run them once the dashboard key is in `.env`.
+- Probed with the secret key on 2026-11-02:
+  - `GET /rest/v1/accounts` answered 200.
+  - `POST /rest/v1/rpc/<missing>` answered 404 `PGRST202`.
+  - `GET /auth/v1/admin/users` answered 200 with `apikey` alone, and also with `Authorization: Bearer` equal to it.
+  - `DELETE /auth/v1/admin/users/<unknown id>` answered 404 "User not found", which `deleteAuthUser` counts as deleted.
+- Live run, same day, two synthetic accounts (`probe-rotate-*@example.com`) and throwaway KEK versions 60001/60002:
+  - Accounts and meetings went in through the RPCs over PostgREST.
+  - `rotateKeys` re-wrapped 2 keys, with content byte-identical and memory opening under the new KEK alone.
+  - `deleteAccount` left 0 rows of the deleted user in all 18 tables and their sign-in answered 404. The other user was untouched.
+  - A copy of the deleted user's sealed turn opened with no other key.
+  - Afterwards the project held 0 rows and 0 auth users.
 
 ### Free plan limits (supabase.com/pricing, 2026-11-02)
 

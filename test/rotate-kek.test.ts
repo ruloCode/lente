@@ -60,8 +60,9 @@ test("rotating re-wraps every key under the new version, the memory still opens,
 test("a wrong previous KEK stops the rotation before any key changes", async () => {
   const { fake } = await setup();
   const keys = JSON.stringify(fake.tables.get("user_keys"));
-  await assert.rejects(rotateKeys(fake.rest, [kek(2), kek(1)]), /canary check failed for version 1/);
+  await assert.rejects(rotateKeys(fake.rest, [kek(2), kek(1)]), /canary check failed for version 1.*nothing was changed/);
   assert.equal(JSON.stringify(fake.tables.get("user_keys")), keys);
+  assert.deepEqual(fake.tables.get("kek_canaries")!.map((r) => r.kek_version), [1], "no canary is sealed for the new version");
 });
 
 test("without LENTE_KEK_PREVIOUS there is nothing to rotate from", async () => {
