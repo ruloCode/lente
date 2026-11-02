@@ -361,6 +361,12 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (it.ok) { newClipToken.value = Account.createdToken(it.text); loadAccount() } else failed(it, "crear el token del clip")
     }
 
+    /** An agent token (add-agent-bridge) with the access the wearer picked; shown once like a clip's. */
+    fun newAgent(label: String, access: String) {
+        val body = JSONObject().put("kind", "mcp").put("label", label.ifBlank { if (access == "bridge") "Puente" else "Agente" }).put("scopes", JSONArray(Account.scopesFor(access)))
+        post("/devices", body) { if (it.ok) { newClipToken.value = Account.createdToken(it.text); loadAccount() } else failed(it, "crear el token del agente") }
+    }
+
     fun forgetClipToken() { newClipToken.value = null }
 
     fun revokeDevice(id: String) = post("/devices/revoke", JSONObject().put("id", id)) { if (it.ok) loadAccount() else failed(it, "revocar el dispositivo") }
@@ -470,11 +476,17 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             if (!r.ok) return@post say(runCatching { JSONObject(r.text).optString("error") }.getOrNull()?.ifBlank { null }?.let { "No se pudo: $it." } ?: "No se pudo decidir (${r.code}).")
             val outcome = runCatching { JSONObject(r.text).optJSONObject("outcome") }.getOrNull()
             outcome?.optString("mailto")?.takeIf { it.isNotBlank() }?.let(openMail)
-            say(if (approve) "Hecho." else "Descartada.")
+            val queued = outcome?.optString("state") == "queued"
+            say(if (!approve) "Descartada." else if (queued) "Aprobado: el puente de tu computadora lo hará." else "Hecho.")
         }
     }
 
     fun taskDone(id: String, done: Boolean) = post("/tasks/done", JSONObject().put("id", id).put("done", done))
+
+    /** "Que lo haga un agente" on a task Lente can do: a job that waits in Por aprobar (add-agent-bridge). */
+    fun agentJob(taskId: String) = post("/agent/jobs", JSONObject().put("taskId", taskId).put("agent", "claude")) {
+        if (it.ok) say("Quedó en «Por aprobar». Nada corre hasta que lo apruebes.") else failed(it, "pedirle la tarea a un agente")
+    }
 
     /** A task by hand, the wearer's unless they say otherwise (add-task-owners). */
     fun addTask(title: String, who: String) = post("/tasks/add", JSONObject().put("title", title).put("who", who)) { failed(it, "agregar la tarea") }

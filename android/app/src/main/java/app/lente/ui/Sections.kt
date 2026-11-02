@@ -67,6 +67,7 @@ private val FIELDS = mapOf(
     "create_task" to listOf("title" to "Título", "due" to "Para cuándo"),
     "create_reminder" to listOf("title" to "Título", "date" to "Fecha (AAAA-MM-DD)", "note" to "Nota"),
     "draft_email" to listOf("to" to "Para (separa con comas)", "subject" to "Asunto", "body" to "Texto"),
+    "run_agent" to listOf("agent" to "Agente (claude o codex)", "instruction" to "Instrucción", "workdir" to "Carpeta (vacía: la del puente)"),
 )
 
 /** Acciones: what the agent proposes after a meeting (nothing runs until approved) and the task list. */
@@ -103,7 +104,7 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
                 Group {
                     list.forEachIndexed { i, t ->
                         if (i > 0) Hairline()
-                        TaskRow(t, onToggle = { vm.taskDone(t.id, true) }, onOwner = { vm.setTaskOwner(t.id, TaskOwners.next(t.who)) }, onDelete = { vm.deleteTask(t.id) })
+                        TaskRow(t, onToggle = { vm.taskDone(t.id, true) }, onOwner = { vm.setTaskOwner(t.id, TaskOwners.next(t.who)) }, onDelete = { vm.deleteTask(t.id) }, onAgent = if (t.who == "lente") ({ vm.agentJob(t.id) }) else null)
                     }
                 }
             }
@@ -116,13 +117,15 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
 }
 
 @Composable
-private fun TaskRow(t: app.lente.core.Task, onToggle: () -> Unit, onOwner: (() -> Unit)?, onDelete: () -> Unit) {
+private fun TaskRow(t: app.lente.core.Task, onToggle: () -> Unit, onOwner: (() -> Unit)?, onDelete: () -> Unit, onAgent: (() -> Unit)? = null) {
     val c = Lente.c
     Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 8.dp, vertical = 6.dp).testTag("task-${t.id}"), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(t.done, { onToggle() }, colors = CheckboxDefaults.colors(checkedColor = c.accentFill, checkmarkColor = c.onAccent, uncheckedColor = c.muted))
         Column(Modifier.weight(1f)) {
             Text(t.title, style = Type.body, color = if (t.done) c.muted else c.ink)
             TaskOwners.context(t).takeIf { it.isNotEmpty() }?.let { Text(it, style = Type.caption, color = c.muted) }
+            // add-agent-bridge: hands the task to the wearer's coding agent, after approval in Por aprobar.
+            if (onAgent != null) Text("Que lo haga un agente", style = Type.caption, color = c.accent, modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onAgent).padding(vertical = 4.dp).testTag("task-agent-${t.id}"))
         }
         if (onOwner != null) Tag(TaskOwners.tag(t), Modifier.padding(start = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onOwner).testTag("task-owner-${t.id}"))
         Box(Modifier.padding(start = 4.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onDelete).padding(6.dp).testTag("task-delete-${t.id}")) { Icon(Glyph.Trash, c.muted, size = 18.dp) }
@@ -143,7 +146,7 @@ private fun ActionCard(p: PendingAction, decide: (Boolean, Map<String, String>) 
         if (p.meetingTitle.isNotBlank()) Text(p.meetingTitle, style = Type.caption, color = c.muted)
         for ((k, label) in FIELDS[p.tool] ?: emptyList()) {
             Text(label.uppercase(), style = Type.label, color = c.muted, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
-            if (editing) Field(values[k] ?: "", { values[k] = it }, label, singleLine = k != "body")
+            if (editing) Field(values[k] ?: "", { values[k] = it }, label, singleLine = k != "body" && k != "instruction")
             else Text((values[k] ?: "").ifBlank { "—" }, style = Type.callout, color = c.ink)
         }
         for (q in p.quotes.filter { it.text.isNotBlank() }) Text(
@@ -380,6 +383,9 @@ fun AccountSection(vm: LenteViewModel) {
     val clipboard = LocalClipboardManager.current
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(vm::exportTo) }
     var label by rememberSaveable { mutableStateOf("") }
+    var kind by rememberSaveable { mutableStateOf("clip") }
+    var access by rememberSaveable { mutableStateOf("read") }
+    var tokenKind by rememberSaveable { mutableStateOf("clip") }
     LaunchedEffect(signedIn) { if (signedIn) vm.loadAccount() }
     // The token is shown once: leaving the screen forgets it.
     DisposableEffect(Unit) { onDispose { vm.forgetClipToken() } }
@@ -404,19 +410,26 @@ fun AccountSection(vm: LenteViewModel) {
         if (devices.isEmpty()) ListRow("Sin clips todavía", hint = "Crea un token y grábalo en el clip")
         devices.forEachIndexed { i, d ->
             if (i > 0) Hairline()
-            ListRow(d.label, hint = if (d.revoked) "Revocado" else Account.lastSeen(d.lastSeenAt, System.currentTimeMillis()))
+            ListRow(d.label, hint = Account.kindLine(d) + " · " + if (d.revoked) "Revocado" else Account.lastSeen(d.lastSeenAt, System.currentTimeMillis()))
             if (!d.revoked) ConfirmButton("Revocar", "Toca de nuevo para revocar", { vm.revokeDevice(d.id) }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), tag = "revoke-${d.id}")
         }
     }
     Card {
         if (token == null) {
+            // A clip's token, or an agent's (add-agent-bridge) with what it may do.
+            Segmented(listOf("clip" to "Clip", "mcp" to "Agente"), kind, { kind = it }, label = "Tipo")
+            if (kind == "mcp") {
+                Spacer(Modifier.height(8.dp))
+                Segmented(Account.AGENT_ACCESS, access, { access = it }, label = "Puede")
+            }
+            Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Field(label, { label = it }, "Nombre del clip", Modifier.weight(1f), tag = "clip-label")
+                Field(label, { label = it }, if (kind == "mcp") "Nombre del agente" else "Nombre del clip", Modifier.weight(1f), tag = "clip-label")
                 Spacer(Modifier.width(10.dp))
-                Button("Nuevo token", { vm.newClip(label); label = "" })
+                Button("Nuevo token", { if (kind == "mcp") vm.newAgent(label, access) else vm.newClip(label); tokenKind = kind; label = "" })
             }
         } else {
-            Text("Token del clip. Se muestra una sola vez: cópialo ahora en el firmware del clip.", style = Type.callout, color = c.muted)
+            Text(if (tokenKind == "mcp") "Token del agente. Se muestra una sola vez: ponlo en tu agente (Claude Code, Codex, Cursor) o en LENTE_TOKEN." else "Token del clip. Se muestra una sola vez: cópialo ahora en el firmware del clip.", style = Type.callout, color = c.muted)
             Text(token!!, style = Type.measured, color = c.ink, modifier = Modifier.padding(vertical = 8.dp).testTag("clip-token"))
             Row {
                 Button("Copiar", { clipboard.setText(AnnotatedString(token!!)) })

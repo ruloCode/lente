@@ -25,7 +25,7 @@ Depends on: `add-task-owners`
 
 ## 5. App
 
-- [ ] 5.1 Android: the "Agente" token kind with its scopes, the `run_agent` card and "Que lo haga un agente" on `lente` tasks; unit tests (`pnpm android:test`) and a build (`pnpm android:build`)
+- [x] 5.1 Android: the "Agente" token kind with its scopes, the `run_agent` card and "Que lo haga un agente" on `lente` tasks; unit tests (`pnpm android:test`) and a build (`pnpm android:build`)
 - [ ] 5.2 A screenshot of the card and the token on the phone [phone]
 
 ## 6. Docs and real clients
