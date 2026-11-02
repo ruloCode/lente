@@ -30,9 +30,12 @@ Depends on: `add-accounts`, `add-projects`, `add-task-owners`, `add-record-sheet
 
 ## 4. Reuniones, Memoria and Hoy
 
-- [ ] 4.1 Reuniones: by date with search, detail with notes, transcript with speakers, editable project, share and delete, the "Importada" mark; screenshots
-- [ ] 4.2 Memoria: facts to review and kept, keep and discard, "Revisar uno por uno", the glossary, the profile; screenshots
-- [ ] 4.3 Hoy: today's line with what was heard, seen and the cards; screenshots
+- [x] 4.1 Reuniones: by date with search, detail with notes, transcript with speakers, editable project, share and delete, the "Importada" mark; screenshots
+  - 2026-11-02: searched «proveedor», opened the result at its turn (highlighted), the project picker showed the meeting's project, and deleted the recorded demo meeting after the confirmation. The search now survives opening a result.
+- [x] 4.2 Memoria: facts to review and kept, keep and discard, "Revisar uno por uno", the glossary, the profile; screenshots
+  - 2026-11-02: «Revisar uno por uno» kept one fact and discarded the other; `/facts` on the hub agreed.
+- [x] 4.3 Hoy: today's line with what was heard, seen and the cards; screenshots
+  - 2026-11-02: the seeded day plus the live turn and help card, with the filters and today's listening time and spend.
 
 ## 5. Dispositivos, Ajustes, shortcuts and notifications
 

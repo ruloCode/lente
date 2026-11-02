@@ -153,7 +153,7 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border-radius: 7
 .card-head h2 { color: var(--ink); }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .link { font-weight: 600; font-size: 14px; }
-.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 18px; align-items: start; }
 .notice { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 14px; background: var(--tag); color: var(--ink); }
 .notice:hover { text-decoration: none; filter: brightness(.98); }
 .notice > .i:first-child { color: var(--accent); }
@@ -244,7 +244,7 @@ a.row-link:hover { background: var(--raised); text-decoration: none; }
 .quote span:nth-child(2) { flex: 1; }
 
 /* Reuniones */
-.page.split { max-width: none; grid-template-columns: minmax(260px, min(36%, 400px)) minmax(0, 1fr); gap: 0; height: calc(100dvh - 92px); }
+.page.split { max-width: none; grid-template-columns: minmax(300px, min(40%, 420px)) minmax(0, 1fr); gap: 0; height: calc(100dvh - 92px); }
 .split-list { padding-right: 22px; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .split-list .page-head { margin-bottom: 14px; }
 .list-scroll { overflow: auto; flex: 1; padding-right: 4px; }
@@ -280,7 +280,6 @@ a.row-link:hover { background: var(--raised); text-decoration: none; }
 .glossary dd { margin: 0; }
 
 /* Memoria */
-.memory-cols { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
 .fact-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 60vh; overflow: auto; }
 .fact-card { display: grid; gap: 8px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); }
 .facts-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -419,7 +418,6 @@ a.row-link:hover { background: var(--raised); text-decoration: none; }
   .chat { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 30; box-shadow: var(--shadow-float); }
   .shell[data-chat="open"] .chat-wrap::before { content: ""; position: fixed; inset: 0; background: var(--scrim); z-index: 29; }
   .main { padding: 22px 22px 64px; }
-  .two-col, .memory-cols { grid-template-columns: 1fr; }
   .stats-row { grid-template-columns: 1fr 1fr; }
   .choices { grid-template-columns: 1fr; }
 }

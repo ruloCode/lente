@@ -11,11 +11,14 @@ import { meetingPath, pathFor } from "../lib/routes.js";
 import { lifecycle, reactive } from "../reactive.js";
 import { emit, refreshProjects, store } from "../store.js";
 
+const listState = { q: "", topic: "", results: null, timer: 0 };
+
 export function meetingsView(params, query) {
   const life = lifecycle();
-  const ui = { q: "", topic: "", results: null, timer: 0 };
+  // The search and the topic outlive opening a meeting from the list.
+  const ui = listState;
   const redraw = () => emit(["meetings-ui"]);
-  const search = h("input", { class: "field search", type: "search", placeholder: "Buscar en títulos, notas y transcripciones", "aria-label": "Buscar reuniones", "data-key": "m-search" });
+  const search = h("input", { class: "field search", type: "search", placeholder: "Buscar en títulos, notas y transcripciones", "aria-label": "Buscar reuniones", "data-key": "m-search", value: ui.q });
   search.addEventListener("input", () => {
     ui.q = search.value;
     clearTimeout(ui.timer);
@@ -62,7 +65,7 @@ function searchResults(results, openId) {
 }
 
 function meetingDetail(id, turn, life) {
-  const d = { state: "loading", m: null, tab: turn ? "transcript" : "notes", highlight: turn, confirmDelete: 0 };
+  const d = { state: "loading", m: null, tab: turn ? "transcript" : "notes", highlight: turn };
   const redraw = () => emit(["meeting-detail"]);
   const load = async () => {
     try {
@@ -106,7 +109,7 @@ function meetingDetail(id, turn, life) {
         "header",
         { class: "detail-head" },
         h("a", { class: "back", href: pathFor("meetings") }, icon("back"), "Reuniones"),
-        h("div", { class: "row" }, h("h2", { class: "detail-title grow" }, m.title || m.topic || "Reunión"), iconButton("share", "Compartir las notas", { onclick: () => share(m) }), iconButton("trash", d.confirmDelete > Date.now() ? "Toca otra vez para borrar" : "Borrar la reunión", { class: `icon-btn${d.confirmDelete > Date.now() ? " danger" : ""}`, onclick: () => remove(m, d, redraw) })),
+        h("div", { class: "row" }, h("h2", { class: "detail-title grow" }, m.title || m.topic || "Reunión"), iconButton("share", "Compartir las notas", { onclick: () => share(m) }), iconButton("trash", "Borrar la reunión", { onclick: () => remove(m) })),
         h("div", { class: "chips meta" }, h("span", { class: "chip static" }, icon("calendar"), dayLabel(m.startedAt, Date.now())), h("span", { class: "chip static num" }, icon("wave"), timeRange(m.startedAt, m.endedAt)), m.endedAt ? h("span", { class: "chip static" }, duration(m.endedAt - m.startedAt)) : null, m.topic ? h("span", { class: `topic ${topicTone(m.topic)}` }, m.topic) : null, isImported(m) ? h("span", { class: "tag neutral" }, "Importada") : null),
         projectPicker(m, active),
       ),
@@ -161,14 +164,7 @@ async function share(m) {
   toast("Notas copiadas");
 }
 
-async function remove(m, d, redraw) {
-  if (d.confirmDelete < Date.now()) {
-    d.confirmDelete = Date.now() + 4000;
-    redraw();
-    toast("Toca el bote otra vez para borrar la reunión.", { ms: 4000 });
-    setTimeout(redraw, 4100);
-    return;
-  }
+async function remove(m) {
   if (!(await confirm("Borrar reunión", `Se borran «${m.title || "la reunión"}», sus notas, sus tareas propuestas y lo que Lente aprendió de ella. No se puede deshacer.`, { yes: "Borrar", danger: true }))) return;
   const res = await post("/meetings/delete", { id: m.id });
   if (!res.ok) return toast(res.status === 404 ? "No se puede borrar una reunión en curso." : "No se pudo borrar.", { tone: "warn" });
