@@ -15,7 +15,7 @@ Depends on: `add-task-owners`
 
 ## 3. CLI
 
-- [ ] 3.1 `scripts/lente.ts`: `ask`, `tasks`, `task add`, `task done`, `--json`, exit codes; tests against a hub (`pnpm test`)
+- [x] 3.1 `scripts/lente.ts`: `ask`, `tasks`, `task add`, `task done`, `--json`, exit codes; tests against a hub (`pnpm test`)
 
 ## 4. Agent jobs and the bridge
 
