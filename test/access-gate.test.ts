@@ -2,55 +2,70 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decideUpgrade, decideWeb } from "../src/access-gate.ts";
 
-const web = (method: string, path: string, over: { plainHttp?: boolean; paired?: boolean } = {}) =>
-  ({ method, path, plainHttp: false, paired: false, ...over });
+const web = (method: string, path: string, over: { plainHttp?: boolean; identified?: boolean } = {}) =>
+  ({ method, path, plainHttp: false, identified: false, ...over });
 
-test("with auth on, an unpaired browser gets the pairing screen at / and 401-class refusals elsewhere", () => {
-  assert.equal(decideWeb(web("GET", "/"), true), "pair-page");
-  for (const path of ["/events", "/status", "/meetings", "/session/stop", "/device"]) {
-    assert.equal(decideWeb(web("GET", path), true), "deny", path);
+test("pairing mode: an unpaired browser gets the pairing screen at / and 401-class refusals elsewhere", () => {
+  assert.equal(decideWeb(web("GET", "/"), "pairing"), "pair-page");
+  for (const path of ["/events", "/status", "/meetings", "/session/stop", "/device", "/auth/google"]) {
+    assert.equal(decideWeb(web("GET", path), "pairing"), "deny", path);
   }
-  assert.equal(decideWeb(web("POST", "/session/stop"), true), "deny");
-  assert.equal(decideWeb(web("POST", "/pair"), true), "pair");
+  assert.equal(decideWeb(web("POST", "/session/stop"), "pairing"), "deny");
+  assert.equal(decideWeb(web("POST", "/pair"), "pairing"), "pair");
 });
 
-test("with auth on, a paired browser reaches the routes", () => {
-  assert.equal(decideWeb(web("GET", "/events", { paired: true }), true), "pass");
-  assert.equal(decideWeb(web("POST", "/session/stop", { paired: true }), true), "pass");
+test("pairing and accounts modes: an identified caller reaches the routes", () => {
+  for (const mode of ["pairing", "accounts"] as const) {
+    assert.equal(decideWeb(web("GET", "/events", { identified: true }), mode), "pass");
+    assert.equal(decideWeb(web("POST", "/session/stop", { identified: true }), mode), "pass");
+  }
 });
 
-test("with auth on, plain HTTP is redirected to HTTPS before anything else, paired or not", () => {
-  assert.equal(decideWeb(web("GET", "/", { plainHttp: true }), true), "redirect-https");
-  assert.equal(decideWeb(web("GET", "/events", { plainHttp: true, paired: true }), true), "redirect-https");
+test("accounts mode: no pairing; / shows sign-in, the two sign-in routes are open, everything else is 401", () => {
+  assert.equal(decideWeb(web("GET", "/"), "accounts"), "signin-page");
+  assert.equal(decideWeb(web("GET", "/auth/google"), "accounts"), "auth");
+  assert.equal(decideWeb(web("GET", "/auth/callback"), "accounts"), "auth");
+  assert.equal(decideWeb(web("POST", "/pair"), "accounts"), "deny");
+  for (const path of ["/events", "/status", "/meetings", "/devices", "/account/export", "/auth/signout"]) {
+    assert.equal(decideWeb(web("GET", path), "accounts"), "deny", path);
+  }
 });
 
-test("/health stays reachable with or without auth, and only for GET", () => {
-  assert.equal(decideWeb(web("GET", "/health"), true), "health");
-  assert.equal(decideWeb(web("GET", "/health"), false), "health");
-  assert.equal(decideWeb(web("POST", "/health"), true), "deny");
+test("pairing and accounts modes: plain HTTP is redirected to HTTPS before anything else, identified or not", () => {
+  for (const mode of ["pairing", "accounts"] as const) {
+    assert.equal(decideWeb(web("GET", "/", { plainHttp: true }), mode), "redirect-https");
+    assert.equal(decideWeb(web("GET", "/events", { plainHttp: true, identified: true }), mode), "redirect-https");
+  }
 });
 
-test("with auth off nothing changes: every route passes", () => {
+test("/health stays reachable in every mode, and only for GET", () => {
+  for (const mode of ["open", "pairing", "accounts"] as const) assert.equal(decideWeb(web("GET", "/health"), mode), "health");
+  assert.equal(decideWeb(web("POST", "/health"), "pairing"), "deny");
+  assert.equal(decideWeb(web("POST", "/health"), "accounts"), "deny");
+});
+
+test("open mode (laptop) changes nothing: every route passes", () => {
   for (const [method, path] of [["GET", "/"], ["GET", "/events"], ["POST", "/session/stop"], ["POST", "/pair"]]) {
-    assert.equal(decideWeb(web(method, path, { plainHttp: true }), false), "pass", `${method} ${path}`);
+    assert.equal(decideWeb(web(method, path, { plainHttp: true }), "open"), "pass", `${method} ${path}`);
   }
 });
 
-const up = (over: Partial<Parameters<typeof decideUpgrade>[0]> = {}) =>
-  ({ path: "/device", plainHttp: false, deviceKnown: false, paired: false, ...over });
+const up = (over: Partial<Parameters<typeof decideUpgrade>[0]> = {}) => ({ path: "/device", plainHttp: false, identified: false, ...over });
 
-test("the /device upgrade is refused without a valid token or session when auth is on", () => {
-  assert.equal(decideUpgrade(up(), "/device", true), 401);
-  assert.equal(decideUpgrade(up({ deviceKnown: true }), "/device", true), 200);
-  assert.equal(decideUpgrade(up({ paired: true }), "/device", true), 200);
+test("the /device upgrade is refused unless the caller resolved to someone", () => {
+  for (const mode of ["pairing", "accounts"] as const) {
+    assert.equal(decideUpgrade(up(), "/device", mode), 401);
+    assert.equal(decideUpgrade(up({ identified: true }), "/device", mode), 200);
+  }
 });
 
 test("the /device upgrade over plain HTTP gets 426 on a cloud hub, and other paths 404", () => {
-  assert.equal(decideUpgrade(up({ plainHttp: true, deviceKnown: true }), "/device", true), 426);
-  assert.equal(decideUpgrade(up({ path: "/other", deviceKnown: true }), "/device", true), 404);
-  assert.equal(decideUpgrade(up({ path: undefined }), "/device", false), 404);
+  assert.equal(decideUpgrade(up({ plainHttp: true, identified: true }), "/device", "pairing"), 426);
+  assert.equal(decideUpgrade(up({ plainHttp: true, identified: true }), "/device", "accounts"), 426);
+  assert.equal(decideUpgrade(up({ path: "/other", identified: true }), "/device", "accounts"), 404);
+  assert.equal(decideUpgrade(up({ path: undefined }), "/device", "open"), 404);
 });
 
-test("the /device upgrade with auth off is accepted as before", () => {
-  assert.equal(decideUpgrade(up({ plainHttp: true }), "/device", false), 200);
+test("the /device upgrade in open mode is accepted as before", () => {
+  assert.equal(decideUpgrade(up({ plainHttp: true }), "/device", "open"), 200);
 });

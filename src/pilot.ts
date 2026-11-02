@@ -32,10 +32,12 @@ import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
-import { DeviceAuth, SESSION_COOKIE, cookieValue, deviceTokenOf } from "./device-auth.ts";
+import { DeviceAuth, SESSION_COOKIE } from "./device-auth.ts";
 import { HealthTracker } from "./health.ts";
 import { PAIR_PAGE } from "./pair-page.ts";
-import { decideUpgrade, decideWeb } from "./access-gate.ts";
+import { type AuthMode, decideUpgrade, decideWeb } from "./access-gate.ts";
+import { type Identity, type IdentitySources, identify } from "./identify.ts";
+import { UserAuth } from "./user-auth.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -214,6 +216,19 @@ let latestPartial = "";
 /** Cloud hub: clips need a device token and browsers a pairing; the laptop hub (no LENTE_CLOUD) stays open on the LAN. */
 const CLOUD = process.env.LENTE_CLOUD === "1";
 const auth = CLOUD ? new DeviceAuth(join(DATA_DIR, "devices.json")) : undefined;
+/** Accounts (add-accounts): with a Supabase project configured, every request acts for a signed-in user. */
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const userAuth = SUPABASE_URL ? new UserAuth(SUPABASE_URL) : undefined;
+const AUTH_MODE: AuthMode = userAuth ? "accounts" : auth ? "pairing" : "open";
+const identitySources: IdentitySources = {
+  mode: AUTH_MODE,
+  cookieName: SESSION_COOKIE,
+  pairedSession: (cookie) => Boolean(auth?.checkSession(cookie)),
+  knownDevice: (token) => Boolean(auth?.checkDevice(token)),
+  verifyAccessToken: async (token) => (await userAuth!.verify(token)).userId,
+};
+/** Who each admitted request acts for; read by the routes once the hub keeps one runtime per user. */
+const requestIdentity = new WeakMap<IncomingMessage, Identity>();
 const health = new HealthTracker();
 
 /** A broken model or transcription key, as a reason class for the phone's note (no text from the call). */
@@ -1142,8 +1157,9 @@ function healthReport() {
 /** Web gate: /health, and on a cloud hub TLS and pairing. Returns true when the request was answered here. */
 async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const path = req.url?.split("?")[0];
-  const paired = Boolean(auth?.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE)));
-  switch (decideWeb({ method: req.method, path, plainHttp: plainHttp(req), paired }, Boolean(auth))) {
+  const who = await identify({ authorization: req.headers.authorization, cookie: req.headers.cookie, url: req.url }, identitySources, "web");
+  if (who) requestIdentity.set(req, who);
+  switch (decideWeb({ method: req.method, path, plainHttp: plainHttp(req), identified: Boolean(who) }, AUTH_MODE)) {
     case "health": {
       const report = healthReport();
       res.writeHead(report.ok ? 200 : 503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -1164,6 +1180,11 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
     }
     case "pair-page":
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(PAIR_PAGE);
+      return true;
+    case "signin-page":
+    case "auth":
+      // Web sign-in with Google lands with add-accounts 3.2; until then the app signs in with a bearer token.
+      res.writeHead(401, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Inicia sesión desde la app de Lente.");
       return true;
     default:
       res.writeHead(401, { "Cache-Control": "no-store" }).end();
@@ -1325,17 +1346,16 @@ if (Boolean(TLS_CERT) !== Boolean(TLS_KEY)) {
   process.exit(1);
 }
 const web = TLS_CERT && TLS_KEY ? createHttpsServer({ cert: readFileSync(TLS_CERT), key: readFileSync(TLS_KEY) }, handleWeb) : createHttpServer(handleWeb);
-web.on("upgrade", (req, raw, head) => {
-  const status = decideUpgrade(
-    {
-      path: req.url?.split("?")[0],
-      plainHttp: plainHttp(req),
-      deviceKnown: Boolean(auth?.checkDevice(deviceTokenOf(req.headers, req.url ?? ""))),
-      paired: Boolean(auth?.checkSession(cookieValue(req.headers.cookie, SESSION_COOKIE))),
-    },
-    DEVICE_WS_PATH,
-    Boolean(auth),
-  );
+web.on("upgrade", async (req, raw, head) => {
+  let who: Identity | undefined;
+  try {
+    who = await identify({ authorization: req.headers.authorization, cookie: req.headers.cookie, url: req.url }, identitySources, "device");
+  } catch (error) {
+    console.error(`[device] could not check the connection's credentials: ${(error as Error).message}`);
+    return void raw.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+  }
+  if (who) requestIdentity.set(req, who);
+  const status = decideUpgrade({ path: req.url?.split("?")[0], plainHttp: plainHttp(req), identified: Boolean(who) }, DEVICE_WS_PATH, AUTH_MODE);
   const refusals: Record<number, string> = { 401: "Unauthorized", 404: "Not Found", 426: "Upgrade Required" };
   if (status !== 200) return void raw.end(`HTTP/1.1 ${status} ${refusals[status]}\r\nConnection: close\r\n\r\n`);
   const socket = acceptDevice(req, raw, head);
