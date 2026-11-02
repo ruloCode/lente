@@ -154,3 +154,37 @@ The hub deployed with `deploy/modal/hub.py` (one container, `us-east`), driven f
 | Native app on the Samsung SM-S931B paired with the cloud hub over home Wi-Fi: turn → card shown, as the card reports it | 1 | 2,209 ms total, of which first token 1,838 ms and hub → phone 319 ms |
 
 One sample for the cue: read it as a smoke check that the cloud path works, not as a latency figure. The cue's stages come from the hub's `cue` event (`turn`, `asked`, `firstToken`, `sent`), all on the container's clock.
+
+## Talking with Lente (voice mode) — 2026-11-02
+
+`node --env-file=.env scripts/bench-voice.ts 2` (`add-voice-mode` 4.1). Five synthetic Spanish questions are spoken with `say -v Paulina`, converted to 16 kHz with `afconvert`, and streamed at real time to `/voice` on a hub the script starts on a scratch data folder. The folder holds one synthetic meeting and never touches `data/`.
+
+- Transcription: Muse Voice Transcribe in `ENDPOINTING` mode.
+- Agent: Muse Spark 1.3, minimal effort, function calling plus web search.
+- Each question is asked twice, in two sessions: 10 turns, 10 answered.
+
+Times run from the end of the question's audio, on the Mac's clock. They include the Mac → hub → Meta path on home Wi-Fi.
+
+| Measure | n | p50 | p90 |
+|---|---|---|---|
+| End of speech → `speechComplete` (endpointing) | 10 | 323 ms | 344 ms |
+| End of speech → first sentence of any kind (often the commentary «Lo anoto en tu lista») | 10 | 2,150 ms | 3,167 ms |
+| End of speech → first sentence of the answer | 10 | 3,207 ms | 4,783 ms |
+| Cost per turn (tokens, web searches, transcription) | 10 | US$ 0.0044 | US$ 0.0075 |
+
+By kind (p50 over 2 turns each):
+
+| Question | Tool | First text | First answer sentence | Cost |
+|---|---|---|---|---|
+| «Hola Lente, ¿qué puedes hacer por mí?» | none | 1,668 ms | 1,668 ms | US$ 0.0031 |
+| «Agrega que llame a Ana el viernes.» | `add_task` | 2,014 ms | 3,311 ms | US$ 0.0048 |
+| «¿Qué tareas tengo pendientes?» | `list_tasks` | 1,497 ms | 2,631 ms | US$ 0.0026 |
+| «¿Qué se decidió sobre la beta en la reunión de planeación?» | `ask_memory` (plan and answer calls) | 1,430 ms | 3,446 ms | US$ 0.0026 |
+| «Busca en internet cuál es la capital de Australia.» | `web_search` | 2,688 ms | 2,840 ms | US$ 0.0063 |
+
+What this says:
+- Endpointing is not the bottleneck: the turn is ready about a third of a second after the wearer stops.
+- The model is the bottleneck. A turn with a tool takes two model steps, and the commentary sentence is what the wearer hears first, about a second before the answer.
+- The first-answer target of 1.5 s is met only by a reply without tools.
+- Moving the first step to the fast lane (Muse Spark Open) is the next thing to measure. Its function calling is not verified.
+- "First text" is when the sentence is ready for the phone's voice. The phone's text-to-speech start is measured on the phone (task 3.3).

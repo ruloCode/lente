@@ -22,8 +22,15 @@ Depends on: `add-accounts`, `add-task-owners`, `add-record-sheet`
 - [x] 3.2 `platform/VoiceClient.kt` (OkHttp WebSocket, `VOICE_COMMUNICATION` microphone, hold-to-talk) and `ui/Voice.kt` with its button beside the ask bar; the record sheet opens from `recordSheet`
   - 2026-11-02: 83 of 83 JVM tests pass (5 new in `VoiceStateTest`); the debug APK builds. No new dependency: OkHttp's WebSocket, `AudioRecord` and `TextToSpeech` are what the app already uses.
 - [ ] 3.3 On the phone: a screenshot in each state (escuchando, pensando, hablando) with test speech from the Mac's `say` [phone]
+  - 2026-11-02, emulator instead (no phone on adb, only a TV): AVD `lente35` with this branch's APK, and this branch's hub on a scratch folder with the real Meta key and no Supabase.
+    - The emulator's microphone gave only zeros (macOS does not grant it the host microphone), so the `say` question was streamed as a clip (`scripts/fake-clip.ts`, `PILOT_MIC_GAIN=1`). That covers the clip path: «Escuchando con el clip», meeting listening paused.
+    - Screenshots in order: Te escucho, Pensando…, Hablando (with «Agrega que llame a Ana el viernes.», the reply, and the chip «Tarea agregada: Llamar a Ana»), En pausa, then Inicio's chat with the session.
+    - `tasks.json` had «Llamar a Ana», `me`, «viernes». `GET /chat/voice` returned the thread.
+    - With the clip gain at 10, the same audio was heard as «Agrega que ya me ama el viernes», and Lente asked to repeat instead of guessing.
+  - Left for the phone: the phone's microphone, the echo canceller during barge-in, and the time to the TTS's first audio.
 
 ## 4. Measure and write down
 
-- [ ] 4.1 `scripts/bench-voice.ts`: end of speech → first reply text, → first sentence to speak, and cost per turn, over `say` questions; run it against the real API and record the numbers in `docs/benchmarks.md` and the README [key:MODEL_API_KEY]
-- [ ] 4.2 Decision in `docs/kb/decisions.md`; README "What was built during the hackathon" row for the day the change lands
+- [x] 4.1 `scripts/bench-voice.ts`: end of speech → first reply text, → first sentence to speak, and cost per turn, over `say` questions; run it against the real API and record the numbers in `docs/benchmarks.md` and the README [key:MODEL_API_KEY]
+  - 2026-11-02, 10 of 10 turns answered: `speechComplete` 323 ms p50, first sentence 2,150 ms p50 (3,167 p90), first answer sentence 3,207 ms p50 (4,783 p90), US$ 0.0044 per turn p50 (US$ 0.0487 for the run).
+- [x] 4.2 Decision in `docs/kb/decisions.md`; README "What was built during the hackathon" row for the day the change lands
