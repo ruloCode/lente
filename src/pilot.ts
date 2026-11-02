@@ -48,6 +48,7 @@ import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, writeProfile } from "./digests.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { askTiers } from "./ask-tiers.ts";
+import { deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
 import { AUTH_COOKIE, FileSessionStore, PkceFlows, WebSessions, authCookie, authorizeUrl, clearCookie, exchangeCode, sessionCookie } from "./web-session.ts";
 import { cookieValue } from "./device-auth.ts";
@@ -208,6 +209,31 @@ async function signIn(req: IncomingMessage, res: ServerResponse): Promise<void> 
     console.error(`[auth] web sign-in failed: ${(error as Error).message}`);
     page(502, "No se pudo terminar el inicio de sesión. Prueba otra vez.");
   }
+}
+
+/** GET /account/export and POST /account/delete (task 9.1): the user's own data, readable or gone. */
+async function accountRights(req: IncomingMessage, res: ServerResponse, userId: string, path: string): Promise<void> {
+  if (!supabase || !accounts || !SUPABASE_URL) return void res.writeHead(501, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "accounts need the Supabase stores" }));
+  if (req.method === "GET" && path === "/account/export") {
+    if (wearers.has(userId)) await wearers.get(userId).flush();
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": 'attachment; filename="lente-export.json"', "Cache-Control": "no-store" });
+    await exportAccount(supabase, userId, await accounts.dek(userId), res);
+    return void res.end();
+  }
+  if (req.method === "POST" && path === "/account/delete") {
+    const { confirm } = JSON.parse((await readBody(req)) || "{}") as { confirm?: unknown };
+    if (confirm !== true) return void res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "send {\"confirm\": true} to delete the account" }));
+    const steps = await deleteAccount(supabase, userId, {
+      forgetInMemory: async (id) => {
+        await wearers.evict(id);
+        accounts.forget(id);
+      },
+      deleteSignIn: (id) => deleteAuthUser(SUPABASE_URL, process.env.SUPABASE_SECRET_KEY!, id),
+    });
+    console.log(`[account] deleted an account in ${steps.length} steps`);
+    return void res.writeHead(204, { "Set-Cookie": clearCookie(SESSION_COOKIE), "Cache-Control": "no-store" }).end();
+  }
+  res.writeHead(405).end();
 }
 
 /** Accounts mode: the refusal for a caller outside the allow list or without an account, if any. */
@@ -1544,6 +1570,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     },
     pushStatus: (): void => broadcast(statusEvent()),
     listening: (): boolean => status.listening,
+    /** Waits for this account's pending writes (before an export). */
+    flush: async (): Promise<void> => void (await sealed?.flush()),
     /** A phone follows, a device is connected, listening is on, or a meeting is open. */
     busy: (): boolean => clients.size > 0 || device !== undefined || status.listening || current !== undefined,
     /** Eviction: stop transcribing, flush usage and recorded time, end the streams, clear the timers. */
@@ -1567,7 +1595,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
 type WearerRuntime = ReturnType<typeof createWearerRuntime>;
 /** What the hub needs of a runtime; an account's runtime is opened asynchronously behind it. */
-type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close"> & {
+type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" | "flush"> & {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
   serveDevice(socket: Duplex, remote: string | undefined): void;
   serveWebDevice(socket: Duplex, remote: string): void;
@@ -1596,6 +1624,7 @@ function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
     listening: () => open?.listening() ?? false,
     busy: () => (open ? open.busy() : true),
     close: async () => (await ready).close(),
+    flush: async () => (await ready).flush(),
   };
 }
 
@@ -1647,6 +1676,7 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
       res.writeHead(204, { "Set-Cookie": clearCookie(SESSION_COOKIE), "Cache-Control": "no-store" }).end();
       return;
     }
+    if (accounts && who && (devicesPath === "/account/export" || devicesPath === "/account/delete")) return void (await accountRights(req, res, who.userId, devicesPath));
     await wearers.get(who?.userId ?? LOCAL_OWNER).handle(req, res);
   } catch (error) {
     console.error(`[web] ${(error as Error).message}`);

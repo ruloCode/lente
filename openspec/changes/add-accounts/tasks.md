@@ -89,7 +89,7 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 
 ## 9. Account rights and docs
 
-- [ ] 9.1 `GET /account/export` streams the user's decrypted memory as JSON; `POST /account/delete` deletes the key first, then the rows, the Auth user and the devices; tests with the fake PostgREST for the order and for another user untouched (`pnpm test`)
+- [x] 9.1 `GET /account/export` streams the user's decrypted memory as JSON; `POST /account/delete` deletes the key first, then the rows, the Auth user and the devices; tests with the fake PostgREST for the order and for another user untouched (`pnpm test`)
 - [ ] 9.2 Verify on the project: after deletion, the user's rows are gone, a dump of what remains holds nothing of theirs, and a copy of their sealed rows cannot be opened without the deleted key [key:SUPABASE_SECRET_KEY]
 - [ ] 9.3 Privacy note in the app and the README. It covers:
   - what is encrypted and what stays plain

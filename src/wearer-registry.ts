@@ -55,6 +55,17 @@ export class WearerRegistry<R extends Runtime> {
     return entry.runtime;
   }
 
+  /** Closes and forgets one runtime now (an account being deleted), then runs the eviction hook. */
+  async evict(userId: string): Promise<void> {
+    const entry = this.runtimes.get(userId);
+    this.runtimes.delete(userId);
+    try {
+      if (entry) await entry.runtime.close();
+    } finally {
+      this.onEvict(userId);
+    }
+  }
+
   /** Forgets a runtime that failed to open, without closing it. */
   drop(userId: string): void {
     this.runtimes.delete(userId);

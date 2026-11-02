@@ -279,6 +279,8 @@ Usage moves to `usage_daily` per user, model and provider, priced from the list 
 1. deletes the `user_keys` row first, then the account's rows (cascade), then the Supabase Auth user
 2. revokes the user's devices
 
+**As built (task 9.1).** The export is one JSON document (`lente-export/v1`) written section by section after the user's pending writes are flushed: profile, meetings with turns and notes, facts, tasks, actions, digests, glossary, the day record, devices (never their token hashes) and usage. Deletion needs `{"confirm": true}`; it deletes `user_keys`, closes the user's runtime and drops their key from memory, then deletes their rows table by table (sessions and devices first, `accounts` last), then calls Supabase's Auth admin API to delete the sign-in, where a 404 counts as already gone. The rows would also go by cascade with the sign-in; deleting them explicitly keeps the order visible and testable. The admin call's exact shape is confirmed by task 1.1.
+
 **Backups.** A backup taken earlier still holds the wrapped DEK, and so does the nightly export on the volume (decision 0). It can be opened only together with the KEK, until the backup expires. The README states both windows: Supabase's retention for the plan, and the export's own rotation, 7 days.
 
 ### 13. The database in health
