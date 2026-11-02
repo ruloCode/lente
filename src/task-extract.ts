@@ -51,10 +51,14 @@ const SYSTEM = [
   "Deja `other` vacío cuando `who` no es `other`.",
 ].join("\n");
 
-/** The meeting's notes as the call's input: title, summary, decisions and commitments with their owners. */
-export function tasksMessages(meeting: Pick<Meeting, "title" | "notes">): ChatMessage[] {
+/**
+ * The meeting's notes as the call's input: title, summary, decisions and commitments with their owners.
+ * `names` are how the wearer is called, so "Incluir a Rulo…" is not taken as the wearer's own task.
+ */
+export function tasksMessages(meeting: Pick<Meeting, "title" | "notes">, names: readonly string[] = []): ChatMessage[] {
   const n = meeting.notes;
   const lines = [
+    ...(names.length ? [`El usuario se llama ${names.join(" o ")}. Lo que otra persona hará por él o con él (por ejemplo, «incluir a ${names[0]}») es \`other\`, no \`me\`.`] : []),
     `Reunión: «${meeting.title || "sin título"}»`,
     `Resumen: ${n?.summary?.replace(/\s+/g, " ") || "(sin resumen)"}`,
     ...(n?.decisions ?? []).map((d) => `Decisión: ${d.text}`),

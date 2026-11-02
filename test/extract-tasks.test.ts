@@ -44,4 +44,15 @@ test("the backfill reads recent meetings without tasks, newest first, and writes
   assert.deepEqual(tasks.filter((t) => t.meetingId === "m2").map((t) => [t.who, t.otherName ?? null, t.source]), [["me", null, "meeting"], ["lente", null, "meeting"], ["other", "Ana", "meeting"]]);
   assert.ok(!fake.dump().includes("PROBE enviar"), "tasks stay sealed");
   assert.equal((await extractTasks("owner@example.com", deps, { days: 30, dryRun: false })).withoutTasks, 0, "a second run adds nothing");
+
+  // --redo: open extracted tasks are written again; a finished one and one the extraction did not write stay.
+  const doneOne = (await stores.tasks.list()).find((t) => t.meetingId === "m2" && t.who === "me")!;
+  await stores.tasks.setDone(doneOne.id, true);
+  const redo = await extractTasks("owner@example.com", deps, { days: 30, dryRun: false, redo: true });
+  assert.equal(redo.read, 3, "every meeting in the window is read again");
+  const after = await stores.tasks.list();
+  assert.ok(after.some((t) => t.id === doneOne.id && t.done), "a finished task stays");
+  assert.equal(after.filter((t) => t.title === "ya existe").length, 1, "a task the extraction did not write stays, once");
+  assert.deepEqual(after.filter((t) => t.meetingId === "m2").map((t) => [t.who, t.done]).sort(), [["lente", false], ["me", true], ["other", false]], "m2 keeps its finished task and gets the others back, without a duplicate");
+  assert.equal(after.filter((t) => t.meetingId === "m1").length, 3, "m1's tasks were extracted again, not duplicated");
 });

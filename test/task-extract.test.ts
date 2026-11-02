@@ -39,6 +39,12 @@ test("parsing keeps owners, names who promised, drops repeats and empties, caps 
   assert.deepEqual(parseTasks("sin json"), []);
 });
 
+test("the wearer's names go first, so a task about them done by someone else is not theirs", () => {
+  const user = String(tasksMessages({ title: "x", notes: undefined }, ["Rulo", "Andrés"])[1]!.content);
+  assert.match(user, /^El usuario se llama Rulo o Andrés\. Lo que otra persona hará por él o con él \(por ejemplo, «incluir a Rulo»\) es `other`, no `me`\.\nReunión: «x»/);
+  assert.ok(!String(tasksMessages({ title: "x", notes: undefined })[1]!.content).includes("se llama"));
+});
+
 test("tasks stored before owners existed are the wearer's", () => {
   assert.equal(ownerOf({}), "me");
   assert.equal(ownerOf({ who: "lente" }), "lente");

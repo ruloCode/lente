@@ -953,7 +953,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   /** The meeting's tasks with who does each, straight into Tareas (add-task-owners). */
   async function extractTasks(m: Meeting): Promise<void> {
     try {
-      const raw = await askSpark(tasksMessages(m), {
+      const raw = await askSpark(tasksMessages(m, profile.names), {
         label: "tasks",
         extra: { response_format: { type: "json_schema", json_schema: { name: "tasks", strict: true, schema: tasksSchema } } },
         maxTokens: 1500,
