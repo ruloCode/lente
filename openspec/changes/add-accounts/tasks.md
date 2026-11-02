@@ -86,6 +86,11 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
   - `core/Auth.kt` (pure, 6 JVM tests), `platform/GoogleAccount.kt`, `platform/SecureSession.kt`; the project URL, publishable key and Web client ID come from `lente.*` Gradle properties (empty leaves sign-in off). The release APK builds (3.72 MB). Wired into the screens by 7.2 to 7.4.
 - [ ] 7.2 Bearer token on every hub call and on the `/device` WebSocket; a 401 refreshes once, then returns to sign-in; e2e with the stub hub (`pnpm android:e2e`)
   - Built (2026-11-01): `core/AuthRetry.kt`, the bearer in `HubClient` and on the capture service's `/device` socket, one shared account. Verified on the JVM against a stand-in hub (`HubClientAuthTest`, 62 of 62 Android tests). Not ticked: `pnpm android:e2e` installs on the phone and uses its microphone and camera, so it waits for the owner [phone].
+  - 2026-11-02, on the owner's Samsung (debug build) against this branch's hub on the laptop (`LENTE_CLOUD=1`, port 8090 over `adb reverse`):
+    - The owner tapped "Entrar con Google" and Supabase made one `google` user with one `accounts` row and one `user_keys` row (KEK v1, 61 bytes wrapped).
+    - The hub sealed the v1 canary at start.
+    - The app's bearer then cleared the pairing gate, and `/account` and `/devices` answered: US$ 0,00 this month, no clips.
+    - `pnpm android:e2e` is still to run.
 - [x] 7.3 Account screen in Ajustes: name and email, devices with last seen and revoke, a new clip token shown once, spend this month against the cap, export, delete account with confirmation, sign out
   - `ui/Sections.kt` (`AccountSection`), `core/Account.kt` (5 JVM tests), `GET /account` on the hub (this month's spend from `usage_daily` against `LENTE_USER_MONTHLY_CENTS`). Builds and the release APK is 3.84 MB; the screen has not been seen on a device yet (7.4 [phone]).
 - [ ] 7.4 First run starts with sign-in before the introduction; the pairing code stays only for a laptop hub; verify on the phone against the Modal hub [phone]
