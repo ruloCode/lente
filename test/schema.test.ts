@@ -40,6 +40,9 @@ function problems(raw: string): string[] {
       out.push(`${table}: meeting_id is not tied to the same user's meeting`);
     }
   }
+  for (const m of sql.matchAll(/create (?:or replace )?function public\.([a-z_]+)\(/g)) {
+    if (!new RegExp(`revoke all on function public\\.${m[1]}\\([^)]*\\) from public, anon, authenticated`).test(sql)) out.push(`${m[1]}: function not revoked from public, anon and authenticated`);
+  }
   if (/create policy/.test(sql)) out.push("a policy exists; the hub is the only client");
   if (/grant [^;]* to [^;]*\b(?:anon|authenticated|public)\b/.test(sql)) out.push("a grant to anon, authenticated or public");
   if (/disable row level security/.test(sql)) out.push("RLS is disabled somewhere");
@@ -63,6 +66,8 @@ test("the check fails on a new table without RLS, on a policy, and on a grant", 
   assert.ok(problems(policy).includes("a policy exists; the hub is the only client"));
   const grant = `${migrations}\ngrant select on public.facts to anon;`;
   assert.ok(problems(grant).includes("a grant to anon, authenticated or public"));
+  const callable = `${migrations}\ncreate function public.leaky_fn() returns int language sql as $$ select 1 $$;`;
+  assert.ok(problems(callable).includes("leaky_fn: function not revoked from public, anon and authenticated"));
   const plain = migrations.replace("text_enc bytea not null,\n  meeting_id uuid,\n  evidence", "text_enc text not null,\n  meeting_id uuid,\n  evidence");
   assert.ok(problems(plain).includes("facts.text_enc: content column is text, not bytea"));
 });

@@ -100,36 +100,28 @@ export class SupabaseMeetings implements Meetings {
     const before = this.written.get(m.id) ?? { meta: "", turns: [] };
     const meta = { ...m, turns: undefined, notes: undefined };
     const metaPrint = fingerprint(meta);
-    if (metaPrint !== before.meta) {
-      await this.db.insert("meetings", [{
-        id,
-        legacy_id: m.id,
-        started_at: iso(m.startedAt),
-        ended_at: m.endedAt === undefined ? null : iso(m.endedAt),
-        status: m.status,
-        end_reason: m.endReason ?? null,
-        auto: Boolean(m.auto),
-        topic: m.topic ?? null,
-        title_enc: this.s.json("meetings", "title_enc", id, m.title),
-        title_generated: Boolean(m.titleGenerated),
-        asked: m.stats?.asked ?? 0,
-        answered: m.stats?.answered ?? 0,
-        dropped_items: m.droppedItems ?? 0,
-        error_enc: m.error === undefined ? null : this.s.json("meetings", "error_enc", id, m.error),
-      }], { upsertOn: "id" });
-    }
+    const meeting = metaPrint === before.meta ? null : {
+      id,
+      legacy_id: m.id,
+      started_at: iso(m.startedAt),
+      ended_at: m.endedAt === undefined ? null : iso(m.endedAt),
+      status: m.status,
+      end_reason: m.endReason ?? null,
+      auto: Boolean(m.auto),
+      topic: m.topic ?? null,
+      title_enc: this.s.json("meetings", "title_enc", id, m.title),
+      title_generated: Boolean(m.titleGenerated),
+      asked: m.stats?.asked ?? 0,
+      answered: m.stats?.answered ?? 0,
+      dropped_items: m.droppedItems ?? 0,
+      error_enc: m.error === undefined ? null : this.s.json("meetings", "error_enc", id, m.error),
+    };
     const turnPrints = m.turns.map(fingerprint);
-    const changed = m.turns.map((t, seq) => ({ t, seq })).filter(({ seq }) => before.turns[seq] !== turnPrints[seq]);
-    if (changed.length) {
-      await this.db.insert("meeting_turns", changed.map(({ t, seq }) => this.turnRow(id, seq, t)), { upsertOn: "meeting_id,seq" });
-    }
-    let notesPrint = before.notes;
-    if (m.notes) {
-      notesPrint = fingerprint(m.notes);
-      if (notesPrint !== before.notes) {
-        await this.db.insert("meeting_notes", [{ meeting_id: id, body_enc: this.s.json("meeting_notes", "body_enc", id, m.notes), model: null, created_at: iso(Date.now()) }], { upsertOn: "meeting_id" });
-      }
-    }
+    const turns = m.turns.map((t, seq) => ({ t, seq })).filter(({ seq }) => before.turns[seq] !== turnPrints[seq]).map(({ t, seq }) => this.turnRow(id, seq, t));
+    const notesPrint = m.notes ? fingerprint(m.notes) : before.notes;
+    const notes = m.notes && notesPrint !== before.notes ? { meeting_id: id, body_enc: this.s.json("meeting_notes", "body_enc", id, m.notes), model: null, created_at: iso(Date.now()) } : null;
+    // One transaction (4.4): the meeting, its changed turns and its notes land together or not at all.
+    if (meeting || turns.length || notes) await this.db.rpc("lente_save_meeting", { p_meeting: meeting, p_turns: turns, p_notes: notes });
     this.written.set(m.id, { meta: metaPrint, turns: turnPrints, notes: notesPrint });
   }
 
@@ -771,11 +763,9 @@ export class SupabaseAccounts implements AccountStore {
     return { userId, createdAt: msOf(account.created_at), locale: String(account.locale), kekVersion: Number(key.kek_version), wrappedDek: fromBytea(key.wrapped_dek).toString("base64") };
   }
 
-  /** The key row first: an account row without its key would be unreadable. Atomic through RPC in 4.4. */
+  /** The account and its wrapped key in one transaction (4.4): an account without its key would be unreadable. */
   async create(a: AccountRecord): Promise<void> {
-    const db = this.rest.forUser(a.userId);
-    await db.insert("user_keys", [{ kek_version: a.kekVersion, wrapped_dek: toBytea(Buffer.from(a.wrappedDek, "base64")), created_at: iso(a.createdAt) }]);
-    await db.insert("accounts", [{ locale: a.locale, created_at: iso(a.createdAt) }]);
+    await this.rest.forUser(a.userId).rpc("lente_create_account", { p_kek_version: a.kekVersion, p_wrapped_dek: toBytea(Buffer.from(a.wrappedDek, "base64")), p_locale: a.locale, p_created_at: iso(a.createdAt) });
   }
 }
 

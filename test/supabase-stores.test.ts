@@ -48,11 +48,13 @@ test("meetings round-trip with their turns and notes, and only ciphertext reache
   m.error = PROBES[11];
   m.notes = { summary: PROBES[3]!, decisions: [{ text: "d", evidence: ["t1"] }], commitments: [], openQuestions: [] };
   m.stats = { asked: 2, answered: 1 };
-  const turnWritesBefore = fake.requests.filter((r) => r.table === "meeting_turns" && r.method === "POST").length;
+  const saves = () => fake.requests.filter((r) => r.table === "rpc/lente_save_meeting");
+  const savesBefore = saves().length;
   await s.meetings.save(m);
-  const lastTurnWrite = fake.requests.filter((r) => r.table === "meeting_turns" && r.method === "POST").at(-1)!;
-  assert.equal(turnWritesBefore, 1);
-  assert.equal((lastTurnWrite.body as unknown[]).length, 1, "a second save sends only the new turn");
+  assert.equal(savesBefore, 1);
+  assert.equal(saves().length, 2, "each save is one transaction");
+  assert.equal((saves().at(-1)!.body as { p_turns: unknown[] }).p_turns.length, 1, "a second save sends only the new turn");
+  assert.ok(!fake.requests.some((r) => ["meetings", "meeting_turns", "meeting_notes"].includes(r.table) && r.method === "POST"), "no meeting row is written outside the transaction");
 
   const [listed] = await s.meetings.list();
   assert.deepEqual(listed, m);
@@ -200,7 +202,30 @@ test("two users on one database: each sees only their own rows, and a row copied
   await assert.rejects(bob.facts.list(), /does not open/);
   for (const r of fake.requests) {
     if (["devices", "kek_canaries", "sessions"].includes(r.table) && r.method === "GET") continue;
-    const scoped = r.search.get("user_id")?.startsWith("eq.") || (Array.isArray(r.body) && r.body.every((row) => (row as { user_id?: string }).user_id));
+    const scoped = r.search.get("user_id")?.startsWith("eq.") || (Array.isArray(r.body) && r.body.every((row) => (row as { user_id?: string }).user_id)) || (r.table.startsWith("rpc/") && Boolean((r.body as { p_user_id?: string }).p_user_id));
     assert.ok(scoped || r.table === "kek_canaries", `${r.method} ${r.table} went out without a user`);
   }
+});
+
+test("atomic writes (4.4): a save that fails halfway leaves nothing, and an account never lands without its key", async () => {
+  const fake = fakePostgrest();
+  const s = await openUserStores(fake.rest, ALICE, newDek(), NOW);
+  const m = meeting();
+  m.turns.push({ id: "t-bad", at: NOW, text: "x" });
+  const db = fake.rest.forUser(ALICE);
+  // A turn the database refuses (a negative seq) after a valid meeting row: the call fails whole.
+  await assert.rejects(db.rpc("lente_save_meeting", { p_meeting: { id: "11111111-0000-4000-8000-000000000001", legacy_id: "m1", title_enc: "\\x01" }, p_turns: [{ meeting_id: "11111111-0000-4000-8000-000000000001", seq: -1, text_enc: "\\x01" }], p_notes: null }), /rpc\/lente_save_meeting/);
+  assert.equal((fake.tables.get("meetings") ?? []).length, 0, "no meeting row without its turns");
+  // Another user's meeting id is not taken over, and its turns are not written.
+  await s.meetings.save(meeting());
+  const theirs = fake.tables.get("meetings")![0]!.id;
+  await assert.rejects(fake.rest.forUser(BOB).rpc("lente_save_meeting", { p_meeting: { id: theirs, legacy_id: "m2", title_enc: "\\x01" }, p_turns: [{ meeting_id: theirs, seq: 9, text_enc: "\\x01" }], p_notes: null }));
+  assert.ok(fake.tables.get("meetings")!.every((r) => r.user_id === ALICE));
+  assert.ok(!fake.tables.get("meeting_turns")!.some((r) => r.seq === 9));
+  // An account with a malformed key is refused whole: no account row without a key row.
+  await assert.rejects(fake.rest.forUser(BOB).rpc("lente_create_account", { p_kek_version: 1, p_wrapped_dek: "plain", p_locale: "es-CO", p_created_at: new Date(NOW).toISOString() }));
+  assert.ok(!(fake.tables.get("accounts") ?? []).some((r) => r.user_id === BOB));
+  await new SupabaseAccounts(fake.rest).create({ userId: BOB, createdAt: NOW, locale: "es-CO", kekVersion: 1, wrappedDek: randomBytes(60).toString("base64") });
+  assert.equal(fake.requests.filter((r) => r.table === "rpc/lente_create_account").length, 2, "account creation is one call");
+  assert.ok(!fake.requests.some((r) => ["accounts", "user_keys"].includes(r.table) && r.method === "POST"));
 });

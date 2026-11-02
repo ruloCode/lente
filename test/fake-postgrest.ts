@@ -37,6 +37,42 @@ export function fakePostgrest(): FakePostgrest & { handler: Handler } {
   const tables = new Map<string, Row[]>();
   const requests: FakePostgrest["requests"] = [];
   const table = (name: string) => tables.get(name) ?? tables.set(name, []).get(name)!;
+  const isBytea = (v: unknown) => typeof v === "string" && v.startsWith("\\x");
+  const sealedOk = (r: Row) => Object.entries(r).every(([k, v]) => !k.endsWith("_enc") || v === null || isBytea(v));
+  const upsert = (name: string, row: Row, keys: string[]) => {
+    const existing = table(name).find((e) => keys.every((k) => String(e[k]) === String(row[k])));
+    if (existing && existing.user_id !== row.user_id) return false;
+    if (existing) Object.assign(existing, row);
+    else table(name).push({ ...row });
+    return true;
+  };
+
+  /** The migrations' functions (20261102010000_atomic_writes.sql): every check runs before any row changes, so a failure leaves nothing. */
+  const rpcs: Record<string, (args: Row) => string | undefined> = {
+    lente_create_account: (a) => {
+      const userId = String(a.p_user_id);
+      if (!isBytea(a.p_wrapped_dek)) return "22P02";
+      if (table("user_keys").some((r) => r.user_id === userId) || table("accounts").some((r) => r.user_id === userId)) return "23505";
+      table("user_keys").push({ user_id: userId, kek_version: a.p_kek_version, wrapped_dek: a.p_wrapped_dek, created_at: a.p_created_at, rotated_at: null });
+      table("accounts").push({ user_id: userId, locale: a.p_locale ?? "es-CO", created_at: a.p_created_at });
+      return undefined;
+    },
+    lente_save_meeting: (a) => {
+      const userId = String(a.p_user_id);
+      const meeting = a.p_meeting as Row | null;
+      const turns = (a.p_turns as Row[] | null) ?? [];
+      const notes = a.p_notes as Row | null;
+      for (const r of [meeting, notes, ...turns]) if (r && !sealedOk(r)) return "22P02";
+      const owner = (id: unknown) => (meeting && meeting.id === id ? userId : table("meetings").find((m) => m.id === id)?.user_id);
+      if (meeting && table("meetings").some((m) => m.id === meeting.id && m.user_id !== userId)) return "23503";
+      for (const r of [...turns, ...(notes ? [notes] : [])]) if (owner(r.meeting_id) !== userId) return "23503";
+      for (const t of turns) if (typeof t.seq !== "number" || t.seq < 0 || !isBytea(t.text_enc)) return "23514";
+      if (meeting) upsert("meetings", { ...meeting, user_id: userId }, ["id"]);
+      for (const t of turns) upsert("meeting_turns", { ...t, user_id: userId }, ["meeting_id", "seq"]);
+      if (notes) upsert("meeting_notes", { ...notes, user_id: userId }, ["meeting_id"]);
+      return undefined;
+    },
+  };
 
   const handler: Handler = async (url, init) => {
       const u = new URL(url);
@@ -48,6 +84,12 @@ export function fakePostgrest(): FakePostgrest & { handler: Handler } {
       const selected = () => table(name).filter((r) => filters.every(([k, v]) => matches(r, k, v)));
       const wantRows = (init.headers.Prefer ?? "").includes("return=representation");
 
+      if (init.method === "POST" && name.startsWith("rpc/")) {
+        const fn = rpcs[name.slice(4)];
+        if (!fn) return reply(404, { code: "PGRST202" });
+        const error = fn(body as Row);
+        return error ? reply(400, { code: error }) : reply(204);
+      }
       if (init.method === "POST") {
         const rows = body as Row[];
         for (const r of rows) {
