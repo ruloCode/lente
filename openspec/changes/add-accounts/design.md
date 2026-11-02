@@ -96,7 +96,7 @@ The measured size per hour of listening (task 6.3) says when the first will happ
 ### 3. Verify user tokens in the hub with JWKS
 
 **Checks.** The hub validates every access token:
-- the ES256 (or RS256) signature, with the key fetched from JWKS by `kid` (cached 10 minutes, fetched again on an unknown `kid`)
+- the ES256 (or RS256) signature, with the key fetched from JWKS by `kid` (cached 10 minutes, fetched again on an unknown `kid` at most once every 30 s, so forged tokens with made-up `kid`s cannot make the hub hammer Supabase)
 - `iss = https://<ref>.supabase.co/auth/v1`
 - `aud = authenticated`
 - `exp`
