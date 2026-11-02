@@ -1,5 +1,7 @@
 # Proposal
 
+> 2026-11-02: the MCP server, per-user agent tokens and the memory tools are built in `add-agent-bridge` (`/mcp`, scopes in `devices`). This change keeps the glasses tools (look, recent transcript, buzz, show a card, current meeting) and the MCP client, to be added on that server.
+
 ## Why
 
 Closed glasses keep their senses to themselves. Exposing the clip and the wearer's memory as Model Context Protocol tools lets any agent (Claude, Muse, the wearer's own) look, read what was said, buzz the wearer or put a card in front of them, with the same consent rules Lente applies to itself. MCP is the extension surface instead of a plugin store: the projects we studied either moved their MCP server to hosted Streamable HTTP with a key (Omi) or backed away from cloud-hosted app platforms (MentraOS).

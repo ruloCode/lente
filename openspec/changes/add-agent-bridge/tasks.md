@@ -5,6 +5,7 @@ Depends on: `add-task-owners`
 ## 1. Agent tokens with scopes
 
 - [x] 1.1 Migration: `devices.scopes` with the default `{read}` and the allowed values; tests on the stores (`pnpm test`)
+- [ ] 1.3 Apply `20261102030000_agent_scopes.sql` to the live Supabase project with the owner's yes; until then, creating a device on the live project fails on the unknown `scopes` column [human]
 - [x] 1.2 `UserDevices`: scopes on create, `resolveAgent`, and `POST /devices` taking `scopes`; tests (`pnpm test`)
 
 ## 2. MCP server
@@ -22,6 +23,7 @@ Depends on: `add-task-owners`
 - [x] 4.1 `POST /agent/jobs`, `run_agent` actions, claim and result routes, the bridge's `jobs` stream; tests on the real hub (`pnpm test`)
 - [x] 4.2 The chat's `command` intent in `/ask` (both answer paths); unit tests for the check and the parse (`pnpm test`)
 - [x] 4.3 `scripts/agent-bridge.ts` and `src/agent-bridge.ts`: config, folder allow list, restrictive commands, clean environment, timeout, one job at a time; tests with a fake agent that exits 0 or 1, and an unapproved job that never runs (`pnpm test`)
+  - 2026-11-02: 554 of 554 hub tests and `pnpm smoke` pass.
 
 ## 5. App
 
@@ -30,6 +32,11 @@ Depends on: `add-task-owners`
 
 ## 6. Docs and real clients
 
-- [ ] 6.1 `docs/kb/agents.md` and README: Claude Code, Cursor and Codex config, the token, the bridge; `docs/kb/decisions.md`
-- [ ] 6.2 `claude mcp add` against a running hub, with `claude mcp list` connected and a real tool call
+- [x] 6.1 `docs/kb/agents.md` and README: Claude Code, Cursor and Codex config, the token, the bridge; `docs/kb/decisions.md`
+- [x] 6.2 `claude mcp add` against a running hub, with `claude mcp list` connected and a real tool call
+  - 2026-11-02, Claude Code 2.1.316, on a local hub with scratch data:
+    - `claude mcp list` showed "✔ Connected"; the hub logged `server/discover` and `tools/list` (the current revision, no `initialize`).
+    - A headless session called `list_tasks` and `create_task`, 1–2 ms each on the hub and 12 s end to end. The day showed both calls labelled "Claude Code".
+    - The bridge ran an approved job with real Claude Code in 4 s (exit 0, file written, summary back). The folder was empty before approval.
+- [ ] 6.4 Codex and Cursor against a running hub (neither is installed on the bench; their config comes from their docs) [human]
 - [ ] 6.3 The owner approves one real job from the phone and the bridge runs it with Claude Code [human]

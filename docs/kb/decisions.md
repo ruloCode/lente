@@ -110,3 +110,13 @@ The wearer leaves home with the clip and the phone, and the phone stays in a poc
 ### 2026-11-01 · Sign in with Google on Android through Credential Manager (add-accounts)
 
 The app signs in with the system's Google account picker, not a browser redirect: AndroidX Credential Manager (`androidx.credentials` and `credentials-play-services-auth` 1.6.0) with Google's ID token type (`googleid` 1.2.1), the three runtime dependencies the accounts design names. The picker gets the Web client ID and the SHA-256 of a random nonce; Supabase Auth gets the ID token with the raw nonce over OkHttp, which the app already ships, so no Supabase SDK. The session is sealed with AES-GCM under a key that stays in the Android Keystore. The release APK grows from 2.75 MB to 3.72 MB, measured after R8, almost all of it Play Services Auth. Lint's `InvalidFragmentVersionForActivityResult` is turned off because it reads the fragment version that library declares (1.1.0) rather than the one the build resolves (1.5.7).
+
+### 2026-11-02 · Agents reach Lente with per-user scoped tokens, and Lente's jobs run only on the user's machine (add-agent-bridge)
+
+- **MCP server, hand-written.** `add-glasses-mcp` planned one key in `.env`. With accounts, a key must belong to one user, so agent tokens are `mcp` devices with scopes: read by default, task writes and the bridge only when asked. The server is written by hand over the hub's HTTP server, with no dependency:
+  - It speaks the current MCP revision (2026-07-28, stateless, headers checked against the body) and the `initialize` revisions, because clients still ship both.
+  - Claude Code 2.1.316 turned out to use the current one.
+  - Replies are single JSON objects; no tool needs a stream.
+- **Jobs.** A job is an `agent_actions` row with tool `run_agent`, so "nothing runs without approval" is the same code path as the closing agent's proposals. Approving only queues the job: the hub never runs a process. The bridge runs it on the user's computer, in a folder from a local allow list, with the most restrictive flags each CLI offers that still let it edit. Its token sees only the queue of approved jobs, never transcripts.
+- **The chat.** A command in the chat is recognized by a new `intent` field in the same structured Muse Spark call, not a second call. A pure check on the sentence (an imperative or a named agent) must agree, so a question can never become a job.
+- **Copied from nowhere.** Omi's hosted MCP server with per-user keys, read-only defaults and a CLI with `--json` and exit codes was the product reference; no code was used from it.
