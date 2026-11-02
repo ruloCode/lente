@@ -95,7 +95,18 @@ data class Language(val glossary: List<GlossaryTerm>, val phrases: List<String>,
 data class Quote(val id: String, val at: Long?, val speaker: String?, val text: String)
 data class PendingAction(val id: String, val meetingId: String, val meetingTitle: String, val tool: String, val args: JSONObject, val quotes: List<Quote>)
 data class Decided(val id: String, val tool: String, val status: String, val meetingId: String)
-data class Task(val id: String, val title: String, val due: String?, val meetingId: String, val meetingTitle: String, val done: Boolean)
+data class Task(
+    val id: String,
+    val title: String,
+    val due: String?,
+    val meetingId: String,
+    val meetingTitle: String,
+    val done: Boolean,
+    /** "me", "lente" or "other" (add-task-owners); older hubs send none, which is the wearer's. */
+    val who: String = "me",
+    val otherName: String? = null,
+    val projectName: String = "",
+)
 data class Actions(val pending: List<PendingAction> = emptyList(), val decided: List<Decided> = emptyList(), val tasks: List<Task> = emptyList())
 
 data class Spend(val audioSeconds: Double = 0.0, val tokens: Long = 0, val usd: Double = 0.0, val unpriced: Boolean = false)
@@ -228,7 +239,9 @@ object HubJson {
             )
         },
         decided = o.optJSONArray("decided").objects().map { Decided(it.optString("id"), it.optString("tool"), it.optString("status"), it.optString("meetingId")) },
-        tasks = o.optJSONArray("tasks").objects().map { Task(it.optString("id"), it.optString("title"), it.str("due"), it.optString("meetingId"), it.optString("meetingTitle"), it.optBoolean("done")) },
+        tasks = o.optJSONArray("tasks").objects().map {
+            Task(it.optString("id"), it.optString("title"), it.str("due"), it.optString("meetingId"), it.optString("meetingTitle"), it.optBoolean("done"), it.optString("who").ifEmpty { "me" }, it.str("otherName"), it.optString("projectName"))
+        },
     )
 
     fun spend(o: JSONObject): Spend {

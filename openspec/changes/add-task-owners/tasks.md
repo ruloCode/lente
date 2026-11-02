@@ -10,6 +10,7 @@ Depends on: `add-projects`
 - [x] 1.4 `scripts/extract-tasks.ts --email [--days] [--dry-run]`; test against the fake PostgREST (`pnpm test`)
   - 2026-11-02 dry run on the owner's account: 38 meetings in the last 30 days, all without tasks.
 - [ ] 1.5 Tareas on the phone grouped by owner, with add, reassign, done and delete; unit tests (`./gradlew :app:testDebugUnitTest`) and a screenshot [phone]
+  - 2026-11-02 built: `core/TaskOwners.kt`, Tareas with a new-task card (owner picker), groups "Te toca", "Lente puede hacerlo" and "Esperando a otros", the project and meeting under each task, a tag that cycles the owner, and delete. 76 of 76 Android unit tests pass. Left: the screenshot; the phone was disconnected.
 - [ ] 1.6 The owner runs the backfill; tasks appear on Tareas and the project cards [human]
 
 ## 2. Lente does it

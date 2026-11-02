@@ -471,6 +471,13 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun taskDone(id: String, done: Boolean) = post("/tasks/done", JSONObject().put("id", id).put("done", done))
 
+    /** A task by hand, the wearer's unless they say otherwise (add-task-owners). */
+    fun addTask(title: String, who: String) = post("/tasks/add", JSONObject().put("title", title).put("who", who)) { failed(it, "agregar la tarea") }
+
+    fun setTaskOwner(id: String, who: String) = post("/tasks/update", JSONObject().put("id", id).put("who", who)) { failed(it, "cambiar quién hace la tarea"); loadProjects() }
+
+    fun deleteTask(id: String) = post("/tasks/delete", JSONObject().put("id", id)) { failed(it, "borrar la tarea"); loadProjects() }
+
     // --- The phone as the device ------------------------------------------------------------
 
     fun startPhone() {

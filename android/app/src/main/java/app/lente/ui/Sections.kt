@@ -55,6 +55,7 @@ import app.lente.Screen
 import app.lente.capture.Capture
 import app.lente.core.Account
 import app.lente.core.Copy
+import app.lente.core.TaskOwners
 import app.lente.core.Format
 import app.lente.core.HubState
 import app.lente.core.PendingAction
@@ -74,40 +75,57 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
     val c = Lente.c
     val ctx = LocalContext.current
     val a = hub.actions
-    val todo = a.tasks.filter { !it.done }
     val done = a.tasks.filter { it.done }
+    var newTask by rememberSaveable { mutableStateOf("") }
+    var newWho by rememberSaveable { mutableStateOf("me") }
+    val add = { if (newTask.isNotBlank()) { vm.addTask(newTask.trim(), newWho); newTask = "" } }
     LazyColumn(Modifier.fillMaxSize().testTag("acciones"), contentPadding = PaddingValues(Lente.gutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (a.pending.isEmpty() && a.tasks.isEmpty()) {
-            item { Spacer(Modifier.height(8.dp)) }
-            item { Empty("Aún no hay tareas. Al terminar una reunión, Lente propone aquí tareas y correos; nada se hace sin que lo apruebes.", art = app.lente.R.drawable.art_empty_actions) }
-            return@LazyColumn
+        item("new") {
+            Card {
+                Field(newTask, { newTask = it }, "Nueva tarea", tag = "task-new", onDone = add)
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Segmented(TaskOwners.ORDER.map { it to when (it) { "lente" -> "Lente"; "other" -> "Otro"; else -> "Tú" } }, newWho, { newWho = it }, Modifier.weight(1f), label = "Quién la hace")
+                    Spacer(Modifier.width(10.dp))
+                    Button("Agregar", add, enabled = newTask.isNotBlank())
+                }
+            }
         }
         if (a.pending.isNotEmpty()) {
             item { SectionTitle("Por aprobar", trailing = "${a.pending.size}") }
-            items(a.pending, key = { it.id }) { p -> ActionCard(p) { approve, args -> vm.decide(p.id, approve, args) { mailto -> runCatching { ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))) }.onFailure { vm.say("No hay una app de correo para abrir el borrador.") } } } }
+            items(a.pending, key = { it.id }) { p -> ActionCard(p) { approve, args -> vm.decide(p.id, approve, args) { mailto -> runCatching { ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))) } } } }
         }
-        item { SectionTitle("Pendientes", trailing = "${todo.size}") }
-        item {
-            if (todo.isEmpty()) Empty("Nada pendiente.") else Group {
-                todo.forEachIndexed { i, t -> if (i > 0) Hairline(); TaskRow(t.title, t.due, t.meetingTitle, false) { vm.taskDone(t.id, true) } }
+        val groups = TaskOwners.groups(a.tasks)
+        if (groups.isEmpty() && a.pending.isEmpty()) item("empty") { Empty("Nada pendiente. Las tareas salen solas de tus reuniones, o agrégalas aquí.", art = app.lente.R.drawable.art_empty_actions) }
+        for ((who, list) in groups) {
+            item("h-$who") { SectionTitle(TaskOwners.heading(who), trailing = "${list.size}") }
+            item("g-$who") {
+                Group {
+                    list.forEachIndexed { i, t ->
+                        if (i > 0) Hairline()
+                        TaskRow(t, onToggle = { vm.taskDone(t.id, true) }, onOwner = { vm.setTaskOwner(t.id, TaskOwners.next(t.who)) }, onDelete = { vm.deleteTask(t.id) })
+                    }
+                }
             }
         }
         if (done.isNotEmpty()) {
             item { SectionTitle("Hechas", trailing = "${done.size}") }
-            item { Group { done.forEachIndexed { i, t -> if (i > 0) Hairline(); TaskRow(t.title, t.due, t.meetingTitle, true) { vm.taskDone(t.id, false) } } } }
+            item { Group { done.forEachIndexed { i, t -> if (i > 0) Hairline(); TaskRow(t, onToggle = { vm.taskDone(t.id, false) }, onOwner = null, onDelete = { vm.deleteTask(t.id) }) } } }
         }
     }
 }
 
 @Composable
-private fun TaskRow(title: String, due: String?, meeting: String, done: Boolean, toggle: () -> Unit) {
+private fun TaskRow(t: app.lente.core.Task, onToggle: () -> Unit, onOwner: (() -> Unit)?, onDelete: () -> Unit) {
     val c = Lente.c
-    Row(Modifier.fillMaxWidth().clickable(onClick = toggle).padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(done, { toggle() }, colors = CheckboxDefaults.colors(checkedColor = c.accentFill, checkmarkColor = c.onAccent, uncheckedColor = c.muted))
+    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 8.dp, vertical = 6.dp).testTag("task-${t.id}"), verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(t.done, { onToggle() }, colors = CheckboxDefaults.colors(checkedColor = c.accentFill, checkmarkColor = c.onAccent, uncheckedColor = c.muted))
         Column(Modifier.weight(1f)) {
-            Text(title, style = Type.body, color = if (done) c.muted else c.ink)
-            Text(listOfNotNull(due?.let { "Para $it" }, meeting.ifBlank { null }).joinToString(" · "), style = Type.caption, color = c.muted)
+            Text(t.title, style = Type.body, color = if (t.done) c.muted else c.ink)
+            TaskOwners.context(t).takeIf { it.isNotEmpty() }?.let { Text(it, style = Type.caption, color = c.muted) }
         }
+        if (onOwner != null) Tag(TaskOwners.tag(t), Modifier.padding(start = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onOwner).testTag("task-owner-${t.id}"))
+        Box(Modifier.padding(start = 4.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onDelete).padding(6.dp).testTag("task-delete-${t.id}")) { Icon(Glyph.Trash, c.muted, size = 18.dp) }
     }
 }
 
