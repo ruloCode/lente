@@ -56,6 +56,7 @@ import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCa
 import { AUTH_COOKIE, FileSessionStore, PkceFlows, WebSessions, authCookie, authorizeUrl, clearCookie, exchangeCode, sessionCookie } from "./web-session.ts";
 import { cookieValue } from "./device-auth.ts";
 import { SIGNIN_PAGE } from "./signin-page.ts";
+import { APP_CSP, APP_SHELL, NEXT_COOKIE, type GeneratedName, appSession, contentType, generatedModule, listAppFiles, resolveAppPath, safeNext } from "./web-app.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -193,7 +194,10 @@ async function signIn(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (!SUPABASE_URL || !AUTH_APIKEY || !webSessions || !accounts) return void page(503, "El inicio de sesión no está configurado en este hub.");
   if (url.pathname === "/auth/google") {
     const flow = pkce.start();
-    res.writeHead(302, { Location: authorizeUrl(SUPABASE_URL, callbackUrl(req), flow.state, flow.challenge), "Set-Cookie": authCookie(flow.state), "Cache-Control": "no-store" }).end();
+    // The web app (add-web-desktop) asks to come back to /app; only a path under it is kept.
+    const next = safeNext(url.searchParams.get("next"));
+    const cookies = [authCookie(flow.state), ...(next ? [`${NEXT_COOKIE}=${encodeURIComponent(next)}; HttpOnly; Secure; SameSite=Lax; Path=/auth; Max-Age=600`] : [])];
+    res.writeHead(302, { Location: authorizeUrl(SUPABASE_URL, callbackUrl(req), flow.state, flow.challenge), "Set-Cookie": cookies, "Cache-Control": "no-store" }).end();
     return;
   }
   // The callback: the state must be the one this browser started with, and unused.
@@ -207,7 +211,9 @@ async function signIn(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const admission = await accounts.admit(userId, email);
     if (!admission.ok) return void page(403, admission.reason === "closed_test" ? CLOSED_TEST_MESSAGE : "No se pudo abrir tu cuenta.");
     const token = await webSessions.create(userId, tokens.refreshToken);
-    res.writeHead(302, { Location: "/", "Cache-Control": "no-store", "Set-Cookie": [sessionCookie(SESSION_COOKIE, token), clearCookie(AUTH_COOKIE, "/auth")] }).end();
+    const raw = cookieValue(req.headers.cookie, NEXT_COOKIE);
+    const next = safeNext(raw ? decodeURIComponent(raw) : undefined) ?? "/";
+    res.writeHead(302, { Location: next, "Cache-Control": "no-store", "Set-Cookie": [sessionCookie(SESSION_COOKIE, token), clearCookie(AUTH_COOKIE, "/auth"), clearCookie(NEXT_COOKIE, "/auth")] }).end();
   } catch (error) {
     console.error(`[auth] web sign-in failed: ${(error as Error).message}`);
     page(502, "No se pudo terminar el inicio de sesión. Prueba otra vez.");
@@ -325,6 +331,33 @@ function healthReport() {
   return health.snapshot();
 }
 
+// --- The desktop web app (add-web-desktop): static modules from web/app/, the shell for client routes.
+const APP_DIR = fileURLToPath(new URL("../web/app/", import.meta.url));
+const appFiles = listAppFiles(APP_DIR);
+const appGenerated = new Map<GeneratedName, string>();
+
+function serveApp(req: IncomingMessage, res: ServerResponse, who: Identity | undefined): void {
+  const asset = resolveAppPath(req.url?.split("?")[0] ?? "", appFiles);
+  const base = { "Content-Security-Policy": APP_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" };
+  switch (asset.kind) {
+    case "session":
+      return void res.writeHead(200, { ...base, "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(appSession(AUTH_MODE, who)));
+    case "shell":
+      return void res.writeHead(200, { ...base, "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(APP_SHELL);
+    case "generated":
+      if (!appGenerated.has(asset.name)) appGenerated.set(asset.name, generatedModule(asset.name));
+      return void res.writeHead(200, { ...base, "Content-Type": contentType(asset.name), "Cache-Control": "no-cache" }).end(appGenerated.get(asset.name));
+    case "file":
+      try {
+        return void res.writeHead(200, { ...base, "Content-Type": contentType(asset.name), "Cache-Control": "no-cache" }).end(readFileSync(join(APP_DIR, asset.name)));
+      } catch {
+        return void res.writeHead(404, base).end();
+      }
+    default:
+      res.writeHead(404, base).end();
+  }
+}
+
 /** Web gate: /health, and on a cloud hub TLS and pairing. Returns true when the request was answered here. */
 async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const path = req.url?.split("?")[0];
@@ -344,6 +377,9 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
       res.end(JSON.stringify(report));
       return true;
     }
+    case "app":
+      serveApp(req, res, who);
+      return true;
     case "pass":
       return false;
     case "redirect-https":
@@ -1523,6 +1559,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     } else if (req.method === "GET" && req.url === "/projects") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ projects: await projectSummaries() }));
+    } else if (req.method === "GET" && req.url === "/projects/assignments") {
+      // Which project each meeting is in (add-web-desktop), so a meeting shows its project without a request per project.
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ assignments: Object.fromEntries(await projects.assignments()) }));
     } else if (req.method === "GET" && req.url?.startsWith("/projects/get")) {
       const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
       const project = (await projectSummaries()).find((p) => p.id === id);
@@ -1560,6 +1600,20 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       } catch {
         res.writeHead(404).end();
       }
+    } else if (req.method === "GET" && req.url === "/tasks") {
+      // The task list and the approvals without the stream (add-web-desktop): the actions event, read only.
+      const { kind: _kind, ...body } = actionsEvent();
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(body));
+    } else if (req.method === "GET" && req.url === "/day") {
+      // Today's whole record for Hoy; the stream carries only the last 80 entries.
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ entries: day.entries }));
+    } else if (req.method === "GET" && req.url === "/memory/profile") {
+      // The profile Lente keeps of the wearer (accounts, add-accounts 5.1); the laptop writes none.
+      const [latest] = sealed ? await sealed.digests.latest("profile", 1) : [];
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ profile: latest ? { text: latest.text, at: latest.createdAt } : null }));
     } else if (req.method === "GET" && req.url === "/facts") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ facts: facts.list() }));
