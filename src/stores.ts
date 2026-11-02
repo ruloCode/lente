@@ -14,6 +14,7 @@ import type { Fact } from "./fact-store.ts";
 import type { PendingAction } from "./action-store.ts";
 import type { TraceEntry } from "./agent-trace.ts";
 import type { DayEntry } from "./day-log.ts";
+import type { Digest, DigestScope } from "./digests.ts";
 import type { GlossaryEntry } from "./language-profile.ts";
 import type { Meeting, ProposedFact } from "./meetings.ts";
 import type { AssistMode } from "./profile.ts";
@@ -89,6 +90,51 @@ export interface Profile {
 export interface Language {
   readonly glossary: GlossaryEntry[];
   set(glossary: GlossaryEntry[]): void;
+}
+
+/** The profile and the day, week and month digests (design decision 8). */
+export interface DigestStore {
+  get(scope: DigestScope, periodStart: string): Awaitable<Digest | undefined>;
+  /** Newest first. */
+  latest(scope: DigestScope, count: number): Awaitable<Digest[]>;
+  /** Replaces the digest of the same scope and period. */
+  put(digest: Digest): Awaitable<void>;
+}
+
+/** Digests in one JSON file (`data/digests.json`), for the laptop hub. */
+export class FileDigestStore implements DigestStore {
+  private readonly file: string;
+
+  constructor(file: string) {
+    this.file = file;
+  }
+
+  private all(): Digest[] {
+    if (!existsSync(this.file)) return [];
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(this.file, "utf8"));
+      return Array.isArray(parsed) ? (parsed as Digest[]) : [];
+    } catch (error) {
+      console.error(`[digests] could not read ${this.file}: ${(error as Error).message}`);
+      return [];
+    }
+  }
+
+  get(scope: DigestScope, periodStart: string): Digest | undefined {
+    return this.all().find((d) => d.scope === scope && d.periodStart === periodStart);
+  }
+
+  latest(scope: DigestScope, count: number): Digest[] {
+    return this.all().filter((d) => d.scope === scope).sort((a, b) => b.periodStart.localeCompare(a.periodStart) || b.createdAt - a.createdAt).slice(0, count);
+  }
+
+  put(digest: Digest): void {
+    const rest = this.all().filter((d) => !(d.scope === digest.scope && d.periodStart === digest.periodStart));
+    mkdirSync(dirname(this.file), { recursive: true });
+    const tmp = `${this.file}.tmp`;
+    writeFileSync(tmp, JSON.stringify([...rest, digest], null, 2) + "\n");
+    renameSync(tmp, this.file);
+  }
 }
 
 /** Today's usage numbers, for the meter that counts them in memory. */

@@ -48,7 +48,8 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 
 ## 5. The whole memory
 
-- [ ] 5.1 Digests: profile, day, week and month writers on Muse Spark with structured output, each keeping the ids it came from, with the budgets in design.md; the profile is rewritten after a meeting closes; tests with a stubbed model for budgets, ids kept and kept facts winning (`pnpm test`)
+- [x] 5.1 Digests: profile, day, week and month writers on Muse Spark with structured output, each keeping the ids it came from, with the budgets in design.md; the profile is rewritten after a meeting closes; tests with a stubbed model for budgets, ids kept and kept facts winning (`pnpm test`)
+  - Writers in `src/digests.ts`, stores in `src/stores.ts` (file) and `src/supabase-stores.ts` (sealed). Calling the profile writer when a meeting closes is wired with the per-user runtime (6.1), so the laptop hub makes no new model call until then.
 - [ ] 5.2 Nightly job per user at their local midnight, and catch-up on the next open; test the catch-up with a clock (`pnpm test`)
 - [ ] 5.3 Ask in tiers. Steps:
   - the profile and digests as the cached prefix

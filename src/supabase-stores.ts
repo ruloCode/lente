@@ -12,6 +12,7 @@ import type { PendingAction } from "./action-store.ts";
 import type { AccountRecord, AccountStore } from "./accounts.ts";
 import type { TraceEntry } from "./agent-trace.ts";
 import { type DayEntry, dayKey } from "./day-log.ts";
+import type { Digest, DigestScope } from "./digests.ts";
 import type { Fact } from "./fact-store.ts";
 import type { CanaryStore } from "./kek-check.ts";
 import type { GlossaryEntry } from "./language-profile.ts";
@@ -19,7 +20,7 @@ import type { Meeting, MeetingTurn, Notes, ProposedFact } from "./meetings.ts";
 import { parseNames } from "./addressing.ts";
 import type { AssistMode } from "./profile.ts";
 import { open, seal } from "./seal.ts";
-import type { Actions, DayRecord, DeviceStore, Facts, Language, Meetings, Profile, Tasks, Traces, UsageStore } from "./stores.ts";
+import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Meetings, Profile, Tasks, Traces, UsageStore } from "./stores.ts";
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
 import { type UsageSnapshot, priceTokens } from "./usage-meter.ts";
 import type { DeviceRecord } from "./user-devices.ts";
@@ -581,6 +582,39 @@ export class SupabaseLanguage implements Language {
   }
 }
 
+// Digests -------------------------------------------------------------------------------------------
+
+export class SupabaseDigests implements DigestStore {
+  private readonly db: Db;
+  private readonly s: Sealer;
+
+  constructor(db: Db, sealer: Sealer) {
+    this.db = db;
+    this.s = sealer;
+  }
+
+  private open(r: Row): Digest {
+    const body = this.s.openJson<{ text: string; sources: string[] }>("memory_digests", "body_enc", String(r.id), r.body_enc);
+    return { scope: r.scope as DigestScope, periodStart: String(r.period_start), text: body.text, sources: body.sources, createdAt: msOf(r.created_at) };
+  }
+
+  async get(scope: DigestScope, periodStart: string): Promise<Digest | undefined> {
+    const [row] = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).eq("period_start", periodStart).limit(1));
+    return row && this.open(row);
+  }
+
+  async latest(scope: DigestScope, count: number): Promise<Digest[]> {
+    const rows = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).order("period_start", "desc").limit(count));
+    return rows.map((r) => this.open(r));
+  }
+
+  async put(d: Digest): Promise<void> {
+    const [existing] = await this.db.select<{ id: string }>(this.db.query("memory_digests").eq("scope", d.scope).eq("period_start", d.periodStart).limit(1), "id");
+    const id = existing?.id ?? randomUUID();
+    await this.db.insert("memory_digests", [{ id, scope: d.scope, period_start: d.periodStart, body_enc: this.s.json("memory_digests", "body_enc", id, { text: d.text, sources: d.sources }), source_count: d.sources.length, model: null, created_at: iso(d.createdAt) }], { upsertOn: "id" });
+  }
+}
+
 // Numbers, devices, accounts, canaries ---------------------------------------------------------------
 
 const TRANSCRIPTION = "transcription";
@@ -708,6 +742,7 @@ export async function openUserStores(rest: SupabaseRest, userId: string, dek: Bu
     profile,
     language,
     usage: new SupabaseUsage(db),
+    digests: new SupabaseDigests(db, sealer),
     /** Waits for the written-behind settings (eviction flushes before dropping the key). */
     flush: async () => {
       await Promise.all([profile.flush(), language.flush()]);
