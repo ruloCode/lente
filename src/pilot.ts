@@ -47,6 +47,8 @@ import { SupabaseRest } from "./supabase-rest.ts";
 import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, writeProfile } from "./digests.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
+import { FileProjects, type ProjectStore } from "./project-store.ts";
+import { assignMessages, assignSchema, cleanName, parseAssignment, summarize as summarizeProjects } from "./projects.ts";
 import { askTiers } from "./ask-tiers.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
@@ -387,6 +389,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   const facts = sealed?.facts ?? new FactStore(join(dataDir, "facts.json"));
   const actions = sealed?.actions ?? new ActionStore(join(dataDir, "actions.json"));
   const taskStore = sealed?.tasks ?? new TaskStore(join(dataDir, "tasks.json"));
+  const projects: ProjectStore = sealed?.sealed.projects ?? new FileProjects(join(dataDir, "projects.json"));
   const traces = sealed?.traces ?? new TraceWriter(join(dataDir, "traces"));
   // An account's reminders file lives only while its runtime does, never on the volume in the clear.
   const REMINDERS_FILE = sealed ? join(mkdtempSync(join(tmpdir(), "lente-reminders-")), "reminders.ics") : join(dataDir, "reminders.ics");
@@ -905,6 +908,33 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     if (deletedMeetings.has(m.id)) return;
     meetings.save(m);
     broadcastMeetings();
+    if (m.status === "done") void assignProject(m);
+  }
+
+  // --- Projects: each finished meeting goes to one of the wearer's projects (add-projects) ---------------
+
+  async function assignProject(m: Meeting): Promise<void> {
+    try {
+      const list = await projects.list();
+      const raw = await askSpark(assignMessages(list, m), {
+        label: "project",
+        extra: { response_format: { type: "json_schema", json_schema: { name: "project", strict: true, schema: assignSchema } } },
+        maxTokens: 600,
+      });
+      const choice = parseAssignment(raw, list);
+      if (choice.kind === "none") return void console.log(`[projects] ${m.id} · no project`);
+      // The meeting row must exist before it can point to a project.
+      await sealed?.flush();
+      const id = choice.kind === "existing" ? choice.projectId : (await projects.create(choice.name, Date.now())).id;
+      await projects.assign(m.id, id);
+      console.log(`[projects] ${m.id} · ${choice.kind === "new" ? "new project" : "existing project"}`);
+    } catch (error) {
+      console.error(`[projects] assigning ${m.id} failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  async function projectSummaries() {
+    return summarizeProjects(await projects.list(), await projects.assignments(), meetings.list(), await taskStore.list(), Date.now());
   }
 
   // --- Briefing: what to know before a meeting, only from what is remembered ----------------------------
@@ -1456,6 +1486,44 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ steps: (await traces.read(id)).map((e) => ({ at: e.at, kind: e.kind, ...traceLine(e) })) }));
+    } else if (req.method === "GET" && req.url === "/projects") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ projects: await projectSummaries() }));
+    } else if (req.method === "GET" && req.url?.startsWith("/projects/get")) {
+      const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
+      const project = (await projectSummaries()).find((p) => p.id === id);
+      if (!project) return void res.writeHead(404).end();
+      const assigned = await projects.assignments();
+      const own = meetings.list().filter((m) => assigned.get(m.id) === id).sort((a, b) => b.startedAt - a.startedAt);
+      const ids = new Set(own.map((m) => m.id));
+      const tasks = (await taskStore.list()).filter((t) => !t.done && ids.has(t.meetingId));
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ project, meetings: own.map((m) => ({ id: m.id, title: m.title, startedAt: m.startedAt, endedAt: m.endedAt ?? null })), tasks: tasks.map((t) => ({ id: t.id, title: t.title, due: t.due ?? null, meetingId: t.meetingId })) }));
+    } else if (req.method === "POST" && (req.url === "/projects/rename" || req.url === "/projects/archive" || req.url === "/projects/restore" || req.url === "/projects/merge")) {
+      const body = JSON.parse((await readBody(req)) || "{}") as { id?: unknown; name?: unknown; into?: unknown };
+      const id = typeof body.id === "string" ? body.id : "";
+      let ok = false;
+      if (req.url === "/projects/rename") {
+        const name = typeof body.name === "string" ? cleanName(body.name) : "";
+        ok = Boolean(name) && (await projects.rename(id, name));
+      } else if (req.url === "/projects/merge") {
+        const ids = new Set((await projects.list()).map((p) => p.id));
+        ok = typeof body.into === "string" && body.into !== id && ids.has(id) && ids.has(body.into);
+        if (ok) await projects.merge(id, body.into as string);
+      } else ok = await projects.setStatus(id, req.url === "/projects/archive" ? "archived" : "active");
+      res.writeHead(ok ? 204 : 404).end();
+    } else if (req.method === "POST" && req.url === "/meetings/project") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { id?: unknown; project?: unknown };
+      const known = typeof body.id === "string" && meetings.list().some((m) => m.id === body.id);
+      const project = body.project === null ? null : typeof body.project === "string" ? body.project : undefined;
+      if (!known || project === undefined) return void res.writeHead(400).end();
+      try {
+        await sealed?.flush();
+        await projects.assign(body.id as string, project);
+        res.writeHead(204).end();
+      } catch {
+        res.writeHead(404).end();
+      }
     } else if (req.method === "GET" && req.url === "/facts") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ facts: facts.list() }));
