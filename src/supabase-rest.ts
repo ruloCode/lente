@@ -152,6 +152,11 @@ export class SupabaseRest {
       sessionByTokenHash: (hash: Buffer) => this.send<Row[]>("GET", "sessions", sys("sessions").eq("token_hash", toBytea(hash)).limit(1).search("*"), undefined, {}, undefined),
       canary: (version: number) => this.send<Row[]>("GET", "kek_canaries", sys("kek_canaries").eq("kek_version", version).search("kek_version,sealed"), undefined, {}, undefined),
       putCanary: (version: number, sealed: Buffer) => this.send<null>("POST", "kek_canaries", "", [{ kek_version: version, sealed: toBytea(sealed) }], { Prefer: "return=minimal" }, undefined),
+      /** Every user's wrapped data key, for a KEK rotation (scripts/rotate-kek.ts); no content. */
+      wrappedKeys: () => this.send<Row[]>("GET", "user_keys", sys("user_keys").order("user_id").search("user_id,kek_version,wrapped_dek"), undefined, {}, undefined),
+      /** Replaces one wrapped key, only if it is still under `fromVersion`; returns the rows changed. */
+      rewrapKey: (userId: string, fromVersion: number, toVersion: number, wrapped: Buffer, at: string) =>
+        this.send<Row[]>("PATCH", "user_keys", new Query("user_keys", { userId }).eq("kek_version", fromVersion).search(), { kek_version: toVersion, wrapped_dek: toBytea(wrapped), rotated_at: at }, { Prefer: "return=representation" }, userId),
       /** One cheap select for health (decision 13), timed by the caller; no retries, so a failure shows at once. */
       ping: () => this.send<Row[]>("GET", "accounts", sys("accounts").limit(1).search("user_id"), undefined, {}, undefined, false),
     };
