@@ -86,13 +86,14 @@ export async function deleteAccount(rest: SupabaseRest, userId: string, deps: De
 }
 
 /**
- * Supabase's Auth admin call that deletes a user, with the secret key. The exact shape is confirmed
- * on the live project by task 1.1; a missing user (404) counts as deleted.
+ * Supabase's Auth admin call that deletes a user, with the secret key. The key goes in `apikey`
+ * only: an `sb_secret_` key is not a JWT, so it cannot be a Bearer token (docs/kb/supabase.md).
+ * A missing user (404) counts as deleted.
  */
 export async function deleteAuthUser(supabaseUrl: string, secretKey: string, userId: string, fetchFn: typeof fetch = fetch): Promise<void> {
   const res = await fetchFn(`${supabaseUrl.replace(/\/+$/, "")}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
     method: "DELETE",
-    headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}` },
+    headers: { apikey: secretKey },
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok && res.status !== 404) throw new Error(`deleting the sign-in answered ${res.status}`);
