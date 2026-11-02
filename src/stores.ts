@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { TraceStep, Proposal } from "./agent-loop.ts";
-import type { Task } from "./agent-tools.ts";
+import type { Task, TaskPatch } from "./agent-tools.ts";
 import type { Fact } from "./fact-store.ts";
 import type { PendingAction } from "./action-store.ts";
 import type { TraceEntry } from "./agent-trace.ts";
@@ -56,6 +56,8 @@ export interface Tasks {
   list(): Awaitable<Task[]>;
   add(input: Omit<Task, "id" | "done" | "createdAt">, now: number): Awaitable<Task>;
   setDone(id: string, done: boolean): Awaitable<Task | undefined>;
+  update(id: string, patch: TaskPatch): Awaitable<Task | undefined>;
+  remove(id: string): Awaitable<boolean>;
 }
 
 export interface Actions {

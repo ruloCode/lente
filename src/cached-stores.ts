@@ -8,7 +8,7 @@
 import { randomUUID } from "node:crypto";
 import type { PendingAction } from "./action-store.ts";
 import type { Proposal, TraceStep } from "./agent-loop.ts";
-import type { Task } from "./agent-tools.ts";
+import { type Task, type TaskPatch, applyPatch } from "./agent-tools.ts";
 import type { TraceEntry } from "./agent-trace.ts";
 import type { DayEntry } from "./day-log.ts";
 import type { Fact } from "./fact-store.ts";
@@ -186,6 +186,23 @@ export class CachedTasks {
     task.done = done;
     this.queue.push("a task's state", () => this.sealed.setDone(id, done));
     return clone(task);
+  }
+
+  update(id: string, patch: TaskPatch): Task | undefined {
+    const i = this.tasks.findIndex((t) => t.id === id);
+    if (i < 0) return undefined;
+    const next = applyPatch(this.tasks[i]!, patch);
+    this.tasks[i] = next;
+    this.queue.push("a task", () => this.sealed.replace(clone(next)));
+    return clone(next);
+  }
+
+  remove(id: string): boolean {
+    const i = this.tasks.findIndex((t) => t.id === id);
+    if (i < 0) return false;
+    this.tasks.splice(i, 1);
+    this.queue.push("a task's removal", () => this.sealed.remove(id).then(() => undefined));
+    return true;
   }
 }
 

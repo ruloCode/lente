@@ -7,7 +7,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import type { Proposal, TraceStep } from "./agent-loop.ts";
-import type { Task } from "./agent-tools.ts";
+import { type Task, type TaskPatch, applyPatch } from "./agent-tools.ts";
 import type { PendingAction } from "./action-store.ts";
 import type { AccountRecord, AccountStore } from "./accounts.ts";
 import type { TraceEntry } from "./agent-trace.ts";
@@ -378,6 +378,25 @@ export class SupabaseTasks implements Tasks {
     if (!rows[0]) return undefined;
     const r = rows[0];
     return { ...this.s.openJson<Omit<Task, "id" | "done" | "createdAt">>("tasks", "title_enc", id, r.title_enc), id, done, createdAt: msOf(r.created_at) };
+  }
+
+  /** Rewrites a task's sealed body (owner, title); its state and dates stay. */
+  async replace(task: Task): Promise<boolean> {
+    if (!isUuid(task.id)) return false;
+    const { id, done, createdAt, ...body } = task;
+    return (await this.db.update(this.db.query("tasks").eq("id", id), { title_enc: this.s.json("tasks", "title_enc", id, body) })).length > 0;
+  }
+
+  async update(id: string, patch: TaskPatch): Promise<Task | undefined> {
+    const task = (await this.list()).find((t) => t.id === id);
+    if (!task) return undefined;
+    const next = applyPatch(task, patch);
+    return (await this.replace(next)) ? next : undefined;
+  }
+
+  async remove(id: string): Promise<boolean> {
+    if (!isUuid(id)) return false;
+    return (await this.db.remove(this.db.query("tasks").eq("id", id))).length > 0;
   }
 }
 
