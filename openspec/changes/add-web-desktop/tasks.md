@@ -39,12 +39,16 @@ Depends on: `add-accounts`, `add-projects`, `add-task-owners`, `add-record-sheet
 
 ## 5. Dispositivos, Ajustes, shortcuts and notifications
 
-- [ ] 5.1 Dispositivos: clip state, tokens created once and revoked (accounts), "Usar esta computadora"; Ajustes: name, mode, voice, every question, theme, account with spend, export, delete with typed confirmation, sign out; screenshots
-- [ ] 5.2 Shortcuts (⌘K search, ⌘J chat, R, Esc, "?") as a pure table with tests; notifications by opt-in for DILO and approvals in the background
+- [x] 5.1 Dispositivos: clip state, tokens created once and revoked (accounts), "Usar esta computadora"; Ajustes: name, mode, voice, every question, theme, account with spend, export, delete with typed confirmation, sign out; screenshots
+  - 2026-11-02 on the laptop hub: Dispositivos with the fake clip connected, «Usar esta computadora» and «Mirar ahora»; Ajustes with the name, mode, every question, voice, notifications and theme (Claro applied before paint on reload). The account section and clip tokens only exist on a hub with accounts: checked against Modal in 6.3.
+- [x] 5.2 Shortcuts (⌘K search, ⌘J chat, R, Esc, "?") as a pure table with tests; notifications by opt-in for DILO and approvals in the background
+  - 2026-11-02: ⌘K found a project, a meeting and two tasks for «acme» and Enter opened the selection; «?» listed the shortcuts; ⌘J folded the chat into its button. What deserves a notification is tested (`notificationsFor`); showing one needs a hidden tab and the browser's permission.
 
 ## 6. Polish
 
-- [ ] 6.1 Keyboard and screen reader pass: focus order, visible focus, roles and labels, contrast of the app's own pairs (`pnpm test`)
-- [ ] 6.2 Empty, loading and error states on every screen; responsive at 1024 px with the chat as a sheet; screenshots of each screen in both themes at 1440 and 1024 px
+- [x] 6.1 Keyboard and screen reader pass: focus order, visible focus, roles and labels, contrast of the app's own pairs (`pnpm test`)
+  - `test/web-contrast.test.ts`: 19 text pairs at 7:1 or more in both themes (the client topic green was darkened from 6.92:1). Every control has a name (checked in Chrome's accessibility tree); dialogs are native `<dialog>` with focus kept inside.
+- [x] 6.2 Empty, loading and error states on every screen; responsive at 1024 px with the chat as a sheet; screenshots of each screen in both themes at 1440 and 1024 px
+  - Each screen has a loading line, an empty state and an error with «Reintentar». Screens seen in dark and light at 1440 and Tareas and a meeting at 1024 (screenshots in the scratchpad only).
 - [ ] 6.3 Against the Modal hub with accounts: sign in with Google and use the app [human]
-- [ ] 6.4 README "What was built during the hackathon" row; `docs/kb/decisions.md` entry for the web app without a build
+- [x] 6.4 README "What was built during the hackathon" row; `docs/kb/decisions.md` entry for the web app without a build

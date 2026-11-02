@@ -2,7 +2,7 @@
    is layout and components. No inline styles anywhere (the CSP allows none). */
 
 /* Topic chips: the kit's three tones; text on fill keeps 7:1 in both themes. */
-:root { --topic-product: #4A12C4; --topic-product-bg: #E6E1FD; --topic-client: #0B5A4C; --topic-client-bg: #D5F3EB; --topic-team: #7A3406; --topic-team-bg: #FAE8D9; --warn-bg: #FFF4E5; --warn-ink: #6B3A00; --sidebar: #E9EAF1; }
+:root { --topic-product: #4A12C4; --topic-product-bg: #E6E1FD; --topic-client: #094D41; --topic-client-bg: #D5F3EB; --topic-team: #7A3406; --topic-team-bg: #FAE8D9; --warn-bg: #FFF4E5; --warn-ink: #6B3A00; --sidebar: #E9EAF1; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --topic-product: #D3C4FF; --topic-product-bg: #2E2550; --topic-client: #8CEBD0; --topic-client-bg: #12382F; --topic-team: #FFC892; --topic-team-bg: #3D2814; --warn-bg: #3A2A12; --warn-ink: #FFD9A0; --sidebar: #0E0E10; } }
 :root[data-theme="dark"] { --topic-product: #D3C4FF; --topic-product-bg: #2E2550; --topic-client: #8CEBD0; --topic-client-bg: #12382F; --topic-team: #FFC892; --topic-team-bg: #3D2814; --warn-bg: #3A2A12; --warn-ink: #FFD9A0; --sidebar: #0E0E10; }
 
