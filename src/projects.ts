@@ -129,3 +129,8 @@ export function summarize(
   });
   return out.sort((a, b) => (a.status === b.status ? (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0) : a.status === "active" ? -1 : 1));
 }
+
+/** The meetings a question may open: all of them, or only one project's (add-record-sheet). */
+export function scopeMeetings<M extends { id: string }>(meetings: readonly M[], assignments: ReadonlyMap<string, string>, projectId: string | undefined): M[] {
+  return projectId ? meetings.filter((m) => assignments.get(m.id) === projectId) : [...meetings];
+}

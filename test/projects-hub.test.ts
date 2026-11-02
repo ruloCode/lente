@@ -109,3 +109,23 @@ test("tasks on the hub (add-task-owners 1.3): add by hand, change who does it, d
   assert.equal((await post("/tasks/delete", { id })).status, 404);
   assert.ok(!(await latestActions(base)).tasks.some((t: any) => t.id === id));
 });
+
+test("recording into a project (add-record-sheet 1.1): the meeting opens in it; an unknown or archived project is refused, and so is asking in one", { timeout: 30_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lente-record-hub-"));
+  const projects = new FileProjects(join(dir, "projects.json"));
+  const alfa = projects.create("PROBE Alfa", Date.now());
+  const old = projects.create("PROBE Viejo", Date.now());
+  projects.setStatus(old.id, "archived");
+  const port = await freePort();
+  children.push(spawn(process.execPath, ["src/pilot.ts"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, PILOT_WEB_PORT: String(port), PILOT_DEVICE_PORT: String(await freePort()), PILOT_DATA_DIR: dir }, stdio: "ignore" }));
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 200 && !(await fetch(`${base}/health`).then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 50));
+  const post = (path: string, body: unknown) => fetch(base + path, { method: "POST", body: JSON.stringify(body) }).then((r) => r.status);
+
+  assert.equal(await post("/meeting/start", { title: "PROBE grabación", project: "nope" }), 404);
+  assert.equal(await post("/meeting/start", { title: "PROBE grabación", project: old.id }), 404, "not into an archived project");
+  assert.equal(await post("/meeting/start", { title: "PROBE grabación", project: alfa.id }), 204);
+  const detail = await (await fetch(`${base}/projects/get?id=${alfa.id}`)).json();
+  assert.deepEqual(detail.meetings.map((m: any) => m.title), ["PROBE grabación"]);
+  assert.equal(await post("/ask", { question: "¿qué pasó?", project: "nope" }), 404);
+});

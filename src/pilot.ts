@@ -48,7 +48,7 @@ import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, writeProfile } from "./digests.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
-import { assignMessages, assignSchema, cleanName, parseAssignment, summarize as summarizeProjects } from "./projects.ts";
+import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects } from "./projects.ts";
 import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
 import { askTiers } from "./ask-tiers.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
@@ -930,6 +930,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   async function assignProject(m: Meeting): Promise<void> {
     try {
+      if ((await projects.assignments()).has(m.id)) return void console.log(`[projects] ${m.id} · chosen at start`);
       const list = await projects.list();
       const raw = await askSpark(assignMessages(list, m), {
         label: "project",
@@ -1028,16 +1029,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   if (sealed && key) nightly.start(userId, TIME_ZONE, runDigests);
 
   /** Ask over the whole history in tiers (accounts); the laptop keeps the 7-day window. */
-  async function askWhole(body: { question?: unknown; history?: unknown }) {
+  async function askWhole(body: { question?: unknown; history?: unknown }, inScope: (list: Meeting[]) => Meeting[] = (list) => list) {
     const digests = sealed!.digests;
     const [[profileDigest], days, weeks, months] = await Promise.all([digests.latest("profile", 1), digests.latest("day", 14), digests.latest("week", 8), digests.latest("month", 24)]);
-    const finished = finishedMeetings();
-    const byIds = (ids: string[]) => meetings.list().filter((m) => ids.includes(m.id));
+    const finished = inScope(finishedMeetings());
+    const byIds = (ids: string[]) => inScope(meetings.list()).filter((m) => ids.includes(m.id));
     return askTiers(
       { profile: profileDigest, days, weeks, months, recentMeetings: finished.slice(-5), keptFacts: keptFacts(facts.list()), question: body.question, history: body.history, now: Date.now() },
       {
         meetings: async (ids) => byIds(ids),
-        meetingsBetween: async (from, to, limit) => meetings.list().filter((m) => m.startedAt >= from && m.startedAt < to).reverse().slice(0, limit),
+        meetingsBetween: async (from, to, limit) => inScope(meetings.list()).filter((m) => m.startedAt >= from && m.startedAt < to).reverse().slice(0, limit),
         days: async (list) => (await Promise.all(list.map((d) => sealed!.sealed.day.entriesBetween(localDayStart(d, TIME_ZONE), localDayStart(d, TIME_ZONE) + 24 * 3600 * 1000)))).flat(),
       },
       structured,
@@ -1600,8 +1601,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       if (task) broadcastActions();
       res.writeHead(task ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/meeting/start") {
-      const { title } = JSON.parse((await readBody(req)) || "{}") as { title?: string };
+      const { title, project } = JSON.parse((await readBody(req)) || "{}") as { title?: string; project?: unknown };
+      if (typeof project === "string" && !(await projects.list()).some((p) => p.id === project && p.status === "active")) return void res.writeHead(404).end();
       startMeeting(typeof title === "string" ? title : "");
+      // A project chosen before recording wins over the automatic assignment (add-record-sheet).
+      if (typeof project === "string" && current) {
+        const id = current.id;
+        await sealed?.flush();
+        await projects.assign(id, project);
+        void refreshTaskProjects();
+      }
       res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/meeting/end") {
       void endMeeting("manual");
@@ -1658,15 +1667,21 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.end(JSON.stringify(out));
     } else if (req.method === "POST" && req.url === "/ask") {
       // Chat with Lente: one question with the conversation so far, answered from the memory with its sources.
-      const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown };
+      const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown };
+      // Asking within a project (add-record-sheet): only that project's meetings can be opened or cited.
+      const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
+      if (typeof body.project === "string" && !scope) return void res.writeHead(404).end();
+      const assigned = scope ? await projects.assignments() : new Map<string, string>();
+      const inScope = (list: Meeting[]) => scopeMeetings(list, assigned, scope?.id);
+      if (scope && typeof body.question === "string") body.question = `(Sobre el proyecto «${scope.name}») ${body.question}`;
       const out = key && sealed
-        ? await askWhole(body).catch((error: Error) => {
+        ? await askWhole(body, inScope).catch((error: Error) => {
             console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
             return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
           })
         : key
         ? await ask(
-            { question: body.question, history: body.history, meetings: meetings.list(), day: await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
+            { question: body.question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
             async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
           ).catch((error: Error) => {
             console.error(`[ask] failed: ${error.message.slice(0, 200)}`);

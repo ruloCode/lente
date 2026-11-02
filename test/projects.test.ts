@@ -47,3 +47,12 @@ test("the summary counts meetings, this week's meetings and open tasks, names th
   assert.deepEqual(out[0], { id: "a", name: "Lente", status: "active", lastActivityAt: now - day, meetings: 2, meetingsThisWeek: 1, openTasks: 2, next: "Escribir el README" });
   assert.deepEqual([out[2]!.meetings, out[2]!.next, out[2]!.lastActivityAt], [0, null, now - 30 * day]);
 });
+
+test("asking within a project opens only that project's meetings (add-record-sheet 1.1)", async () => {
+  const { scopeMeetings } = await import("../src/projects.ts");
+  const meetings = [{ id: "m1" }, { id: "m2" }, { id: "m3" }];
+  const assignments = new Map([["m1", "a"], ["m3", "a"], ["m2", "b"]]);
+  assert.deepEqual(scopeMeetings(meetings, assignments, "a").map((m) => m.id), ["m1", "m3"]);
+  assert.deepEqual(scopeMeetings(meetings, assignments, undefined).map((m) => m.id), ["m1", "m2", "m3"]);
+  assert.deepEqual(scopeMeetings(meetings, assignments, "none"), []);
+});
