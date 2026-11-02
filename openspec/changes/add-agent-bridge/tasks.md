@@ -19,9 +19,9 @@ Depends on: `add-task-owners`
 
 ## 4. Agent jobs and the bridge
 
-- [ ] 4.1 `POST /agent/jobs`, `run_agent` actions, claim and result routes, the bridge's `jobs` stream; tests on the real hub (`pnpm test`)
-- [ ] 4.2 The chat's `command` intent in `/ask` (both answer paths); unit tests for the check and the parse (`pnpm test`)
-- [ ] 4.3 `scripts/agent-bridge.ts` and `src/agent-bridge.ts`: config, folder allow list, restrictive commands, clean environment, timeout, one job at a time; tests with a fake agent that exits 0 or 1, and an unapproved job that never runs (`pnpm test`)
+- [x] 4.1 `POST /agent/jobs`, `run_agent` actions, claim and result routes, the bridge's `jobs` stream; tests on the real hub (`pnpm test`)
+- [x] 4.2 The chat's `command` intent in `/ask` (both answer paths); unit tests for the check and the parse (`pnpm test`)
+- [x] 4.3 `scripts/agent-bridge.ts` and `src/agent-bridge.ts`: config, folder allow list, restrictive commands, clean environment, timeout, one job at a time; tests with a fake agent that exits 0 or 1, and an unapproved job that never runs (`pnpm test`)
 
 ## 5. App
 

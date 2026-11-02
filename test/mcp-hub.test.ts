@@ -195,3 +195,19 @@ test("an initialize-era client works too", async () => {
   assert.equal(((await list.json()) as { result: { tools: unknown[] } }).result.tools.length, 5);
   assert.equal((await fetch(`${base}/mcp`, { headers })).status, 405);
 });
+
+test("jobs belong to their user: Bob's bridge cannot claim Alice's approved job", async () => {
+  const made = await post("/agent/jobs", ALICE_H(), { instruction: "PROBE-alice job", agent: "claude" });
+  assert.equal(made.status, 201);
+  const { id } = (await made.json()) as { id: string };
+  assert.equal((await post("/actions/decide", ALICE_H(), { id, decision: "approve" })).status, 200);
+  const bobsBridge = await agentToken(BOB_H(), "Bob's bridge", ["agent.run"]);
+  const claim = (token: string) => fetch(`${base}/agent/jobs/${id}/claim`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+  assert.equal((await claim(bobsBridge.token)).status, 404);
+  const alicesReader = await agentToken(ALICE_H(), "Reader");
+  assert.equal((await claim(alicesReader.token)).status, 403, "read is not agent.run");
+  const alicesBridge = await agentToken(ALICE_H(), "Alice's bridge", ["agent.run"]);
+  assert.equal((await claim(alicesBridge.token)).status, 200);
+  assert.equal((await claim(alicesBridge.token)).status, 409, "claimed once");
+  assert.ok(!db.fake.dump().includes("PROBE-alice job"), "the instruction is sealed");
+});

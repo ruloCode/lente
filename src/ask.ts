@@ -7,6 +7,7 @@ import type { ChatMessage } from "./chat.ts";
 import type { DayEntry } from "./day-log.ts";
 import type { Fact } from "./fact-store.ts";
 import type { Meeting } from "./meetings.ts";
+import { JOB_AGENTS, type JobAgent, chatCommand } from "./agent-jobs.ts";
 
 /** Characters of memory the model reads; the newest material is kept when it does not all fit. */
 export const ASK_MEMORY_CHARS = 60_000;
@@ -35,8 +36,14 @@ export interface AskMessage {
   text: string;
 }
 
+/** Something the user asked to have done (add-agent-bridge): the hub queues it as a job, never runs it. */
+export interface AskCommand {
+  agent: JobAgent;
+  instruction: string;
+}
+
 export type AskOutcome =
-  | { ok: true; answer: string; sources: AskSource[]; found: boolean; ms: number }
+  | { ok: true; answer: string; sources: AskSource[]; found: boolean; ms: number; command?: AskCommand }
   | { ok: false; reason: "empty-question"; message: string };
 
 const hhmm = (at: number) => {
@@ -99,22 +106,32 @@ export function buildMemory(input: { meetings: Meeting[]; day: DayEntry[]; facts
   return { text: blocks.join("\n"), sources };
 }
 
+/** The chat's command intent (add-agent-bridge), shared by both answer paths. */
+export const COMMAND_RULE =
+  "Si el usuario te pide que se haga algo (haz, ejecuta, corre, «que Claude…», «que Codex…»), no lo respondas ni digas que lo hiciste: pon `intent: \"command\"`, " +
+  "en `instruction` la tarea completa y clara para un agente de programación (con lo que la memoria aporte), y en `agent` `codex` si nombra a Codex o `claude` si no; `answer` vacío. " +
+  "Si solo pregunta o conversa, `intent: \"answer\"` e `instruction` vacío.";
+
 const SYSTEM = [
   "Eres Lente, el agente personal del usuario. Recuerdas solo lo que el usuario vivió con Lente: sus reuniones, lo que se oyó a su alrededor y lo que describió la cámara de sus lentes. Esa memoria va abajo, línea por línea, con un id entre corchetes.",
   "Responde en español, en una a tres frases, cálido y directo, hablándole de tú.",
   "Usa solo la memoria. Cada afirmación debe salir de una o más líneas: pon sus ids en `sources`.",
   "Si la memoria no lo dice, responde `found: false` y `answer` vacío. No uses conocimiento general ni inventes nombres, fechas ni cifras.",
   "Si el usuario solo saluda o pregunta qué puedes hacer, responde breve con `found: true` y `sources` vacío.",
+  COMMAND_RULE,
 ].join("\n");
 
 export const askSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["found", "answer", "sources"],
+  required: ["intent", "found", "answer", "sources", "agent", "instruction"],
   properties: {
+    intent: { type: "string", enum: ["answer", "command"] },
     found: { type: "boolean" },
     answer: { type: "string" },
     sources: { type: "array", items: { type: "string" } },
+    agent: { type: "string", enum: [...JOB_AGENTS] },
+    instruction: { type: "string" },
   },
 } as const;
 
@@ -127,14 +144,19 @@ export function askMessages(memory: string, history: AskMessage[], question: str
   ];
 }
 
-/** The model's JSON as an answer: unknown ids dropped; a claimed answer with nothing real behind it becomes NOT_FOUND. */
-export function parseAsk(raw: string, sources: Map<string, AskSource>): { answer: string; sources: AskSource[]; found: boolean } {
-  let out: { found?: unknown; answer?: unknown; sources?: unknown };
+/**
+ * The model's JSON as an answer: unknown ids dropped; a claimed answer with nothing real behind it
+ * becomes NOT_FOUND. With `question`, a command the question really asks for comes back as `command`.
+ */
+export function parseAsk(raw: string, sources: Map<string, AskSource>, question?: string): { answer: string; sources: AskSource[]; found: boolean; command?: AskCommand } {
+  let out: { found?: unknown; answer?: unknown; sources?: unknown; intent?: unknown; agent?: unknown; instruction?: unknown };
   try {
     out = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
   } catch {
     return { answer: NOT_FOUND, sources: [], found: false };
   }
+  const command = question === undefined ? undefined : chatCommand(out, question);
+  if (command) return { answer: "", sources: [], found: true, command };
   const answer = typeof out.answer === "string" ? oneLine(out.answer).slice(0, MAX_ANSWER_CHARS) : "";
   const ids = Array.isArray(out.sources) ? out.sources.filter((s): s is string => typeof s === "string") : [];
   const cited = [...new Set(ids)].map((id) => sources.get(id.replace(/^\[|\]$/g, ""))).filter((s): s is AskSource => Boolean(s));
@@ -160,5 +182,5 @@ export async function ask(
   const memory = buildMemory(input);
   const started = clock();
   const raw = await call(askMessages(memory.text, history, question, input.now));
-  return { ok: true, ...parseAsk(raw, memory.sources), ms: Math.round(clock() - started) };
+  return { ok: true, ...parseAsk(raw, memory.sources, question), ms: Math.round(clock() - started) };
 }

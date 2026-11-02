@@ -68,6 +68,8 @@ import { TraceWriter, traceLine } from "./agent-trace.ts";
 import { TASK_OWNERS, type Task, type TaskOwner, TaskStore, meetingTools, ownerOf } from "./agent-tools.ts";
 import { type AgentApi, CallLimiter, type TaskView, agentServer } from "./agent-mcp-tools.ts";
 import { MCP_MAX_BODY_BYTES, serveMcp, unauthorizedResponse } from "./mcp.ts";
+import { AGENT_NAMES, TOOL_RUN_AGENT, type JobAgent, claim as claimJob, finish as finishJob, jobArgs, outcomeOf, parseResult, proposedAnswer, queued as queuedJob, queuedJobs } from "./agent-jobs.ts";
+import { NOT_FOUND } from "./ask.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
@@ -799,7 +801,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     return {
       kind: "actions",
       pending: actions.list().filter((a) => a.status === "pending").map((a) => ({ ...a, meetingTitle: titles.get(a.meetingId) ?? "", quotes: a.evidence.map((id) => turnText(a.meetingId, id)) })),
-      decided: actions.list().filter((a) => a.status !== "pending").slice(-10).reverse().map((a) => ({ id: a.id, tool: a.tool, status: a.status, meetingId: a.meetingId })),
+      decided: actions.list().filter((a) => a.status !== "pending").slice(-10).reverse().map((a) => {
+        const job = outcomeOf(a);
+        return { id: a.id, tool: a.tool, status: a.status, meetingId: a.meetingId, ...(job ? { job: { state: job.state, agent: a.args.agent, instruction: a.args.instruction, summary: job.summary ?? "", exitCode: job.exitCode ?? null } } : {}) };
+      }),
       tasks: taskStore.list().map((t) => ({ ...t, who: ownerOf(t), meetingTitle: titles.get(t.meetingId) ?? "", projectName: taskProjects.get(t.meetingId) ?? "" })),
     };
   }
@@ -832,7 +837,17 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     actions.save(a);
     traces.append(a.meetingId, [{ kind: "approval", at: Date.now(), actionId: a.id, tool: a.tool, decision: a.status === "approved" ? "approved" : "rejected", edited }]);
     let outcome: unknown;
-    if (verdict.run) {
+    if (verdict.run && a.tool === TOOL_RUN_AGENT) {
+      // An approved job only becomes visible to the bridge; nothing runs in the hub (add-agent-bridge).
+      const checked = jobArgs(a.args, (id) => taskStore.list().find((t) => t.id === id)?.title);
+      if (!checked.ok) {
+        actions.save({ ...a, status: "failed", outcome: { state: "failed", summary: checked.error } });
+      } else {
+        actions.save(queuedJob({ ...a, args: checked.args as unknown as Record<string, unknown> }));
+        outcome = { state: "queued" };
+      }
+      broadcastJobs();
+    } else if (verdict.run) {
       const meeting = meetings.list().find((m) => m.id === a.meetingId);
       const result = meeting
         ? await runApproved(meetingTools({ meeting, tasks: taskStore, remindersFile: REMINDERS_FILE }), a.tool, a.args)
@@ -1461,7 +1476,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   }
 
   /** Chat with Lente: one question with the conversation so far, answered from the memory with its sources. */
-  async function answerAsk(body: { question?: unknown; history?: unknown; project?: unknown }) {
+  async function answerAsk(body: { question?: unknown; history?: unknown; project?: unknown }, commands = true) {
     // Asking within a project (add-record-sheet): only that project's meetings can be opened or cited.
     const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
     if (typeof body.project === "string" && !scope) return "no_project" as const;
@@ -1480,8 +1495,84 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
           async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
         ).catch(failed)
       : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
+    if (out.ok && out.command) {
+      // A request to have something done (add-agent-bridge): proposed as a job, never answered as done.
+      // An outside agent asking through MCP cannot queue jobs.
+      if (!commands) return { ...out, answer: NOT_FOUND, found: false, command: undefined };
+      const job = createJob({ agent: out.command.agent, instruction: out.command.instruction });
+      if (!job.ok) return { ...out, answer: NOT_FOUND, found: false, command: undefined };
+      console.log(`[ask] ${out.ms} ms · command → job for ${out.command.agent}`);
+      return { ...out, answer: proposedAnswer(out.command.agent, job.args.instruction), sources: [], job: { id: job.id, agent: job.args.agent, instruction: job.args.instruction } };
+    }
     if (out.ok) console.log(`[ask] ${out.ms} ms · ${out.found ? out.sources.length + " fuentes" : "no encontrado"}`);
     return out;
+  }
+
+  // --- Agent jobs (add-agent-bridge): queued for approval, run only by the user's bridge ------------
+
+  /** A job waiting in "Por aprobar". */
+  function createJob(input: unknown) {
+    const checked = jobArgs(input, (id) => taskStore.list().find((t) => t.id === id)?.title);
+    if (!checked.ok) return checked;
+    const [action] = actions.addAll("", [{ tool: TOOL_RUN_AGENT, args: checked.args as unknown as Record<string, unknown>, evidence: [] }], Date.now());
+    broadcastActions();
+    console.log(`[jobs] proposed a job for ${checked.args.agent}${checked.args.taskId ? " from a task" : ""}`);
+    return { ok: true as const, id: action!.id, args: checked.args };
+  }
+
+  /** The bridge's streams: they get only approved jobs waiting to run, never the phone's events. */
+  const jobClients = new Set<ServerResponse>();
+  const jobsEvent = () => ({ kind: "jobs", items: queuedJobs(actions.list()) });
+  function broadcastJobs(): void {
+    const line = `data: ${JSON.stringify(jobsEvent())}\n\n`;
+    for (const res of jobClients) res.write(line);
+  }
+  every(() => {
+    for (const res of jobClients) res.write(": keep-alive\n\n");
+  }, 15_000);
+
+  /** `GET /events` and `POST /agent/jobs/<id>/claim|result` for an `agent.run` token of this user. */
+  async function bridge(req: IncomingMessage, res: ServerResponse, client: string): Promise<void> {
+    const path = req.url?.split("?")[0] ?? "";
+    if (req.method === "GET" && path === "/events") {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+      res.write(`data: ${JSON.stringify(jobsEvent())}\n\n`);
+      jobClients.add(res);
+      req.on("close", () => jobClients.delete(res));
+      return;
+    }
+    const m = /^\/agent\/jobs\/([\w-]{1,64})\/(claim|result)$/.exec(path);
+    if (req.method !== "POST" || !m) return void res.writeHead(404, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "no such route" }));
+    const [, id, step] = m;
+    const json = (status: number, body: unknown) => void res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(body));
+    const action = actions.get(id!);
+    if (step === "claim") {
+      const out = claimJob(action, Date.now());
+      if (!out.ok) return json(out.status, { error: out.error });
+      actions.save(out.action);
+      broadcastJobs();
+      broadcastActions();
+      console.log(`[jobs] ${client ? "the bridge" : "a bridge"} started a job for ${String(out.action.args.agent)}`);
+      return json(200, { id: out.action.id, ...out.action.args });
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse((await readBody(req, 20_000)) || "{}");
+    } catch {
+      return json(400, { error: "body is not JSON" });
+    }
+    const result = parseResult(parsed);
+    if (!result) return json(400, { error: "need exitCode (an integer) and summary" });
+    const out = finishJob(action, result, Date.now());
+    if (!out.ok) return json(out.status, { error: out.error });
+    actions.save(out.action);
+    const taskId = typeof out.action.args.taskId === "string" ? out.action.args.taskId : undefined;
+    const doneTask = result.exitCode === 0 && taskId ? taskStore.setDone(taskId, true) : undefined;
+    const agentName = AGENT_NAMES[out.action.args.agent as JobAgent] ?? "Un agente";
+    record({ at: Date.now(), kind: "agent", tool: TOOL_RUN_AGENT, client, text: result.exitCode === 0 ? `${agentName} terminó un trabajo` : `${agentName} no pudo terminar un trabajo` });
+    broadcastActions();
+    console.log(`[jobs] a job for ${String(out.action.args.agent)} ended with exit ${result.exitCode}${doneTask ? "; its task is done" : ""}`);
+    return json(200, { status: out.action.status, taskDone: Boolean(await doneTask) });
   }
 
   // --- Outside agents (add-agent-bridge): the API behind the MCP tools ----------------------------
@@ -1521,7 +1612,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     async ask(question, project) {
       const ref = project ? await findProject(project) : undefined;
       if (project && !ref) return "no_project";
-      const out = await answerAsk({ question, history: [], ...(ref ? { project: ref.id } : {}) });
+      const out = await answerAsk({ question, history: [], ...(ref ? { project: ref.id } : {}) }, false);
       if (out === "no_project") return "no_project";
       if (!out.ok) return "unavailable";
       return { answer: out.answer, found: out.found, sources: out.sources.map((s) => ({ label: s.label, ...(s.meetingId ? { meetingId: s.meetingId } : {}) })) };
@@ -1801,6 +1892,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       if (out === "no_project") return void res.writeHead(404).end();
       res.writeHead(out.ok ? 200 : out.reason === "empty-question" ? 400 : 502, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
+    } else if (req.method === "POST" && req.url === "/agent/jobs") {
+      let body: unknown;
+      try {
+        body = JSON.parse((await readBody(req)) || "{}");
+      } catch {
+        return void res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "body is not JSON" }));
+      }
+      const job = createJob(body);
+      res.writeHead(job.ok ? 201 : job.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(job.ok ? { id: job.id, ...job.args } : { error: job.error }));
     } else if (req.method === "GET" && req.url === "/agents") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ paused: agentsPaused }));
     } else if (req.method === "POST" && (req.url === "/agents/pause" || req.url === "/agents/resume")) {
@@ -1828,6 +1929,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     /** What an outside agent may read and change for this user, through the MCP tools. */
     agentApi,
     agent: async (): Promise<AgentApi> => agentApi,
+    bridge,
     /** A clip or phone on the `/device` WebSocket, once its upgrade was admitted. */
     serveWebDevice(socket: Duplex, remote: string): void {
       webDevices.add(socket);
@@ -1837,16 +1939,17 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     listening: (): boolean => status.listening,
     /** Waits for this account's pending writes (before an export). */
     flush: async (): Promise<void> => void (await sealed?.flush()),
-    /** A phone follows, a device is connected, listening is on, or a meeting is open. */
-    busy: (): boolean => clients.size > 0 || device !== undefined || status.listening || current !== undefined,
+    /** A phone or a bridge follows, a device is connected, listening is on, or a meeting is open. */
+    busy: (): boolean => clients.size > 0 || jobClients.size > 0 || device !== undefined || status.listening || current !== undefined,
     /** Eviction: stop transcribing, flush usage and recorded time, end the streams, clear the timers. */
     async close(): Promise<void> {
       stopAsr();
       device?.destroy();
       saveUsage();
       saveRecorded();
-      for (const res of clients) res.end();
+      for (const res of [...clients, ...jobClients]) res.end();
       clients.clear();
+      jobClients.clear();
       for (const t of timers) clearInterval(t);
       nightly.stop(userId);
       if (sealed) {
@@ -1863,6 +1966,7 @@ type WearerRuntime = ReturnType<typeof createWearerRuntime>;
 type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" | "flush"> & {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
   agent(): Promise<AgentApi>;
+  bridge(req: IncomingMessage, res: ServerResponse, client: string): Promise<void>;
   serveDevice(socket: Duplex, remote: string | undefined): void;
   serveWebDevice(socket: Duplex, remote: string): void;
 };
@@ -1885,6 +1989,7 @@ function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
   return {
     handle: async (req, res) => (await ready).handle(req, res),
     agent: async () => (await ready).agentApi,
+    bridge: async (req, res, client) => (await ready).bridge(req, res, client),
     serveDevice: (socket, remote) => void ready.then((rt) => rt.serveDevice(socket, remote), () => socket.destroy()),
     serveWebDevice: (socket, remote) => void ready.then((rt) => rt.serveWebDevice(socket, remote), () => socket.destroy()),
     pushStatus: () => open?.pushStatus(),
@@ -1969,9 +2074,29 @@ async function mcpRoute(req: IncomingMessage, res: ServerResponse): Promise<void
   send(out);
 }
 
+/**
+ * The bridge's routes: `GET /events` with an agent token, and `/agent/jobs/<id>/claim|result`.
+ * True when answered here; a person's `/events` passes through to the phone's stream.
+ */
+async function bridgeRoute(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+  const path = req.url?.split("?")[0] ?? "";
+  const jobStep = /^\/agent\/jobs\/[^/]+\/(claim|result)$/.test(path);
+  if (!jobStep && path !== "/events") return false;
+  const bearer = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1];
+  const agentBearer = Boolean(bearer) && bearer!.split(".").length !== 3;
+  if (!jobStep && !agentBearer) return false;
+  if (plainHttp(req) && AUTH_MODE !== "open") return void res.writeHead(308, { Location: `https://${req.headers.host ?? ""}${req.url}` }).end(), true;
+  const agent = agentBearer ? await agentOf(req) : undefined;
+  if (!agent) return void res.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": 'Bearer realm="lente"' }).end(JSON.stringify({ error: "unauthorized" })), true;
+  if (!agent.scopes.includes("agent.run")) return void res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "unauthorized", message: "this token lacks the agent.run scope" })), true;
+  await wearers.get(agent.userId).bridge(req, res, agent.label);
+  return true;
+}
+
 const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   try {
     if (req.url?.split("?")[0] === MCP_PATH) return void (await mcpRoute(req, res));
+    if (await bridgeRoute(req, res)) return;
     if (await gateWeb(req, res)) return;
     const who = requestIdentity.get(req);
     const devicesPath = req.url?.split("?")[0];
