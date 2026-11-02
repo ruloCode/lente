@@ -11,6 +11,7 @@ import androidx.compose.ui.text.AnnotatedString
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,6 +81,9 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
     val done = a.tasks.filter { it.done }
     var newTask by rememberSaveable { mutableStateOf("") }
     var newWho by rememberSaveable { mutableStateOf("me") }
+    var byProject by rememberSaveable { mutableStateOf(false) }
+    var projectFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var whoFilter by rememberSaveable { mutableStateOf<String?>(null) }
     val add = { if (newTask.isNotBlank()) { vm.addTask(newTask.trim(), newWho); newTask = "" } }
     LazyColumn(Modifier.fillMaxSize().testTag("acciones"), contentPadding = PaddingValues(Lente.gutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item("new") {
@@ -95,11 +101,17 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
             item { SectionTitle("Por aprobar", trailing = "${a.pending.size}") }
             items(a.pending, key = { it.id }) { p -> ActionCard(p) { approve, args -> vm.decide(p.id, approve, args) { mailto -> runCatching { ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))) } } } }
         }
-        val groups = TaskOwners.groups(a.tasks)
-        if (groups.isEmpty() && a.pending.isEmpty()) item("empty") { Empty("Nada pendiente. Las tareas salen solas de tus reuniones, o agrégalas aquí.", art = app.lente.R.drawable.art_empty_actions) }
-        for ((who, list) in groups) {
-            item("h-$who") { SectionTitle(TaskOwners.heading(who), trailing = "${list.size}") }
-            item("g-$who") {
+        if (a.tasks.any { !it.done }) item("view") {
+            TaskViewControls(a.tasks, byProject, { byProject = it }, projectFilter, { projectFilter = it }, whoFilter, { whoFilter = it })
+        }
+        val shown = TaskOwners.filter(a.tasks, projectFilter, whoFilter)
+        val groups = if (byProject) TaskOwners.byProject(shown) else TaskOwners.groups(shown).map { (who, list) -> TaskOwners.heading(who) to list }
+        if (groups.isEmpty() && a.pending.isEmpty()) item("empty") {
+            Empty(if (a.tasks.any { !it.done }) "Ninguna tarea con estos filtros." else "Nada pendiente. Las tareas salen solas de tus reuniones, o agrégalas aquí.", art = app.lente.R.drawable.art_empty_actions)
+        }
+        for ((heading, list) in groups) {
+            item("h-$heading") { SectionTitle(heading, trailing = "${list.size}") }
+            item("g-$heading") {
                 Group {
                     list.forEachIndexed { i, t ->
                         if (i > 0) Hairline()
@@ -111,6 +123,57 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
         if (done.isNotEmpty()) {
             item { SectionTitle("Hechas", trailing = "${done.size}") }
             item { Group { done.forEachIndexed { i, t -> if (i > 0) Hairline(); TaskRow(t, onToggle = { vm.taskDone(t.id, false) }, onOwner = null, onDelete = { vm.deleteTask(t.id) }) } } }
+        }
+    }
+}
+
+/** How Tareas is laid out: by who does each task or by project, and filters by project and by owner. */
+@Composable
+private fun TaskViewControls(
+    tasks: List<app.lente.core.Task>,
+    byProject: Boolean,
+    setByProject: (Boolean) -> Unit,
+    project: String?,
+    setProject: (String?) -> Unit,
+    who: String?,
+    setWho: (String?) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Segmented(listOf("who" to "Por quién", "project" to "Por proyecto"), if (byProject) "project" else "who", { setByProject(it == "project") }, label = "Ordenar tareas")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                label = project?.let { it.ifEmpty { TaskOwners.NO_PROJECT } } ?: "Todos los proyectos",
+                active = project != null,
+                options = listOf<Pair<String?, String>>(null to "Todos los proyectos") + TaskOwners.projectsWithTasks(tasks).map { it to it.ifEmpty { TaskOwners.NO_PROJECT } },
+                tag = "filter-project",
+                onPick = setProject,
+            )
+            FilterChip(
+                label = who?.let { TaskOwners.heading(it) } ?: "Todos",
+                active = who != null,
+                options = listOf<Pair<String?, String>>(null to "Todos") + TaskOwners.ORDER.map { it to TaskOwners.heading(it) },
+                tag = "filter-who",
+                onPick = setWho,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, active: Boolean, options: List<Pair<String?, String>>, tag: String, onPick: (String?) -> Unit) {
+    val c = Lente.c
+    var open by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    Box {
+        Row(
+            Modifier.clip(shape).background(if (active) c.tag else c.surface).border(0.5.dp, c.line, shape).clickable { open = true }.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).testTag(tag),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = Type.callout, color = if (active) c.accent else c.ink, maxLines = 1)
+            Icon(Glyph.ChevronDown, c.muted, Modifier.padding(start = 2.dp), size = 16.dp)
+        }
+        DropdownMenu(open, { open = false }) {
+            options.forEach { (value, text) -> DropdownMenuItem(text = { Text(text) }, onClick = { onPick(value); open = false }) }
         }
     }
 }

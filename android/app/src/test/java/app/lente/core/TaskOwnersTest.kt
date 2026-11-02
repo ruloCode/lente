@@ -37,4 +37,21 @@ class TaskOwnersTest {
         assertEquals("Ana", a.tasks[0].otherName)
         assertEquals("Ternium", a.tasks[0].projectName)
     }
+
+    private fun tp(id: String, who: String, project: String, done: Boolean = false) = Task(id, "T$id", null, "m", "", done, who, null, project)
+
+    @Test fun byProjectAlphabeticalWithoutProjectLastAndTheWearersFirst() {
+        val g = TaskOwners.byProject(listOf(tp("1", "other", "Teker"), tp("2", "me", ""), tp("3", "lente", "Ternium"), tp("4", "me", "Teker"), tp("5", "me", "Teker", done = true)))
+        assertEquals(listOf("Teker", "Ternium", "Sin proyecto"), g.map { it.first })
+        assertEquals(listOf("4", "1"), g[0].second.map { it.id })
+    }
+
+    @Test fun filterByProjectAndOwner() {
+        val all = listOf(tp("1", "other", "Teker"), tp("2", "me", ""), tp("3", "me", "Teker"))
+        assertEquals(listOf("1", "3"), TaskOwners.filter(all, "Teker", null).map { it.id })
+        assertEquals(listOf("3"), TaskOwners.filter(all, "Teker", "me").map { it.id })
+        assertEquals(listOf("2"), TaskOwners.filter(all, "", null).map { it.id })
+        assertEquals(all, TaskOwners.filter(all, null, null))
+        assertEquals(listOf("Teker", ""), TaskOwners.projectsWithTasks(all))
+    }
 }
