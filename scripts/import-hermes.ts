@@ -18,7 +18,7 @@ import type { DayEntry } from "../src/day-log.ts";
 import { checkKekAtStart, keksFromEnv } from "../src/kek-check.ts";
 import type { Meeting } from "../src/meetings.ts";
 import { localDay, localDayStart, planDigests, runDigests } from "../src/nightly.ts";
-import { chatTargets } from "../src/providers.ts";
+import { type ChatTarget, chatTargets } from "../src/providers.ts";
 import type { Kek } from "../src/seal.ts";
 import { SupabaseRest } from "../src/supabase-rest.ts";
 import { SupabaseAccounts, openUserStores, supabaseCanaries } from "../src/supabase-stores.ts";
@@ -124,6 +124,29 @@ export async function importHermes(email: string, deps: ImportDeps, dryRun: bool
   return report;
 }
 
+/** Tokens a digest may use: room for the answer even when the model reasons first. */
+export const DIGEST_MAX_TOKENS = 4000;
+
+/**
+ * The structured digest call, as the hub orders it: minimal reasoning effort first, the next Spark
+ * target when one fails or answers without JSON (a reply cut by its token budget has none).
+ */
+export function sparkCall(targets: ChatTarget[], complete: typeof completeChat = completeChat): DigestCall {
+  return async (messages, schema, name) => {
+    const reasons: string[] = [];
+    for (const target of targets) {
+      try {
+        const { text } = await complete(target, messages, { maxTokens: DIGEST_MAX_TOKENS, extra: { response_format: { type: "json_schema", json_schema: { name, strict: true, schema } } } });
+        if (text.includes("{") && text.includes("}")) return text;
+        reasons.push(`${target.id}: no JSON in ${text.length} characters`);
+      } catch (error) {
+        reasons.push(`${target.id}: ${(error as Error).message.slice(0, 120)}`);
+      }
+    }
+    throw new Error(`the ${name} digest got no JSON from any Spark target (${reasons.join("; ")})`);
+  };
+}
+
 async function userIdByEmail(url: string, key: string, email: string): Promise<string | undefined> {
   const want = email.trim().toLowerCase();
   for (let page = 1; page < 50; page++) {
@@ -145,14 +168,14 @@ async function main(): Promise<void> {
   const need = (name: string) => process.env[name] || (() => { throw new Error(`${name} is not set in .env`); })();
   const url = need("SUPABASE_URL");
   const secret = need("SUPABASE_SECRET_KEY");
-  const target = chatTargets().find((t) => t.id === "spark-1.3-default" && t.apiKey);
-  if (!dryRun && !target) throw new Error("MODEL_API_KEY is not set: the digests need Muse Spark");
+  const targets = chatTargets().filter((t) => t.id.startsWith("spark-1.3") && t.apiKey);
+  if (!dryRun && targets.length === 0) throw new Error("MODEL_API_KEY is not set: the digests need Muse Spark");
   const report = await importHermes(email, {
     lente: new SupabaseRest({ url, secretKey: secret }),
     keks: keksFromEnv(process.env),
     hermes: hermesReader(need("HERMES_SUPABASE_URL"), need("HERMES_SUPABASE_SECRET_KEY")),
     userIdFor: (e) => userIdByEmail(url, secret, e),
-    call: async (messages, schema, name) => (await completeChat(target!, messages, { maxTokens: 1500, extra: { response_format: { type: "json_schema", json_schema: { name, strict: true, schema } } } })).text,
+    call: sparkCall(targets),
     timeZone: process.env.LENTE_TIME_ZONE ?? "America/Bogota",
     now: Date.now,
   }, dryRun);

@@ -110,3 +110,15 @@ test("the hermes reader pages by id and sends a legacy JWT key as the Bearer, a 
   assert.equal(seen[1]!.headers.Authorization, undefined);
   assert.equal(seen[1]!.headers.apikey, "sb_secret_x");
 });
+
+test("the digest call starts with minimal effort and moves on when a reply has no JSON or fails", async () => {
+  const { sparkCall, DIGEST_MAX_TOKENS } = await import("../scripts/import-hermes.ts");
+  const t = (id: string) => ({ id, label: id, baseUrl: "https://x", model: "m", apiKey: "k", keyEnv: "K", provider: "Meta" });
+  const asked: { id: string; maxTokens?: number }[] = [];
+  const replies: Record<string, () => string> = { a: () => "", b: () => { throw new Error("503"); }, c: () => '{"text":"ok","sources":[]}' };
+  const complete = (async (target: { id: string }, _m: unknown, opts: { maxTokens?: number }) => (asked.push({ id: target.id, maxTokens: opts.maxTokens }), { text: replies[target.id]!() })) as never;
+  assert.equal(await sparkCall([t("a"), t("b"), t("c")], complete)([], {}, "day"), '{"text":"ok","sources":[]}');
+  assert.deepEqual(asked.map((a) => a.id), ["a", "b", "c"]);
+  assert.equal(asked[0]!.maxTokens, DIGEST_MAX_TOKENS);
+  await assert.rejects(sparkCall([t("a")], complete)([], {}, "day"), /day digest got no JSON from any Spark target \(a: no JSON in 0 characters\)/);
+});
