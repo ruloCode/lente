@@ -96,3 +96,10 @@ test("the nightly timer runs once on start (catch-up) and again after each local
   nightly.stop("u1");
   assert.equal(nightly.active, 0);
 });
+
+test("a local day starts at its own midnight in the user's time zone", async () => {
+  const { localDayStart } = await import("../src/nightly.ts");
+  assert.equal(new Date(localDayStart("2026-11-01", BOGOTA)).toISOString(), "2026-11-01T05:00:00.000Z");
+  assert.equal(new Date(localDayStart("2026-11-01", "UTC")).toISOString(), "2026-11-01T00:00:00.000Z");
+  assert.equal(localDay(localDayStart("2026-11-01", BOGOTA), BOGOTA), "2026-11-01");
+});

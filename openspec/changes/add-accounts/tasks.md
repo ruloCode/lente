@@ -70,7 +70,7 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 - [x] 6.2 `LENTE_MAX_LISTENING`: past the cap, starting to listen answers busy with a clear message; test (`pnpm test`)
 - [ ] 6.3 Spend cap per user: `usage_daily` and a monthly cap that pauses listening with a note on the phone. Set the default from the measured cost of one hour of listening. Record that figure and the database bytes per hour of listening in `docs/benchmarks.md`, and from the bytes, how many hours fit before the Free plan's 70 % mark
 - [ ] 6.4 Capacity: simulated clips streaming test speech against the Modal hub; record how many listening users one container holds before the transcript lags, and set `LENTE_MAX_LISTENING` from it [key:MODAL_TOKEN_ID]
-- [ ] 6.5 Runtime on the sealed stores: in accounts mode a runtime opens its user's Supabase stores (`openUserStores`) instead of files, with every store call awaited; the profile is rewritten when a meeting closes (5.1), the nightly digests start with the runtime (5.2), and `/ask` uses the tiers (5.3). The laptop keeps its files and the 7-day window. Tests with a fake PostgREST served over HTTP (`pnpm test`); `pnpm smoke` unchanged
+- [x] 6.5 Runtime on the sealed stores: in accounts mode a runtime opens its user's Supabase stores (`openUserStores`) instead of files, with every store call awaited; the profile is rewritten when a meeting closes (5.1), the nightly digests start with the runtime (5.2), and `/ask` uses the tiers (5.3). The laptop keeps its files and the 7-day window. Tests with a fake PostgREST served over HTTP (`pnpm test`); `pnpm smoke` unchanged
 
 ## 7. Android app
 

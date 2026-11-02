@@ -263,6 +263,17 @@ export class SupabaseDayRecord implements DayRecord {
     return [...earlier, ...this.entries];
   }
 
+  /** The entries in [from, to), oldest first: one local day for its digest or a lookup. */
+  entriesBetween(from: number, to: number): Promise<DayEntry[]> {
+    return this.between(from, to);
+  }
+
+  /** Instants of entries since `from`, plain column only (no content opened), for the digest plan. */
+  async instantsSince(from: number): Promise<number[]> {
+    const rows = await this.db.select<Row>(this.db.query("day_entries").gte("at", iso(from)).order("at"), "at");
+    return rows.map((r) => msOf(r.at));
+  }
+
   private async between(from: number, to: number): Promise<DayEntry[]> {
     const rows = await this.db.select<Row>(this.db.query("day_entries").gte("at", iso(from)).lt("at", iso(to)).order("at"), "id,body_enc");
     return rows.map((r) => this.s.openJson<DayEntry>("day_entries", "body_enc", String(r.id), r.body_enc));
@@ -298,11 +309,16 @@ export class SupabaseFacts implements Facts {
       seen.add(p.text.toLowerCase());
       added.push({ id: randomUUID(), text: p.text, status: "proposed", meetingId, evidence: p.evidence, createdAt: now });
     }
-    if (added.length) {
-      const meetingUuid = (await this.index.uuidOf(meetingId)) ?? null;
-      await this.db.insert("facts", added.map((f) => ({ id: f.id, status: f.status, text_enc: this.s.json("facts", "text_enc", f.id, { text: f.text, meetingId: f.meetingId }), meeting_id: meetingUuid, evidence: f.evidence, created_at: iso(now) })));
-    }
+    await this.insert(added);
     return added;
+  }
+
+  /** Stores facts whose ids the caller chose (the in-memory cache of a runtime). */
+  async insert(facts: Fact[]): Promise<void> {
+    if (facts.length === 0) return;
+    const uuids = new Map<string, string | null>();
+    for (const f of facts) if (!uuids.has(f.meetingId)) uuids.set(f.meetingId, (await this.index.uuidOf(f.meetingId)) ?? null);
+    await this.db.insert("facts", facts.map((f) => ({ id: f.id, status: f.status, text_enc: this.s.json("facts", "text_enc", f.id, { text: f.text, meetingId: f.meetingId }), meeting_id: uuids.get(f.meetingId) ?? null, evidence: f.evidence, created_at: iso(f.createdAt) })));
   }
 
   async keep(id: string): Promise<boolean> {
@@ -350,9 +366,15 @@ export class SupabaseTasks implements Tasks {
   }
 
   async add(input: Omit<Task, "id" | "done" | "createdAt">, now: number): Promise<Task> {
-    const id = randomUUID();
-    await this.db.insert("tasks", [{ id, title_enc: this.s.json("tasks", "title_enc", id, input), due: null, done_at: null, meeting_id: (await this.index.uuidOf(input.meetingId)) ?? null, created_at: iso(now) }]);
-    return { ...input, id, done: false, createdAt: now };
+    const task: Task = { ...input, id: randomUUID(), done: false, createdAt: now };
+    await this.insert(task);
+    return task;
+  }
+
+  /** Stores a task whose id the caller chose. */
+  async insert(task: Task): Promise<void> {
+    const { id, done, createdAt, ...body } = task;
+    await this.db.insert("tasks", [{ id, title_enc: this.s.json("tasks", "title_enc", id, body), due: null, done_at: done ? iso(createdAt) : null, meeting_id: (await this.index.uuidOf(task.meetingId)) ?? null, created_at: iso(createdAt) }]);
   }
 
   async setDone(id: string, done: boolean): Promise<Task | undefined> {
@@ -398,11 +420,15 @@ export class SupabaseActions implements Actions {
 
   async addAll(meetingId: string, proposals: Proposal[], now: number): Promise<PendingAction[]> {
     const added = proposals.map((p): PendingAction => ({ id: randomUUID(), meetingId, tool: p.tool, proposedArgs: p.args, args: p.args, evidence: p.evidence, status: "pending", createdAt: now }));
-    if (added.length) {
-      const meetingUuid = (await this.index.uuidOf(meetingId)) ?? null;
-      await this.db.insert("agent_actions", added.map((a) => ({ id: a.id, kind: a.tool, status: a.status, payload_enc: this.payload(a), outcome_enc: null, meeting_id: meetingUuid, created_at: iso(now) })));
-    }
+    await this.insert(added);
     return added;
+  }
+
+  /** Stores actions whose ids the caller chose. */
+  async insert(added: PendingAction[]): Promise<void> {
+    if (added.length === 0) return;
+    const meetingUuid = (await this.index.uuidOf(added[0]!.meetingId)) ?? null;
+    await this.db.insert("agent_actions", added.map((a) => ({ id: a.id, kind: a.tool, status: a.status, payload_enc: this.payload(a), outcome_enc: null, meeting_id: meetingUuid, created_at: iso(a.createdAt) })));
   }
 
   private payload(a: PendingAction): string {

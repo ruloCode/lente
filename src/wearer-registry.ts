@@ -55,6 +55,11 @@ export class WearerRegistry<R extends Runtime> {
     return entry.runtime;
   }
 
+  /** Forgets a runtime that failed to open, without closing it. */
+  drop(userId: string): void {
+    this.runtimes.delete(userId);
+  }
+
   has(userId: string): boolean {
     return this.runtimes.has(userId);
   }

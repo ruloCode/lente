@@ -14,14 +14,14 @@
 //
 // Usage: pnpm pilot   (MODEL_API_KEY in .env; ELEVENLABS_API_KEY optional for a natural voice)
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer as createTcpServer } from "node:net";
 import { createSocket } from "node:dgram";
 import type { Duplex } from "node:stream";
-import { networkInterfaces } from "node:os";
-import { join } from "node:path";
+import { networkInterfaces, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
@@ -44,6 +44,11 @@ import { Accounts, CLOSED_TEST_MESSAGE, FileAccountStore, JsonFile, parseAllowLi
 import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
 import { DatabaseHealth, dbFailing } from "./db-health.ts";
 import { SupabaseRest } from "./supabase-rest.ts";
+import { type CachedStores, openCachedStores } from "./cached-stores.ts";
+import { type DigestCall, writeProfile } from "./digests.ts";
+import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
+import { askTiers } from "./ask-tiers.ts";
+import { SupabaseAccounts, SupabaseDevices, supabaseCanaries } from "./supabase-stores.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -128,7 +133,7 @@ const dbHealth = supabase ? new DatabaseHealth(() => supabase.system.ping()) : u
 const DB_CHECK_EVERY_MS = 60_000;
 const AUTH_MODE: AuthMode = userAuth ? "accounts" : auth ? "pairing" : "open";
 /** Accounts mode: each user's clips, desktops and MCP clients, by token hash. */
-const userDevices = userAuth ? new UserDevices(new FileDeviceStore(join(DATA_DIR, "user-devices.json"))) : undefined;
+const userDevices = userAuth ? new UserDevices(supabase ? new SupabaseDevices(supabase) : new FileDeviceStore(join(DATA_DIR, "user-devices.json"))) : undefined;
 /** Accounts mode: a KEK that opens its canary, and accounts only for the allow list. */
 const accounts = userAuth ? await openAccounts() : undefined;
 
@@ -136,13 +141,14 @@ async function openAccounts(): Promise<Accounts> {
   try {
     const keks = keksFromEnv(process.env);
     const canaries = new JsonFile<Record<string, string>>(join(DATA_DIR, "kek-canaries.json"), () => ({}));
-    await checkKekAtStart(keks, {
+    // The canary sits next to the wrapped keys it vouches for: in the database when there is one.
+    await checkKekAtStart(keks, supabase ? supabaseCanaries(supabase) : {
       read: async (version) => (canaries.read()[version] ? Buffer.from(canaries.read()[version]!, "base64") : undefined),
       write: async (version, sealed) => canaries.write({ ...canaries.read(), [version]: sealed.toString("base64") }),
     });
     const allowed = parseAllowList(process.env.LENTE_ALLOWED_EMAILS);
     if (allowed.size === 0) console.warn("LENTE_ALLOWED_EMAILS is empty: nobody can open an account.");
-    return new Accounts(new FileAccountStore(join(DATA_DIR, "accounts.json")), keks, allowed);
+    return new Accounts(supabase ? new SupabaseAccounts(supabase) : new FileAccountStore(join(DATA_DIR, "accounts.json")), keks, allowed);
   } catch (error) {
     console.error(`Accounts cannot start: ${(error as Error).message}`);
     process.exit(1);
@@ -282,19 +288,21 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
  * meter and the live view. The laptop hub has one, for its owner, kept in `DATA_DIR` as before; a
  * hub with accounts makes one per signed-in user on first use and evicts it when idle.
  */
-function createWearerRuntime(userId: string, dataDir: string, mayListen: () => boolean = () => true) {
+function createWearerRuntime(userId: string, dataDir: string, mayListen: () => boolean = () => true, sealed?: CachedStores) {
   /** The runtime's repeating jobs, cleared when it is evicted. */
   const timers: ReturnType<typeof setInterval>[] = [];
   const every = (fn: () => void, ms: number): void => void timers.push(setInterval(fn, ms));
 
-  const meetings = new MeetingStore(join(dataDir, "meetings"));
-  const facts = new FactStore(join(dataDir, "facts.json"));
-  const actions = new ActionStore(join(dataDir, "actions.json"));
-  const taskStore = new TaskStore(join(dataDir, "tasks.json"));
-  const traces = new TraceWriter(join(dataDir, "traces"));
-  const REMINDERS_FILE = join(dataDir, "reminders.ics");
-  const language = new LanguageStore(join(dataDir, "language.json"));
-  const profile = new ProfileStore(join(dataDir, "profile.json"));
+  // The laptop's files, or a signed-in user's sealed stores answered from memory (task 6.5).
+  const meetings = sealed?.meetings ?? new MeetingStore(join(dataDir, "meetings"));
+  const facts = sealed?.facts ?? new FactStore(join(dataDir, "facts.json"));
+  const actions = sealed?.actions ?? new ActionStore(join(dataDir, "actions.json"));
+  const taskStore = sealed?.tasks ?? new TaskStore(join(dataDir, "tasks.json"));
+  const traces = sealed?.traces ?? new TraceWriter(join(dataDir, "traces"));
+  // An account's reminders file lives only while its runtime does, never on the volume in the clear.
+  const REMINDERS_FILE = sealed ? join(mkdtempSync(join(tmpdir(), "lente-reminders-")), "reminders.ics") : join(dataDir, "reminders.ics");
+  const language = sealed?.language ?? new LanguageStore(join(dataDir, "language.json"));
+  const profile = sealed?.profile ?? new ProfileStore(join(dataDir, "profile.json"));
   const RECORDED_FILE = join(dataDir, "recorded.json");
   const recorded = new RecordedToday(readRecorded());
   /** How often the phone hears the recorded time while audio arrives, and how often it is saved. */
@@ -309,7 +317,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     hangoverMs: Number(process.env.PILOT_GATE_HANGOVER_MS ?? GATE_DEFAULTS.hangoverMs),
   };
   const USAGE_FILE = join(dataDir, "usage.json");
-  const usage = new UsageMeter(readJson<UsageSnapshot>(USAGE_FILE, "usage"));
+  const usage = new UsageMeter(sealed ? sealed.usage.initial : readJson<UsageSnapshot>(USAGE_FILE, "usage"));
   const USAGE_PUSH_MS = 5000;
   function readRecorded(): Partial<RecordedSnapshot> | undefined {
     return readJson<RecordedSnapshot>(RECORDED_FILE, "recorded");
@@ -336,6 +344,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     try {
       mkdirSync(dataDir, { recursive: true });
       writeFileSync(USAGE_FILE, JSON.stringify(usage.snapshot()) + "\n");
+      sealed?.usage.save(usage.snapshot());
     } catch (error) {
       console.error(`[usage] could not save ${USAGE_FILE}: ${(error as Error).message}`);
     }
@@ -383,7 +392,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   };
 
   const clients = new Set<ServerResponse>();
-  const day = new DayLog(join(dataDir, "days"));
+  const day = sealed?.day ?? new DayLog(join(dataDir, "days"));
   /** The listening session behind the phone's elapsed time; it runs while listening with the clip on. */
   const sessionClock = new SessionClock();
   /** Text of the turn in progress, for a phone that connects mid-sentence; cleared on turn and on pause. */
@@ -794,6 +803,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         const found = (notes.glossary ?? []).map((g) => ({ term: g.term, meaning: g.meaning, example: m.turns.find((t) => t.id === g.evidence[0])?.text ?? "" }));
         language.set(mergeGlossary(language.glossary, found, m.id, m.endedAt ?? Date.now()));
         facts.propose(m.id, proposedFacts, Date.now());
+        if (sealed && key) void rewriteProfile(m);
       }
       console.log(
         `[meeting] notes for ${m.id} in ${Math.round(performance.now() - started)} ms · ${notes.decisions.length} decisions, ${notes.commitments.length} commitments, ${notes.openQuestions.length} open · ${dropped} dropped`,
@@ -822,6 +832,64 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const { items, dropped } = validateBriefing(JSON.parse(text), all, language.glossary);
     console.log(`[briefing] "${title}" in ${Math.round(performance.now() - started)} ms · ${items.length} items from ${ids.length} meeting(s) · ${dropped} dropped`);
     return { title, names, at: Date.now(), remembered: ids.length > 0, items, sources: citedSources(items, all), dropped };
+  }
+
+  // --- The whole memory (accounts): the profile, nightly digests and tiered answers (tasks 5.1 to 5.3) ---
+
+  /** One structured Muse Spark call for a digest or a lookup plan. */
+  const structured: DigestCall = (messages, schema, name) =>
+    askSpark(messages, { label: name, maxTokens: 1500, extra: { response_format: { type: "json_schema", json_schema: { name, strict: true, schema } } } });
+
+  /** After a meeting's notes: the profile rewritten from the last one, the new notes and the kept facts. */
+  async function rewriteProfile(m: Meeting): Promise<void> {
+    if (!sealed) return;
+    try {
+      const [previous] = await sealed.digests.latest("profile", 1);
+      const digest = await writeProfile({ previous, meetings: [m], keptFacts: keptFacts(facts.list()), day: localDay(Date.now(), TIME_ZONE) }, structured, Date.now());
+      await sealed.digests.put(digest);
+      console.log(`[digests] profile rewritten · ${digest.text.length} chars · ${digest.sources.length} sources`);
+    } catch (error) {
+      console.error(`[digests] profile rewrite failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  /** The nightly digests and the catch-up when this runtime opens. */
+  async function runDigests(): Promise<void> {
+    if (!sealed) return;
+    const now = Date.now();
+    const instants = [...meetings.list().map((m) => m.startedAt), ...(await sealed.sealed.day.instantsSince(now - 32 * 24 * 3600 * 1000))];
+    const written = await catchUp(
+      { today: localDay(now, TIME_ZONE), daysWithData: instants.map((at) => localDay(at, TIME_ZONE)) },
+      {
+        digests: sealed.digests,
+        loadDay: async (d) => {
+          const from = localDayStart(d, TIME_ZONE);
+          const to = from + 24 * 3600 * 1000;
+          return { meetings: meetings.list().filter((m) => m.startedAt >= from && m.startedAt < to), entries: await sealed.sealed.day.entriesBetween(from, to) };
+        },
+        call: structured,
+        now: Date.now,
+      },
+    );
+    if (written.length) console.log(`[digests] wrote ${written.length} digest(s)`);
+  }
+  if (sealed && key) nightly.start(userId, TIME_ZONE, runDigests);
+
+  /** Ask over the whole history in tiers (accounts); the laptop keeps the 7-day window. */
+  async function askWhole(body: { question?: unknown; history?: unknown }) {
+    const digests = sealed!.digests;
+    const [[profileDigest], days, weeks, months] = await Promise.all([digests.latest("profile", 1), digests.latest("day", 14), digests.latest("week", 8), digests.latest("month", 24)]);
+    const finished = finishedMeetings();
+    const byIds = (ids: string[]) => meetings.list().filter((m) => ids.includes(m.id));
+    return askTiers(
+      { profile: profileDigest, days, weeks, months, recentMeetings: finished.slice(-5), keptFacts: keptFacts(facts.list()), question: body.question, history: body.history, now: Date.now() },
+      {
+        meetings: async (ids) => byIds(ids),
+        meetingsBetween: async (from, to, limit) => meetings.list().filter((m) => m.startedAt >= from && m.startedAt < to).reverse().slice(0, limit),
+        days: async (list) => (await Promise.all(list.map((d) => sealed!.sealed.day.entriesBetween(localDayStart(d, TIME_ZONE), localDayStart(d, TIME_ZONE) + 24 * 3600 * 1000)))).flat(),
+      },
+      structured,
+    );
   }
 
   /** A hub that stopped mid-meeting finishes it on the next start. */
@@ -1298,7 +1366,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     } else if (req.method === "GET" && req.url?.startsWith("/traces/get")) {
       const id = new URL(req.url, "http://hub").searchParams.get("id") ?? "";
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-      res.end(JSON.stringify({ steps: traces.read(id).map((e) => ({ at: e.at, kind: e.kind, ...traceLine(e) })) }));
+      res.end(JSON.stringify({ steps: (await traces.read(id)).map((e) => ({ at: e.at, kind: e.kind, ...traceLine(e) })) }));
     } else if (req.method === "GET" && req.url === "/facts") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ facts: facts.list() }));
@@ -1376,9 +1444,14 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     } else if (req.method === "POST" && req.url === "/ask") {
       // Chat with Lente: one question with the conversation so far, answered from the memory with its sources.
       const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown };
-      const out = key
+      const out = key && sealed
+        ? await askWhole(body).catch((error: Error) => {
+            console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
+            return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
+          })
+        : key
         ? await ask(
-            { question: body.question, history: body.history, meetings: meetings.list(), day: day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
+            { question: body.question, history: body.history, meetings: meetings.list(), day: await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
             async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
           ).catch((error: Error) => {
             console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
@@ -1425,11 +1498,49 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       for (const res of clients) res.end();
       clients.clear();
       for (const t of timers) clearInterval(t);
+      nightly.stop(userId);
+      if (sealed) {
+        const failed = await sealed.flush();
+        if (failed) console.error(`[wearers] ${failed} write(s) for an evicted runtime did not reach the database`);
+        rmSync(dirname(REMINDERS_FILE), { recursive: true, force: true });
+      }
     },
   };
 }
 
 type WearerRuntime = ReturnType<typeof createWearerRuntime>;
+/** What the hub needs of a runtime; an account's runtime is opened asynchronously behind it. */
+type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close"> & {
+  handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
+  serveDevice(socket: Duplex, remote: string | undefined): void;
+  serveWebDevice(socket: Duplex, remote: string): void;
+};
+
+/**
+ * An account's runtime on the sealed stores: its data key is unwrapped and its stores loaded once,
+ * and everything sent before that waits for it. A runtime that cannot open is dropped, so the next
+ * request tries again.
+ */
+function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
+  const ready = (async () => createWearerRuntime(userId, runtimeDir(userId), mayListen, await openCachedStores(supabase!, userId, await accounts!.dek(userId))))();
+  let open: WearerRuntime | undefined;
+  ready.then(
+    (rt) => (open = rt),
+    (error: Error) => {
+      console.error(`[wearers] could not open a runtime: ${error.message}`);
+      wearers.drop(userId);
+    },
+  );
+  return {
+    handle: async (req, res) => (await ready).handle(req, res),
+    serveDevice: (socket, remote) => void ready.then((rt) => rt.serveDevice(socket, remote), () => socket.destroy()),
+    serveWebDevice: (socket, remote) => void ready.then((rt) => rt.serveWebDevice(socket, remote), () => socket.destroy()),
+    pushStatus: () => open?.pushStatus(),
+    listening: () => open?.listening() ?? false,
+    busy: () => (open ? open.busy() : true),
+    close: async () => (await ready).close(),
+  };
+}
 
 /** Accounts mode keeps each user's files apart until their runtime runs on the Supabase stores. */
 const runtimeDir = (userId: string): string => {
@@ -1437,10 +1548,18 @@ const runtimeDir = (userId: string): string => {
   if (!/^[0-9a-f-]{36}$/i.test(userId)) throw new Error(`user id ${userId.slice(0, 40)} is not a uuid`);
   return join(DATA_DIR, "users", userId);
 };
+/** The users' local time zone for digests until accounts carry their own (accounts.time_zone). */
+const TIME_ZONE = process.env.LENTE_TIME_ZONE ?? "America/Bogota";
+/** Each account's nightly digests, started with its runtime (task 5.2). */
+const nightly = new NightlyDigests();
+
 /** Users listening at once on this hub; unset means no cap (the laptop). Set from the capacity measured in task 6.4. */
 const LISTENING_CAP = parseListeningCap(process.env.LENTE_MAX_LISTENING);
 const othersListening = (userId: string): number => wearers.count((rt, id) => id !== userId && rt.listening());
-const wearers: WearerRegistry<WearerRuntime> = new WearerRegistry<WearerRuntime>((userId) => createWearerRuntime(userId, runtimeDir(userId), () => mayStartListening(othersListening(userId), LISTENING_CAP)), { pinned: [LOCAL_OWNER], onEvict: (userId) => accounts?.forget(userId) });
+const wearers: WearerRegistry<Wearer> = new WearerRegistry<Wearer>((userId) => {
+  const mayListen = () => mayStartListening(othersListening(userId), LISTENING_CAP);
+  return supabase && accounts && userId !== LOCAL_OWNER ? openAccountWearer(userId, mayListen) : createWearerRuntime(userId, runtimeDir(userId), mayListen);
+}, { pinned: [LOCAL_OWNER], onEvict: (userId) => accounts?.forget(userId) });
 // The laptop and a pairing hub have one wearer from the start, as before.
 if (AUTH_MODE !== "accounts") wearers.get(LOCAL_OWNER);
 setInterval(() => {

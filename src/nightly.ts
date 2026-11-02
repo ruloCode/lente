@@ -28,6 +28,12 @@ export function msToLocalMidnight(now: number, timeZone: string): number {
   return DAY_MS - elapsed;
 }
 
+/** The instant a local day (`YYYY-MM-DD`) starts in a time zone. */
+export function localDayStart(day: string, timeZone: string): number {
+  const noonUtc = Date.parse(`${day}T12:00:00Z`);
+  return noonUtc + msToLocalMidnight(noonUtc, timeZone) - DAY_MS;
+}
+
 const addDays = (day: string, n: number): string => {
   const d = new Date(`${day}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);

@@ -30,16 +30,15 @@ function matches(row: Row, key: string, expr: string): boolean {
   throw new Error(`fake PostgREST: operator ${op} not supported`);
 }
 
-export function fakePostgrest(): FakePostgrest {
+type Answer = { status: number; ok: boolean; text(): Promise<string> };
+type Handler = (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<Answer>;
+
+export function fakePostgrest(): FakePostgrest & { handler: Handler } {
   const tables = new Map<string, Row[]>();
   const requests: FakePostgrest["requests"] = [];
   const table = (name: string) => tables.get(name) ?? tables.set(name, []).get(name)!;
 
-  const rest = new SupabaseRest({
-    url: "https://fake.supabase.co",
-    secretKey: "sb_secret_fake",
-    sleep: async () => {},
-    fetch: async (url, init) => {
+  const handler: Handler = async (url, init) => {
       const u = new URL(url);
       const name = u.pathname.replace("/rest/v1/", "");
       const body = init.body ? (JSON.parse(init.body) as unknown) : undefined;
@@ -90,7 +89,30 @@ export function fakePostgrest(): FakePostgrest {
       const select = u.searchParams.get("select");
       if (select && select !== "*") rows = rows.map((r) => Object.fromEntries(select.split(",").map((c) => [c, r[c]])));
       return reply(200, rows);
-    },
+  };
+  const rest = new SupabaseRest({ url: "https://fake.supabase.co", secretKey: "sb_secret_fake", sleep: async () => {}, fetch: handler });
+  return { rest, tables, requests, handler, dump: () => JSON.stringify([...tables.entries()]) };
+}
+
+/**
+ * The same fake over HTTP, for a hub in another process: `/rest/v1/…` goes to the fake (only with
+ * the expected secret key), `/auth/v1/.well-known/jwks.json` answers with the keys given.
+ */
+export async function servePostgrest(jwks: object): Promise<{ url: string; fake: ReturnType<typeof fakePostgrest>; close(): void }> {
+  const { createServer } = await import("node:http");
+  const fake = fakePostgrest();
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", async () => {
+      if (req.url?.startsWith("/auth/v1/.well-known/jwks.json")) return void res.end(JSON.stringify(jwks));
+      if (!req.url?.startsWith("/rest/v1/") || req.headers.apikey !== "sb_secret_fake") return void res.writeHead(401).end("{}");
+      const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k === "prefer" ? "Prefer" : k, String(v)]));
+      const answer = await fake.handler(`http://fake${req.url}`, { method: req.method ?? "GET", headers, body: body || undefined });
+      res.writeHead(answer.status, { "Content-Type": "application/json" }).end(await answer.text());
+    });
   });
-  return { rest, tables, requests, dump: () => JSON.stringify([...tables.entries()]) };
+  await new Promise<void>((ok) => server.listen(0, ok));
+  const { port } = server.address() as { port: number };
+  return { url: `http://localhost:${port}`, fake, close: () => (server.closeAllConnections(), server.close()) };
 }

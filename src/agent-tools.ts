@@ -154,7 +154,8 @@ export function emailDraft(args: Record<string, unknown>): EmailDraft {
 
 export interface ToolContext {
   meeting: Meeting;
-  tasks: TaskStore;
+  /** The task list: the file store, or an account's cached sealed store. */
+  tasks: Pick<TaskStore, "list" | "add" | "setDone">;
   /** Where reminders accumulate as an iCalendar file. */
   remindersFile: string;
   now?: () => number;
