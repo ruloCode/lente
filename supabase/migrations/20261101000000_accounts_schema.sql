@@ -63,8 +63,8 @@ create table public.meetings (
   user_id uuid not null references auth.users (id) on delete cascade,
   started_at timestamptz not null,
   ended_at timestamptz,
-  status text not null default 'live' check (status in ('live', 'closed')),
-  end_reason text,
+  status text not null default 'running' check (status in ('running', 'extracting', 'done', 'too-short', 'failed')),
+  end_reason text check (end_reason in ('manual', 'silence', 'restart', 'max-length', 'mode')),
   auto boolean not null default false,
   topic text,
   title_enc bytea,
@@ -72,7 +72,9 @@ create table public.meetings (
   asked integer not null default 0 check (asked >= 0),
   answered integer not null default 0 check (answered >= 0),
   dropped_items integer not null default 0 check (dropped_items >= 0),
-  legacy_id text,
+  error_enc bytea,
+  -- The id the hub and the phone use (m20261101120000); file ids keep it on import.
+  legacy_id text not null,
   unique (id, user_id),
   unique (user_id, legacy_id)
 );
@@ -83,6 +85,8 @@ create table public.meeting_turns (
   seq integer not null check (seq >= 0),
   user_id uuid not null references auth.users (id) on delete cascade,
   at timestamptz not null,
+  start_at timestamptz,
+  addressed boolean not null default false,
   speaker_enc bytea,
   wearer boolean not null default false,
   text_enc bytea not null,
@@ -103,7 +107,8 @@ create table public.meeting_notes (
 -- The day record ------------------------------------------------------------------------------------
 
 create table public.day_entries (
-  id bigint generated always as identity primary key,
+  -- Chosen by the hub, so the sealed body can be bound to its row before the insert.
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
   at timestamptz not null,
   kind text not null,
@@ -122,7 +127,7 @@ create table public.facts (
   status text not null default 'proposed' check (status in ('proposed', 'kept')),
   text_enc bytea not null,
   meeting_id uuid,
-  evidence integer[] not null default '{}',
+  evidence text[] not null default '{}',
   created_at timestamptz not null default now(),
   decided_at timestamptz,
   foreign key (meeting_id, user_id) references public.meetings (id, user_id) on delete set null (meeting_id)
@@ -206,7 +211,9 @@ create table public.usage_daily (
   day date not null,
   provider text not null,
   model text not null,
+  calls bigint not null default 0 check (calls >= 0),
   input_tokens bigint not null default 0 check (input_tokens >= 0),
+  cached_tokens bigint not null default 0 check (cached_tokens >= 0),
   output_tokens bigint not null default 0 check (output_tokens >= 0),
   audio_seconds numeric(12, 3) not null default 0 check (audio_seconds >= 0),
   cost_micro_usd bigint not null default 0 check (cost_micro_usd >= 0),

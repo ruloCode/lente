@@ -159,6 +159,8 @@ The measured size per hour of listening (task 6.3) says when the first will happ
 - agent traces
 - refresh tokens
 
+**How a record maps.** Where a record has more content fields than its table has `_enc` columns, the content column holds the sealed JSON of all of them (a fact's text and source meeting, a task's title, due hint and evidence, an action's payload); the plain columns are only what the hub filters, sorts or cascades on.
+
 **Plain.** What the hub must filter or sort on, or show without content:
 - ids and `user_id`
 - timestamps and durations
@@ -284,11 +286,11 @@ All tables are in `public`, have RLS enabled with no policy for `anon` or `authe
 | `user_keys` | `user_id` PK, `kek_version int`, `wrapped_dek bytea`, `created_at`, `rotated_at` | Deleted first on account deletion |
 | `sessions` | `id` PK, `user_id`, `token_hash bytea unique`, `refresh_enc`, `created_at`, `last_used_at`, `revoked_at` | Web sessions behind the hub cookie; the cookie is a random token found by its SHA-256, never stored |
 | `devices` | `id uuid` PK, `user_id`, `kind` (`clip`/`desktop`/`mcp`), `label`, `token_hash bytea unique`, `created_at`, `last_seen_at`, `revoked_at` | Index `(user_id)` |
-| `meetings` | `id uuid` PK, `user_id`, `started_at`, `ended_at`, `status`, `end_reason`, `auto bool`, `topic`, `title_enc`, `title_generated bool`, `asked int`, `answered int`, `dropped_items int`, `legacy_id text` | Index `(user_id, started_at desc)` |
-| `meeting_turns` | PK `(meeting_id, seq)`, `user_id`, `at`, `speaker_enc`, `wearer bool`, `text_enc` | `meeting_id` cascades; index `(user_id, at)` |
+| `meetings` | `id uuid` PK, `user_id`, `started_at`, `ended_at`, `status` (`running`/`extracting`/`done`/`too-short`/`failed`, as the hub names them), `end_reason`, `auto bool`, `topic`, `title_enc`, `title_generated bool`, `asked int`, `answered int`, `dropped_items int`, `error_enc`, `legacy_id text not null` (the `m…` id the hub and phone use) | Index `(user_id, started_at desc)`; unique `(user_id, legacy_id)` |
+| `meeting_turns` | PK `(meeting_id, seq)`, `user_id`, `at`, `start_at`, `addressed bool`, `speaker_enc`, `wearer bool`, `text_enc` | `meeting_id` cascades; index `(user_id, at)` |
 | `meeting_notes` | `meeting_id` PK, `user_id`, `body_enc` (summary, decisions, commitments, open questions as sealed JSON), `model`, `created_at` | |
-| `day_entries` | `id bigint identity` PK, `user_id`, `at`, `kind` (`turn`/`live`/`cue`/`summary`/…), `label`, `meeting_id null`, `body_enc` | Index `(user_id, at)` |
-| `facts` | `id uuid` PK, `user_id`, `status` (`proposed`/`kept`), `text_enc`, `meeting_id null on delete set null`, `evidence int[]`, `created_at`, `decided_at` | |
+| `day_entries` | `id uuid` PK (chosen by the hub so the sealed body is bound to its row before the insert), `user_id`, `at`, `kind` (`turn`/`live`/`cue`/`summary`/…), `label`, `meeting_id null`, `body_enc` | Index `(user_id, at)` |
+| `facts` | `id uuid` PK, `user_id`, `status` (`proposed`/`kept`), `text_enc`, `meeting_id null on delete set null`, `evidence text[]` (turn ids such as `t3`), `created_at`, `decided_at` | |
 | `tasks` | `id uuid` PK, `user_id`, `title_enc`, `due date null`, `done_at`, `meeting_id null`, `created_at` | Index `(user_id, done_at nulls first)` |
 | `agent_actions` | `id uuid` PK, `user_id`, `kind`, `status` (`pending`/`approved`/`rejected`/`failed`), `payload_enc`, `outcome_enc`, `meeting_id null`, `created_at`, `decided_at` | |
 | `agent_traces` | `id uuid` PK, `user_id`, `meeting_id null`, `body_enc`, `created_at` | |
@@ -296,7 +298,7 @@ All tables are in `public`, have RLS enabled with no policy for `anon` or `authe
 | `memory_digests` | `id uuid` PK, `user_id`, `scope` (`profile`/`day`/`week`/`month`), `period_start date`, `body_enc`, `source_count int`, `model`, `created_at` | Unique `(user_id, scope, period_start)` |
 | `search_terms` | PK `(user_id, term, ref_kind, ref_id)`, `term bytea` (16), `ref_kind smallint`, `ref_id text`, `at` | **Group 10 only**, created by its own migration if the eval calls for it; index `(user_id, term, at desc)` |
 | `glossary` | `id uuid` PK, `user_id`, `body_enc`, `created_at` | Language profile and terms |
-| `usage_daily` | PK `(user_id, day, provider, model)`, `input_tokens`, `output_tokens`, `audio_seconds`, `cost_micro_usd bigint` | Plain numbers only |
+| `usage_daily` | PK `(user_id, day, provider, model)`, `calls`, `input_tokens`, `cached_tokens`, `output_tokens`, `audio_seconds`, `cost_micro_usd bigint` | Plain numbers only |
 | `audit_events` | `id bigint identity` PK, `user_id`, `at`, `actor` (`wearer`/`device:<id>`/`agent`/`mcp:<client>`), `action`, `target_kind`, `target_id` | Never content |
 
 Migrations are plain SQL in `supabase/migrations/`, applied with the Supabase CLI or the dashboard, and a schema test checks that every table has RLS enabled and no permissive policy.
