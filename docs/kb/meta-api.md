@@ -33,6 +33,35 @@ Images over Chat Completions use the OpenAI shape, `{ "type": "image_url", "imag
 
 Streaming (verified 2026-10-28): over Chat Completions, `stream: true` works but no `usage` ever arrives, even with `stream_options: { include_usage: true }` (accepted, ignored). Over the Responses API, `stream: true` sends typed events (`response.output_text.delta` with `delta`, then `response.completed` whose `response.usage` includes `input_tokens_details.cached_tokens`; a repeated 2,132-token prefix came back 2,033 cached). Effort is `reasoning: { effort }`, the cap is `max_output_tokens`, images are `{ "type": "input_image", "image_url": "data:image/jpeg;base64,…" }` and text parts are `input_text`.
 
+### Function calling and web search over the Responses API
+
+Verified 2026-11-02 with real streamed calls on synthetic text (`muse-spark-1.3`, `reasoning: { effort: "minimal" }`, `store: false`, `parallel_tool_calls: false`). Docs: `dev.meta.ai/docs/tool-calling.md`, `search-grounding.md`, `protocols/responses.md`.
+
+- **Function tools** are flat: `{ "type": "function", "name", "description", "parameters" }`. `strict` defaults to `false` and only controls schema validation, so arguments must be validated in the hub. `tool_choice` accepts only `"auto"`.
+- **A call** arrives as an output item `{ "type": "function_call", "call_id": "call_…", "name", "arguments": "<JSON string>", "status" }`, on `response.output_item.done`. Arguments also stream as `response.function_call_arguments.delta` / `.done`.
+- **Before the call** the model may stream a short message tagged `"phase": "commentary"` ("La agrego a tu lista."), visible in `response.output_item.added` for that message. Final answers carry no `phase`.
+- **The result goes back** in a new request:
+  - Without `previous_response_id`, resend the whole input: the commentary message with its `phase` (dropping the phase gets a 400), the `function_call` item, then `{ "type": "function_call_output", "call_id", "output": "<string>" }`.
+  - `call_id` must match and be 1–64 characters.
+  - Replaying reasoning items is optional; the probe answered correctly without them.
+- **Web search.** Add `{ "type": "web_search" }` to `tools`, optionally with `search_context_size: "low" | "medium" | "high"` and `user_location`.
+  - It works on the Responses and Messages APIs only, not Chat Completions.
+  - It can share a request with function tools. Function names must not be `browser.search`, `browser.open` or `browser.find`.
+  - The model decides whether to search.
+  - Each search is an output item `{ "type": "web_search_call", "action": { "type": "search", "query", "queries" }, "results"? }`. Stream events are `response.web_search_call.in_progress | searching | completed`.
+  - `results` (`type: "text_result"`, `title`, `url`, `snippet`) come only with `include: ["web_search_call.results"]`. In the probe the snippets were empty.
+  - The docs describe `url_citation` annotations on `output_text`, but in the probe (streamed, `store: false`) they came back empty, so Lente shows the `results` as the sources.
+  - `max_tool_calls` caps built-in searches only.
+- **Prompt caching and `instructions`** (measured 2026-11-02, two identical non-streamed requests each):
+  - With the top-level `instructions` field, the repeat came back with 0 of 1,703 input tokens cached.
+  - With the same text as the first `developer` message in `input`, it came back with 1,649 of 1,717 cached.
+  - With `web_search` in the tools, one repeat came back with 0 cached, so its caching is not reliable.
+  - Lente's voice agent sends its instructions as a `developer` message.
+- **Measured in the probe** (one call each, not a benchmark):
+  - A tool call took 1.45 s to its commentary and 1.67 s in total, with 1,171 input tokens. The two tools' definitions are most of that prefix.
+  - The follow-up after the tool output took 1.17 s to the first text, with 1,137 of 1,272 input tokens cached.
+  - A web-search question ran two searches and took 4.3 s, with 8,821 input tokens (the retrieved pages) and 326 output tokens.
+
 ### Prices and limits (standard mode)
 
 | Model | Input / 1M | Cached input / 1M | Output / 1M | RPM | TPM |
@@ -41,6 +70,8 @@ Streaming (verified 2026-10-28): over Chat Completions, `stream: true` works but
 | `muse-wonder-1.0` | $4.00 | $0.20 | $20.00 | 3,000 | 4M |
 | `muse-voice-transcribe-1.0` | $0.18 per audio hour (per second) | | | 256 concurrent streams, 16,000 streams/hour | |
 | `sam-3.1` | $2.50 / 1k images · $0.20 / 1k video frames | | | 3,000 | |
+
+Web search grounding (the `web_search` tool on Spark and Wonder): **USD 2.50 per 1,000 search queries**, on top of the request's tokens (`dev.meta.ai/docs/pricing-rate-limits.md`, read 2026-11-02).
 
 Budget sense: a 1-hour meeting costs ~$0.18 of transcription; with the USD 150 credit the LLM is the only real cost.
 
