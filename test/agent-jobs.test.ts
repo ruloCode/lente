@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PendingAction } from "../src/action-store.ts";
-import { INSTRUCTION_MAX_CHARS, SUMMARY_MAX_CHARS, TOOL_RUN_AGENT, asksForAction, chatCommand, claim, finish, jobArgs, parseResult, proposedAnswer, queued, queuedJobs } from "../src/agent-jobs.ts";
+import { INSTRUCTION_MAX_CHARS, JOB_LOST_AFTER_MS, LOST_SUMMARY, SUMMARY_MAX_CHARS, expireLost, TOOL_RUN_AGENT, asksForAction, chatCommand, claim, finish, jobArgs, parseResult, proposedAnswer, queued, queuedJobs } from "../src/agent-jobs.ts";
 import { parseAsk } from "../src/ask.ts";
 
 const titles = new Map([["k1", "PROBE-task title"]]);
@@ -80,4 +80,15 @@ test("parseAsk: a command comes back as a command, an answer stays an answer", (
   assert.deepEqual(parseAsk(raw, new Map(), "Claude, corre los tests"), { answer: "", sources: [], found: true, command: { agent: "claude", instruction: "PROBE-run the tests" } });
   assert.equal(parseAsk(raw, new Map(), "¿Corrieron los tests?").command, undefined);
   assert.equal(parseAsk(raw, new Map()).command, undefined, "without the question, no command");
+});
+
+test("a running job the bridge never reported is failed after 20 minutes; nothing else is touched", () => {
+  const running = claim(queued({ ...action(), status: "approved" }), 1000);
+  assert.ok(running.ok);
+  assert.equal(expireLost(running.action, 1000 + JOB_LOST_AFTER_MS), undefined, "not yet");
+  const lost = expireLost(running.action, 1001 + JOB_LOST_AFTER_MS)!;
+  assert.equal(lost.status, "failed");
+  assert.deepEqual(lost.outcome, { state: "failed", startedAt: 1000, finishedAt: 1001 + JOB_LOST_AFTER_MS, summary: LOST_SUMMARY });
+  assert.equal(expireLost(queued({ ...action(), status: "approved" }), 10 * JOB_LOST_AFTER_MS), undefined, "a queued job waits for the bridge as long as it takes");
+  assert.equal(expireLost(action(), 10 * JOB_LOST_AFTER_MS), undefined);
 });

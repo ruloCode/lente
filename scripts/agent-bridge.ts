@@ -118,8 +118,20 @@ async function next(): Promise<void> {
     const folder = resolveFolder(config, job.workdir);
     const result = folder.ok ? await runAgent(job, folder.path) : { exitCode: EXIT_NOT_RUN, summary: `No corrió: ${folder.error}.` };
     log(`job ${job.id} · ${job.agent} in ${folder.ok ? folder.name : "(refused folder)"} · exit ${result.exitCode} · ${Math.round((Date.now() - started) / 1000)} s`);
-    const sent = await post(`/agent/jobs/${encodeURIComponent(job.id)}/result`, result);
-    if (!sent.ok) log(`job ${job.id}: the hub did not take the result (HTTP ${sent.status})`);
+    // The work is done whatever the network does, so the result is retried before giving up.
+    let reported = false;
+    for (const wait of [0, 2000, 5000, 15_000]) {
+      await new Promise((r) => setTimeout(r, wait));
+      const sent = await post(`/agent/jobs/${encodeURIComponent(job.id)}/result`, result).catch((error: Error) => error);
+      if (sent instanceof Error) {
+        log(`job ${job.id}: could not send the result (${sent.message})`);
+        continue;
+      }
+      if (!sent.ok) log(`job ${job.id}: the hub did not take the result (HTTP ${sent.status})`);
+      reported = true;
+      break;
+    }
+    if (!reported) log(`job ${job.id}: the result never reached the hub; it will show as lost`);
     if (ONCE) process.exit(0);
   } catch (error) {
     log(`job ${job.id}: ${(error as Error).message}`);

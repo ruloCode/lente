@@ -68,7 +68,7 @@ import { TraceWriter, traceLine } from "./agent-trace.ts";
 import { TASK_OWNERS, type Task, type TaskOwner, TaskStore, meetingTools, ownerOf } from "./agent-tools.ts";
 import { type AgentApi, CallLimiter, type TaskView, agentServer } from "./agent-mcp-tools.ts";
 import { MCP_MAX_BODY_BYTES, serveMcp, unauthorizedResponse } from "./mcp.ts";
-import { AGENT_NAMES, TOOL_RUN_AGENT, type JobAgent, claim as claimJob, finish as finishJob, jobArgs, outcomeOf, parseResult, proposedAnswer, queued as queuedJob, queuedJobs } from "./agent-jobs.ts";
+import { AGENT_NAMES, TOOL_RUN_AGENT, type JobAgent, claim as claimJob, expireLost, finish as finishJob, jobArgs, outcomeOf, parseResult, proposedAnswer, queued as queuedJob, queuedJobs } from "./agent-jobs.ts";
 import { NOT_FOUND } from "./ask.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
@@ -1530,6 +1530,20 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   every(() => {
     for (const res of jobClients) res.write(": keep-alive\n\n");
   }, 15_000);
+  /** A job whose bridge never reported back ends as failed instead of running forever. */
+  const LOST_CHECK_MS = 60_000;
+  every(() => {
+    let lost = 0;
+    for (const a of actions.list()) {
+      const failed = expireLost(a, Date.now());
+      if (!failed) continue;
+      actions.save(failed);
+      lost++;
+    }
+    if (!lost) return;
+    console.log(`[jobs] ${lost} job(s) lost by the bridge, marked failed`);
+    broadcastActions();
+  }, LOST_CHECK_MS);
 
   /** `GET /events` and `POST /agent/jobs/<id>/claim|result` for an `agent.run` token of this user. */
   async function bridge(req: IncomingMessage, res: ServerResponse, client: string): Promise<void> {

@@ -103,6 +103,20 @@ export function finish(a: PendingAction | undefined, result: { exitCode: number;
   return { ok: true, action: { ...a, status: done ? "approved" : "failed", outcome: { ...outcome, state: done ? "done" : "failed", finishedAt: now, exitCode: result.exitCode, summary: result.summary } satisfies JobOutcome } };
 }
 
+/**
+ * A job still running after this long was lost: the bridge stops its agent at 15 minutes and
+ * reports, so silence past that (and a margin for the report) means the bridge died or lost the hub.
+ */
+export const JOB_LOST_AFTER_MS = 20 * 60_000;
+export const LOST_SUMMARY = "El puente no avisó cómo terminó: se cerró o perdió la conexión con Lente.";
+
+/** The job as failed when it was lost; undefined when it is not a running job past the limit. */
+export function expireLost(a: PendingAction, now: number): PendingAction | undefined {
+  const outcome = outcomeOf(a);
+  if (a.status !== "approved" || outcome?.state !== "running" || now - (outcome.startedAt ?? now) <= JOB_LOST_AFTER_MS) return undefined;
+  return { ...a, status: "failed", outcome: { ...outcome, state: "failed", finishedAt: now, summary: LOST_SUMMARY } satisfies JobOutcome };
+}
+
 // --- The chat: telling a command from a question (decision 9) -----------------------------------
 
 const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();

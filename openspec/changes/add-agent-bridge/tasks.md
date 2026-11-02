@@ -24,6 +24,7 @@ Depends on: `add-task-owners`
 - [x] 4.2 The chat's `command` intent in `/ask` (both answer paths); unit tests for the check and the parse (`pnpm test`)
 - [x] 4.3 `scripts/agent-bridge.ts` and `src/agent-bridge.ts`: config, folder allow list, restrictive commands, clean environment, timeout, one job at a time; tests with a fake agent that exits 0 or 1, and an unapproved job that never runs (`pnpm test`)
   - 2026-11-02: 554 of 554 hub tests and `pnpm smoke` pass.
+- [x] 4.4 A job the bridge lost (no result 20 min after the claim) is marked failed; the bridge retries sending a result; unit test (`pnpm test`)
 
 ## 5. App
 

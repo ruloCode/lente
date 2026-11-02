@@ -55,6 +55,7 @@
    - `POST /agent/jobs/<id>/claim` moves an approved, queued job to `running`. A second claim answers 409.
    - `POST /agent/jobs/<id>/result` `{exitCode, summary}` closes the job. Exit 0 marks its task done; anything else marks the action `failed`.
    - Both routes need an `agent.run` token of the job's user.
+   - A job still `running` 20 minutes after its claim was lost (the bridge stops agents at 15 and reports): the hub marks it failed with a note, checked every minute. The bridge retries a result it could not send (after 2, 5 and 15 s) before giving up.
 8. **The bridge's stream.** `GET /events` with an `agent.run` token sends only `{kind: "jobs", items}`: the approved, queued jobs. It is sent when the stream opens and after every change, with a keep-alive. Turns, cues and the rest of the phone's events never go to it.
 9. **The chat proposes commands.**
    - `askSchema` gains `intent` (`answer` or `command`), `agent` (`claude` or `codex`) and `instruction`.
