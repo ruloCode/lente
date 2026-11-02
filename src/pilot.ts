@@ -38,6 +38,7 @@ import { PAIR_PAGE } from "./pair-page.ts";
 import { type AuthMode, decideUpgrade, decideWeb } from "./access-gate.ts";
 import { type Identity, type IdentitySources, identify } from "./identify.ts";
 import { UserAuth } from "./user-auth.ts";
+import { FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -220,12 +221,15 @@ const auth = CLOUD ? new DeviceAuth(join(DATA_DIR, "devices.json")) : undefined;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const userAuth = SUPABASE_URL ? new UserAuth(SUPABASE_URL) : undefined;
 const AUTH_MODE: AuthMode = userAuth ? "accounts" : auth ? "pairing" : "open";
+/** Accounts mode: each user's clips, desktops and MCP clients, by token hash. */
+const userDevices = userAuth ? new UserDevices(new FileDeviceStore(join(DATA_DIR, "user-devices.json"))) : undefined;
 const identitySources: IdentitySources = {
   mode: AUTH_MODE,
   cookieName: SESSION_COOKIE,
   pairedSession: (cookie) => Boolean(auth?.checkSession(cookie)),
   knownDevice: (token) => Boolean(auth?.checkDevice(token)),
   verifyAccessToken: async (token) => (await userAuth!.verify(token)).userId,
+  deviceUser: (token) => userDevices!.resolve(token),
 };
 /** Who each admitted request acts for; read by the routes once the hub keeps one runtime per user. */
 const requestIdentity = new WeakMap<IncomingMessage, Identity>();
@@ -1195,6 +1199,14 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
 const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   try {
     if (await gateWeb(req, res)) return;
+    const who = requestIdentity.get(req);
+    const devicesPath = req.url?.split("?")[0];
+    const devicesAnswer = userDevices && who && (devicesPath === "/devices" || devicesPath === "/devices/revoke") ? await deviceRoute(userDevices, who.userId, req.method ?? "GET", devicesPath, req.method === "POST" ? await readBody(req) : "") : undefined;
+    if (devicesAnswer) {
+      res.writeHead(devicesAnswer.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(devicesAnswer.json === undefined ? undefined : JSON.stringify(devicesAnswer.json));
+      return;
+    }
     if (req.method === "GET" && req.url === "/manifest.webmanifest") {
       res.writeHead(200, { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" });
       res.end(webManifest());
