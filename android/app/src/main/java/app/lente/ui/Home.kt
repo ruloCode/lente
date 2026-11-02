@@ -71,13 +71,16 @@ private enum class HomeTab(val title: String) { Inicio("Inicio"), Tareas("Tareas
  * to ask Lente and the button that listens (add-projects 2.2).
  */
 @Composable
-fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, record: (project: String?, camera: Boolean, title: String) -> Unit) {
+fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String) -> Unit) {
     val c = Lente.c
     val s = hub.status
     var tab by rememberSaveable { mutableStateOf(HomeTab.Inicio) }
     var sheet by rememberSaveable { mutableStateOf(false) }
     val lines by vm.chat.collectAsState()
-    if (sheet) RecordSheet(vm, hub, onDismiss = { sheet = false }) { project, camera, title -> sheet = false; tab = HomeTab.Inicio; record(project, camera, title) }
+    // The voice agent's start_recording opens the sheet with its choices; nothing records until "Empezar a grabar".
+    val asked by vm.recordRequest.collectAsState()
+    val close = { sheet = false; vm.recordRequest.value = null }
+    if (sheet || asked != null) RecordSheet(vm, hub, initialProject = asked?.projectId ?: vm.chatProject.value, initialCamera = asked?.camera ?: false, onDismiss = close) { project, camera, title -> close(); tab = HomeTab.Inicio; record(project, camera, title) }
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             DevicePill(hub) { if (hub.status.listening && hub.status.clip) vm.openLive() else vm.go(Screen.Dispositivos) }
@@ -111,7 +114,9 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
                 tab = HomeTab.Inicio
                 vm.askLente(q)
             }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
+            TalkButton(talk)
+            Spacer(Modifier.width(14.dp))
             ListenButton(s.listening) { if (s.listening) vm.toggleListening() else sheet = true }
         }
     }
@@ -215,12 +220,12 @@ private fun Suggestions(vm: LenteViewModel, clip: Boolean, showStarters: Boolean
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun RecordSheet(vm: LenteViewModel, hub: HubState, onDismiss: () -> Unit, onRecord: (project: String?, camera: Boolean, title: String) -> Unit) {
+private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: String?, initialCamera: Boolean, onDismiss: () -> Unit, onRecord: (project: String?, camera: Boolean, title: String) -> Unit) {
     val c = Lente.c
     val s = hub.status
     val projects by vm.projects.collectAsState()
-    var project by rememberSaveable { mutableStateOf<String?>(vm.chatProject.value) }
-    var camera by rememberSaveable { mutableStateOf(false) }
+    var project by rememberSaveable(initialProject) { mutableStateOf(initialProject) }
+    var camera by rememberSaveable(initialCamera) { mutableStateOf(initialCamera) }
     var title by rememberSaveable { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.bg) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter).padding(bottom = 24.dp).testTag("record-sheet"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -279,6 +284,17 @@ private fun LiveBarRow(vm: LenteViewModel, hub: HubState) {
         Text("Transcripción en vivo", style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = c.onLive, modifier = Modifier.weight(1f))
         Text("Abrir", style = Type.headline, color = c.onLive)
     }
+}
+
+/** Hablar con Lente (add-voice-mode): a quieter round button, apart from the record button. */
+@Composable
+private fun TalkButton(onClick: () -> Unit) {
+    val c = Lente.c
+    Box(
+        Modifier.size(46.dp).clip(CircleShape).background(c.surface).border(0.5.dp, c.line, CircleShape)
+            .clickable(onClick = onClick).testTag("talk").semantics { contentDescription = "Hablar con Lente" },
+        contentAlignment = Alignment.Center,
+    ) { Icon(Glyph.Wave, c.accent, size = 22.dp) }
 }
 
 /** The round button beside the field: starts listening, or pauses (red) while it listens. */

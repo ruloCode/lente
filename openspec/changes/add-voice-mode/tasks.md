@@ -18,8 +18,9 @@ Depends on: `add-accounts`, `add-task-owners`, `add-record-sheet`
 
 ## 3. The app
 
-- [ ] 3.1 `core/VoiceState.kt` (event reducer, sentence queue, states) with JVM tests (`./gradlew :app:testDebugUnitTest`)
-- [ ] 3.2 `platform/VoiceClient.kt` (OkHttp WebSocket, `VOICE_COMMUNICATION` microphone, hold-to-talk) and `ui/Voice.kt` with its button beside the ask bar; the record sheet opens from `recordSheet`
+- [x] 3.1 `core/VoiceState.kt` (event reducer, sentence queue, states) with JVM tests (`./gradlew :app:testDebugUnitTest`)
+- [x] 3.2 `platform/VoiceClient.kt` (OkHttp WebSocket, `VOICE_COMMUNICATION` microphone, hold-to-talk) and `ui/Voice.kt` with its button beside the ask bar; the record sheet opens from `recordSheet`
+  - 2026-11-02: 83 of 83 JVM tests pass (5 new in `VoiceStateTest`); the debug APK builds. No new dependency: OkHttp's WebSocket, `AudioRecord` and `TextToSpeech` are what the app already uses.
 - [ ] 3.3 On the phone: a screenshot in each state (escuchando, pensando, hablando) with test speech from the Mac's `say` [phone]
 
 ## 4. Measure and write down
