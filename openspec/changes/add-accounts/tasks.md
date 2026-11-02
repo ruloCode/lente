@@ -32,7 +32,8 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 ## 3. Identity in the hub
 
 - [x] 3.1 `src/user-auth.ts`: verify access tokens with JWKS (signature by `kid`, `iss`, `aud`, `exp`), cache keys 10 minutes and refetch on an unknown `kid`; tests with keys generated in the test for valid, expired, wrong issuer, wrong audience, unknown `kid` and malformed tokens (`pnpm test`)
-- [ ] 3.2 Web sign-in: `/auth/google` starts PKCE, `/auth/callback` exchanges the code, sets the `HttpOnly` session cookie and stores the sealed refresh token in `sessions`; `/auth/signout` revokes it; tests for a replayed or missing `state` (`pnpm test`)
+- [x] 3.2 Web sign-in: `/auth/google` starts PKCE, `/auth/callback` exchanges the code, sets the `HttpOnly` session cookie and stores the sealed refresh token in `sessions`; `/auth/signout` revokes it; tests for a replayed or missing `state` (`pnpm test`)
+  - Tested against a stand-in for Supabase Auth (`test/web-session.test.ts`); the live endpoints are confirmed with 1.1, and the Google button itself with 8.1.
 - [x] 3.3 Access gate by user: every route and the `/device` upgrade resolve a user from a bearer token, the session cookie or a device token, or answer 401; laptop mode keeps the pairing code and one owner; extend the gate's tests (`pnpm test`)
 - [x] 3.4 Devices: `POST /devices` (token shown once, hash stored), `GET /devices`, `POST /devices/revoke`, `last_seen_at` on connect; tests for a revoked token and another user's device (`pnpm test`)
 - [x] 3.5 Sign-up allow list (`LENTE_ALLOWED_EMAILS`, the owner's email only until Meta billing is paid): a user outside it gets a clear refusal and no account row; test (`pnpm test`)

@@ -25,6 +25,9 @@ const HUB_VARIABLES = [
   "LENTE_KEK_PREVIOUS",
   "LENTE_ALLOWED_EMAILS",
   "LENTE_MAX_LISTENING",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "LENTE_PUBLIC_URL",
+  "LENTE_TIME_ZONE",
 ];
 
 const values = Object.fromEntries(HUB_VARIABLES.filter((name) => process.env[name]).map((name) => [name, process.env[name]]));

@@ -107,6 +107,8 @@ The measured size per hour of listening (task 6.3) says when the first will happ
 - The app sends it as `Authorization: Bearer` on HTTP and on the `/device` WebSocket.
 - The web page keeps it in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie the hub sets after the PKCE exchange. The hub refreshes it with the refresh token, which is kept encrypted in the hub's session table.
 
+**Web sign-in, as built (task 3.2).** `GET /auth/google` sends the browser to Supabase's `/auth/v1/authorize?provider=google` with an S256 `code_challenge`; the hub's `state` rides inside `redirect_to` and in a 10-minute `HttpOnly` cookie on `/auth`, so a callback is accepted only once, only before it expires, and only by the browser that started it. `GET /auth/callback` exchanges the code at `/auth/v1/token?grant_type=pkce` (with `SUPABASE_PUBLISHABLE_KEY`, or the secret key when that is not set), verifies the access token like any other, applies the allow list, and starts a hub session: a random token in a 30-day `HttpOnly`, `Secure`, `SameSite=Lax` cookie, stored only as its SHA-256, with Supabase's refresh token sealed under the user's key. `POST /auth/signout` revokes that session. The Auth endpoints' exact shapes are checked on the live project by task 1.1; until then they follow Supabase's documented PKCE flow.
+
 ### 4. Devices belong to users
 
 **Choice.** A signed-in user creates a clip token from the app (`POST /devices`). The token is shown once and stored as a SHA-256 hash with the `user_id`. The clip still gets it at flash time, as today (`cloud.h`).

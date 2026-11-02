@@ -48,7 +48,10 @@ import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, writeProfile } from "./digests.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { askTiers } from "./ask-tiers.ts";
-import { SupabaseAccounts, SupabaseDevices, supabaseCanaries } from "./supabase-stores.ts";
+import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
+import { AUTH_COOKIE, FileSessionStore, PkceFlows, WebSessions, authCookie, authorizeUrl, clearCookie, exchangeCode, sessionCookie } from "./web-session.ts";
+import { cookieValue } from "./device-auth.ts";
+import { SIGNIN_PAGE } from "./signin-page.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -161,6 +164,52 @@ async function openAccounts(): Promise<Accounts> {
   }
 }
 
+/** Accounts mode: browsers signed in with Google keep a hub session (task 3.2). */
+const webSessions = accounts
+  ? new WebSessions(
+      supabase
+        ? new SupabaseSessions(supabase, (userId) => accounts.dek(userId))
+        : new FileSessionStore(async (userId, rowId, token) => new Sealer(userId, await accounts.dek(userId)).json("sessions", "refresh_enc", rowId, token), new JsonFile<unknown>(join(DATA_DIR, "sessions.json"), () => [])),
+    )
+  : undefined;
+const pkce = new PkceFlows();
+/** Supabase Auth takes the publishable key from browsers; the hub may use it, or the secret key. */
+const AUTH_APIKEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+
+/** Where Supabase sends the browser back: the public URL when set, else this request's own origin. */
+function callbackUrl(req: IncomingMessage): string {
+  const proto = req.headers["x-forwarded-proto"] === "https" || TLS_CERT ? "https" : "http";
+  return `${process.env.LENTE_PUBLIC_URL?.replace(/\/+$/, "") ?? `${proto}://${req.headers.host ?? "localhost"}`}/auth/callback`;
+}
+
+/** GET /auth/google and /auth/callback: the web sign-in with PKCE. */
+async function signIn(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? "/", "http://hub");
+  const page = (status: number, message: string) => res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Set-Cookie": clearCookie(AUTH_COOKIE, "/auth") }).end(SIGNIN_PAGE.replace("<!--message-->", message));
+  if (!SUPABASE_URL || !AUTH_APIKEY || !webSessions || !accounts) return void page(503, "El inicio de sesión no está configurado en este hub.");
+  if (url.pathname === "/auth/google") {
+    const flow = pkce.start();
+    res.writeHead(302, { Location: authorizeUrl(SUPABASE_URL, callbackUrl(req), flow.state, flow.challenge), "Set-Cookie": authCookie(flow.state), "Cache-Control": "no-store" }).end();
+    return;
+  }
+  // The callback: the state must be the one this browser started with, and unused.
+  const state = url.searchParams.get("state");
+  const code = url.searchParams.get("code");
+  const verifier = state && state === cookieValue(req.headers.cookie, AUTH_COOKIE) ? pkce.take(state) : undefined;
+  if (!verifier || !code) return void page(400, "Ese enlace de inicio de sesión ya no sirve. Vuelve a entrar con Google.");
+  try {
+    const tokens = await exchangeCode(SUPABASE_URL, AUTH_APIKEY, code, verifier);
+    const { userId, email } = await userAuth!.verify(tokens.accessToken);
+    const admission = await accounts.admit(userId, email);
+    if (!admission.ok) return void page(403, admission.reason === "closed_test" ? CLOSED_TEST_MESSAGE : "No se pudo abrir tu cuenta.");
+    const token = await webSessions.create(userId, tokens.refreshToken);
+    res.writeHead(302, { Location: "/", "Cache-Control": "no-store", "Set-Cookie": [sessionCookie(SESSION_COOKIE, token), clearCookie(AUTH_COOKIE, "/auth")] }).end();
+  } catch (error) {
+    console.error(`[auth] web sign-in failed: ${(error as Error).message}`);
+    page(502, "No se pudo terminar el inicio de sesión. Prueba otra vez.");
+  }
+}
+
 /** Accounts mode: the refusal for a caller outside the allow list or without an account, if any. */
 async function refusal(who: Identity | undefined): Promise<string | undefined> {
   if (!accounts || !who) return undefined;
@@ -174,6 +223,7 @@ const identitySources: IdentitySources = {
   pairedSession: (cookie) => Boolean(auth?.checkSession(cookie)),
   knownDevice: (token) => Boolean(auth?.checkDevice(token)),
   verifyAccessToken: (token) => userAuth!.verify(token),
+  sessionUser: (cookie) => webSessions!.user(cookie),
   deviceUser: (token) => userDevices!.resolve(token),
 };
 /** Who each admitted request acts for; read by the routes once the hub keeps one runtime per user. */
@@ -275,9 +325,10 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(PAIR_PAGE);
       return true;
     case "signin-page":
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).end(SIGNIN_PAGE);
+      return true;
     case "auth":
-      // Web sign-in with Google lands with add-accounts 3.2; until then the app signs in with a bearer token.
-      res.writeHead(401, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Inicia sesión desde la app de Lente.");
+      await signIn(req, res);
       return true;
     default:
       res.writeHead(401, { "Cache-Control": "no-store" }).end();
@@ -1588,6 +1639,12 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
     if (devicesAnswer) {
       res.writeHead(devicesAnswer.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(devicesAnswer.json === undefined ? undefined : JSON.stringify(devicesAnswer.json));
+      return;
+    }
+    if (webSessions && req.method === "POST" && devicesPath === "/auth/signout") {
+      // Signing out ends this browser's hub session; other devices and the app stay signed in.
+      await webSessions.revoke(cookieValue(req.headers.cookie, SESSION_COOKIE));
+      res.writeHead(204, { "Set-Cookie": clearCookie(SESSION_COOKIE), "Cache-Control": "no-store" }).end();
       return;
     }
     await wearers.get(who?.userId ?? LOCAL_OWNER).handle(req, res);

@@ -98,7 +98,7 @@ export function fakePostgrest(): FakePostgrest & { handler: Handler } {
  * The same fake over HTTP, for a hub in another process: `/rest/v1/…` goes to the fake (only with
  * the expected secret key), `/auth/v1/.well-known/jwks.json` answers with the keys given.
  */
-export async function servePostgrest(jwks: object): Promise<{ url: string; fake: ReturnType<typeof fakePostgrest>; close(): void }> {
+export async function servePostgrest(jwks: object, auth?: (path: string, body: string) => { status: number; body: unknown } | undefined): Promise<{ url: string; fake: ReturnType<typeof fakePostgrest>; close(): void }> {
   const { createServer } = await import("node:http");
   const fake = fakePostgrest();
   const server = createServer((req, res) => {
@@ -106,6 +106,8 @@ export async function servePostgrest(jwks: object): Promise<{ url: string; fake:
     req.on("data", (c) => (body += c));
     req.on("end", async () => {
       if (req.url?.startsWith("/auth/v1/.well-known/jwks.json")) return void res.end(JSON.stringify(jwks));
+      const authAnswer = req.url?.startsWith("/auth/v1/") ? auth?.(req.url, body) : undefined;
+      if (authAnswer) return void res.writeHead(authAnswer.status, { "Content-Type": "application/json" }).end(JSON.stringify(authAnswer.body));
       if (!req.url?.startsWith("/rest/v1/") || req.headers.apikey !== "sb_secret_fake") return void res.writeHead(401).end("{}");
       const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k === "prefer" ? "Prefer" : k, String(v)]));
       const answer = await fake.handler(`http://fake${req.url}`, { method: req.method ?? "GET", headers, body: body || undefined });

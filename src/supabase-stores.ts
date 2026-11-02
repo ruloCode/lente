@@ -24,6 +24,7 @@ import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Mee
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
 import { type UsageSnapshot, priceTokens } from "./usage-meter.ts";
 import type { DeviceRecord } from "./user-devices.ts";
+import type { SessionRow, SessionStore } from "./web-session.ts";
 
 type Db = ReturnType<SupabaseRest["forUser"]>;
 type Row = Record<string, unknown>;
@@ -713,6 +714,44 @@ export class SupabaseDevices implements DeviceStore {
   async touch(userId: string, id: string, at: number): Promise<void> {
     const db = this.rest.forUser(userId);
     await db.update(db.query("devices").eq("id", id), { last_seen_at: iso(at) });
+  }
+}
+
+/** Web sessions: the token's hash to find them, the Supabase refresh token sealed under the user's key. */
+export class SupabaseSessions implements SessionStore {
+  private readonly rest: SupabaseRest;
+  private readonly dekOf: (userId: string) => Promise<Buffer>;
+
+  constructor(rest: SupabaseRest, dekOf: (userId: string) => Promise<Buffer>) {
+    this.rest = rest;
+    this.dekOf = dekOf;
+  }
+
+  async insert(row: SessionRow & { tokenHash: Buffer }, refreshToken: string): Promise<void> {
+    const sealer = new Sealer(row.userId, await this.dekOf(row.userId));
+    await this.rest.forUser(row.userId).insert("sessions", [{ id: row.id, token_hash: toBytea(row.tokenHash), refresh_enc: sealer.json("sessions", "refresh_enc", row.id, refreshToken), created_at: iso(row.createdAt) }]);
+  }
+
+  async byTokenHash(tokenHash: Buffer): Promise<SessionRow | undefined> {
+    const [r] = await this.rest.system.sessionByTokenHash(tokenHash);
+    if (!r) return undefined;
+    const row: SessionRow = { id: String(r.id), userId: String(r.user_id), createdAt: msOf(r.created_at) };
+    const used = msOrUndefined(r.last_used_at);
+    const revoked = msOrUndefined(r.revoked_at);
+    if (used !== undefined) row.lastUsedAt = used;
+    if (revoked !== undefined) row.revokedAt = revoked;
+    return row;
+  }
+
+  async revoke(userId: string, id: string, at: number): Promise<boolean> {
+    if (!isUuid(id)) return false;
+    const db = this.rest.forUser(userId);
+    return (await db.update(db.query("sessions").eq("id", id).eq("revoked_at", null), { revoked_at: iso(at) })).length > 0;
+  }
+
+  async touch(userId: string, id: string, at: number): Promise<void> {
+    const db = this.rest.forUser(userId);
+    await db.update(db.query("sessions").eq("id", id), { last_used_at: iso(at) });
   }
 }
 
