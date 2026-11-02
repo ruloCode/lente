@@ -246,6 +246,8 @@ The decision "Memory as files and long context, not RAG" becomes "long context i
 - **Files, today's code:** used when the Supabase keys are absent. The laptop, the smoke test and the unit tests keep running with no keys.
 - **Supabase:** used when the keys are present. It needs `LENTE_KEK`, and refuses to start without it.
 
+**Sync and async.** The interfaces live in `src/stores.ts`. Methods that may reach the database return `T | Promise<T>`: the file stores answer synchronously and satisfy them unchanged, the Supabase stores return promises, and callers `await` either. What the live loop reads on every frame (today's day entries, the profile, the glossary) is a plain in-memory value; the Supabase store loads it when the user's runtime starts and writes it behind, flushed on eviction (decision 9).
+
 **Testing the Supabase backend.** It is tested against a fake PostgREST in `test/`. It is checked once against a real project.
 
 ### 11. Spend cap per user
