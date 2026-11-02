@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -33,4 +33,16 @@ test("day log rolls over to a new file at midnight", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("recent reads the days before today from their files, oldest first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lente-days-"));
+  const now = new Date(2026, 10, 3, 12).getTime();
+  const DAY = 86_400_000;
+  writeFileSync(join(dir, `${dayKey(now - 2 * DAY)}.jsonl`), JSON.stringify({ at: now - 2 * DAY, kind: "live", text: "una pizarra" }) + "\nbroken\n");
+  writeFileSync(join(dir, `${dayKey(now - 9 * DAY)}.jsonl`), JSON.stringify({ at: now - 9 * DAY, kind: "live", text: "too old" }) + "\n");
+  const log = new DayLog(dir, now);
+  log.add({ at: now, kind: "turn", text: "hoy" });
+  const texts = log.recent(7, now).map((e) => e.text);
+  assert.deepEqual(texts, ["una pizarra", "hoy"]);
 });

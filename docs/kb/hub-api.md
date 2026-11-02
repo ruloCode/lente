@@ -41,7 +41,10 @@ One `data: <json>\n\n` per event, a `: keep-alive` comment every 15 s, no `id:` 
 
 - `turn`: `at, turnId?, speaker?, text, question?, audioStartMs?, audioEndMs?, spokeAt?`
 - `cue`: `at, label, text, meaning?, ms?, asker?, why?, model?, provider?, stages?`, live ones also `id` (`s<n>`) when staged, `turnId` on a DILO, `photo` on ON SCREEN and PHOTO
-- `live`: `at, text, stages?`, live ones also `id, ms, photo`; an unchanged or failed read is `{kind:"live", text:"", ms?, photo}`
+- `live`: `at, text, stages?`, live ones also `id, ms, photo` (the frame that was described); without a model key a frame is `{kind:"live", text:""}`
+- `frame`: `photo`, each live-view frame as soon as the device sends it, before any description; the next frame is asked for 600 ms later and the model describes the newest frame when it is free, so the picture moves faster than the descriptions. Clients that do not know `frame` ignore it
+
+`POST /ask` `{question, history?: [{role:"user"|"lente", text}]}`: the chat with Lente. One Muse Spark call over the memory (meetings with their notes and turns, the last 7 days of what was heard and what the camera described outside meetings, kept facts), structured output `{found, answer, sources}`. Answers `200 {ok:true, answer, found, sources:[{id, kind:"meeting"|"heard"|"seen"|"fact", label, at, meetingId?, turnId?}], ms}`; an answer whose cited ids do not exist becomes "No lo encuentro en lo que viste y escuchaste." with `found:false`. `400` for an empty question, `502 {ok:false, message}` when the model fails or no key is set.
 - `summary`: `at, text, ms?`
 
 Cue labels: `DILO` (legacy `SAY THIS`), `ON SCREEN`, `PHOTO`, and the help labels `Aportar`, `Pregunta`, `¿De qué hablan?`. `why`: `name` "dijeron tu nombre", `reply` "te respondían a ti", `model` "parece dirigida a ti", `testing` "modo todas las preguntas". `photo` is always `data:image/jpeg;base64,…`. A client acknowledges every event with an `id` with `POST /seen {id}`; the hub then sends `{kind:"stages", id, stages}` with `phone` added.

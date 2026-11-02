@@ -86,7 +86,7 @@ export function startStubMeta(): Promise<{ server: Server; port: number; request
         ]);
       } else if (req.url === "/v1/chat/completions") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ choices: [{ message: { content: "no" } }], usage: { prompt_tokens: 50, completion_tokens: 1 } }));
+        res.end(JSON.stringify({ choices: [{ message: { content: chatReply(body) } }], usage: { prompt_tokens: 50, completion_tokens: 1 } }));
       } else res.writeHead(404).end();
     });
   });
@@ -99,3 +99,18 @@ export function startStubMeta(): Promise<{ server: Server; port: number; request
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, port: (server.address() as AddressInfo).port, requests })));
 }
+
+/** "no" for the yes/no checks; for the chat with Lente, an answer citing the first line of its memory (or not found). */
+function chatReply(body: string): string {
+  let req: { response_format?: { json_schema?: { name?: string } }; messages?: Array<{ content?: unknown }> } = {};
+  try {
+    req = JSON.parse(body);
+  } catch {
+    return "no";
+  }
+  if (req.response_format?.json_schema?.name !== "ask") return "no";
+  const id = String(req.messages?.[0]?.content ?? "").match(/\n\[([A-Z]\d+(?:\.t\d+)?)\]/)?.[1];
+  return JSON.stringify(id ? { found: true, answer: STUB_ASK_ANSWER, sources: [id] } : { found: false, answer: "", sources: [] });
+}
+
+export const STUB_ASK_ANSWER = "Te preguntaron si la beta sale el viernes; respondiste que sí, si QA aprueba el jueves.";

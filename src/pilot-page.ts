@@ -1708,9 +1708,12 @@ ${THEME_TOKENS}
     else if (m.kind === "stages") {
       if (m.id === cueId) $("cue-stages").textContent = stagesLine(m.stages);
       if (m.id === viewId) $("view-stages").textContent = stagesLine(m.stages);
+    } else if (m.kind === "frame") {
+      if (m.photo) drawFrame(m.photo);
     } else if (m.kind === "live") {
       if (m.id) { seen(m.id); viewId = m.id; }
-      showView("LIVE", m.text, m.ms, m.photo, m.stages);
+      // Frames arrive on their own ("frame"); a description is of one a moment old, so the picture stays on the newest.
+      showView("LIVE", m.text, m.ms, null, m.stages);
       if (m.text) { addItem(m); say(m.text, "low"); }
     } else if (m.kind === "cue") {
       if (m.id) seen(m.id);

@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
+import { ask, askSchema } from "./ask.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
@@ -39,7 +40,7 @@ import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, p
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
 import { type Briefing, briefingMessages, briefingSchema, citedSources, memoryPrefix, parseReply, rememberedMeetings, replyMessages, validateBriefing } from "./briefing.ts";
-import { FactStore } from "./fact-store.ts";
+import { FactStore, keptFacts } from "./fact-store.ts";
 import { MeetingStore } from "./meeting-store.ts";
 import { ActionStore, decide, parseDecision } from "./action-store.ts";
 import { runApproved } from "./agent-loop.ts";
@@ -66,7 +67,10 @@ const SUMMARY_EVERY_MS = Number(process.env.PILOT_SUMMARY_MIN ?? 5) * 60_000;
 const LANGUAGE = process.env.PILOT_LANG ?? "Spanish";
 const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
-const LIVE_GAP_MS = 400;
+/** Live view: wait between a frame arriving and asking for the next; frames show as they come, the model describes the newest. */
+const LIVE_FRAME_GAP_MS = 600;
+/** Days of the record (what was heard and seen outside meetings) the chat with Lente remembers. */
+const ASK_DAYS = 7;
 const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
 /** Solo grabar's automatic episodes; the eval and the checks shorten them. */
 const EPISODES: EpisodePolicy = {
@@ -705,13 +709,28 @@ setInterval(() => {
   if (due && heardSomething && status.listening && device && profile.assistMode === "assist") void summarize(false);
 }, 30_000);
 
-// --- Live view: photo → description → next photo, paced by the model itself --------------------
+// --- Live view: frames flow at the device's pace and show as they arrive; the model describes the newest --
 
 let liveBusySince = 0;
 let lastLive = "";
+let liveDescribing = false;
+let liveFrameAt = 0;
+/** The newest frame that came in while the model was busy; older ones are dropped. */
+let liveNext: { jpeg: Buffer; at: number } | undefined;
+
+/** A live frame from the device: shown at once, the next one asked for, described when the model is free. */
+function onLiveFrame(jpeg: Buffer, at: number): void {
+  liveFrameAt = Date.now();
+  broadcast({ kind: "frame", photo: `data:image/jpeg;base64,${jpeg.toString("base64")}` });
+  liveBusySince = 0;
+  setTimeout(requestLiveFrame, LIVE_FRAME_GAP_MS);
+  if (liveDescribing) liveNext = { jpeg, at };
+  else void describeLive(jpeg, at);
+}
 
 function requestLiveFrame(): void {
-  if (!status.live || !device || liveBusySince) return;
+  // At most one frame in flight, and the gap after the last one kept (timers may fire a few ms early).
+  if (!status.live || !device || liveBusySince || Date.now() - liveFrameAt < LIVE_FRAME_GAP_MS - 10) return;
   liveBusySince = Date.now();
   device.write("P");
 }
@@ -723,12 +742,10 @@ setInterval(() => {
 
 async function describeLive(jpeg: Buffer, heardAt: number): Promise<void> {
   const photo = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  liveDescribing = true;
   const started = performance.now();
   try {
-    if (!key) {
-      broadcast({ kind: "live", text: "", photo });
-      return;
-    }
+    if (!key) return; // the frame is already on the phones; nothing describes it
     const reply = await callSpark([
       { role: "system", content: LIVE_PROMPT },
       {
@@ -745,16 +762,15 @@ async function describeLive(jpeg: Buffer, heardAt: number): Promise<void> {
       lastLive = text;
       const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
       recordStaged({ at: Date.now(), kind: "live", text, stages }, { ms, photo });
-    } else {
-      broadcast({ kind: "live", text: "", ms, photo });
     }
     console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · ${text}`);
   } catch (error) {
-    broadcast({ kind: "live", text: "", photo });
     console.error(`[live] failed: ${(error as Error).message.slice(0, 200)}`);
   } finally {
-    liveBusySince = 0;
-    setTimeout(requestLiveFrame, LIVE_GAP_MS);
+    liveDescribing = false;
+    const next = liveNext;
+    liveNext = undefined;
+    if (next && status.live) void describeLive(next.jpeg, next.at);
   }
 }
 
@@ -771,6 +787,7 @@ function setLive(on: boolean): void {
   if (on && status.mode === "mic") setMode("camera");
   lastLive = "";
   liveBusySince = 0;
+  liveNext = undefined;
   setStatus({ live: on });
   if (on) requestLiveFrame();
 }
@@ -1029,7 +1046,7 @@ function serveDevice(socket: Duplex, remote: string | undefined): void {
         }
       } else if (frame.type === "J") {
         const jpeg = Buffer.from(frame.payload);
-        if (status.live) void describeLive(jpeg, Date.now());
+        if (status.live) onLiveFrame(jpeg, Date.now());
         else {
           console.log(`[clip] photo ${Math.round(jpeg.length / 1024)} KB`);
           void onScreen(jpeg, Date.now());
@@ -1265,6 +1282,21 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
       });
       const code = out.ok ? 200 : out.reason === "unknown-kind" ? 400 : out.reason === "record-only" || out.reason === "no-turns" ? 409 : 502;
       res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(out));
+    } else if (req.method === "POST" && req.url === "/ask") {
+      // Chat with Lente: one question with the conversation so far, answered from the memory with its sources.
+      const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown };
+      const out = key
+        ? await ask(
+            { question: body.question, history: body.history, meetings: meetings.list(), day: day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
+            async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
+          ).catch((error: Error) => {
+            console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
+            return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
+          })
+        : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
+      if (out.ok) console.log(`[ask] ${out.ms} ms · ${out.found ? out.sources.length + " fuentes" : "no encontrado"}`);
+      res.writeHead(out.ok ? 200 : out.reason === "empty-question" ? 400 : 502, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
     } else if (req.method === "POST" && req.url === "/narrated") {
       const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };

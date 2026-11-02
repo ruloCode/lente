@@ -65,4 +65,24 @@ export class DayLog {
   since(at: number): DayEntry[] {
     return this.entries.filter((e) => e.at >= at);
   }
+
+  /** Today and the `days - 1` days before it, oldest first, read from their files. */
+  recent(days: number, now = Date.now()): DayEntry[] {
+    const out: DayEntry[] = [];
+    for (let back = days - 1; back >= 1; back--) {
+      const file = join(this.dir, `${dayKey(now - back * DAY_MS)}.jsonl`);
+      if (!existsSync(file)) continue;
+      for (const line of readFileSync(file, "utf8").split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          out.push(JSON.parse(line) as DayEntry);
+        } catch {
+          // Same as the constructor: a broken line is skipped.
+        }
+      }
+    }
+    return out.concat(this.entries);
+  }
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
