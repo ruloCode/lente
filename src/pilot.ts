@@ -39,6 +39,8 @@ import { type AuthMode, decideUpgrade, decideWeb } from "./access-gate.ts";
 import { type Identity, type IdentitySources, identify } from "./identify.ts";
 import { UserAuth } from "./user-auth.ts";
 import { FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
+import { Accounts, CLOSED_TEST_MESSAGE, FileAccountStore, JsonFile, parseAllowList } from "./accounts.ts";
+import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -223,12 +225,39 @@ const userAuth = SUPABASE_URL ? new UserAuth(SUPABASE_URL) : undefined;
 const AUTH_MODE: AuthMode = userAuth ? "accounts" : auth ? "pairing" : "open";
 /** Accounts mode: each user's clips, desktops and MCP clients, by token hash. */
 const userDevices = userAuth ? new UserDevices(new FileDeviceStore(join(DATA_DIR, "user-devices.json"))) : undefined;
+/** Accounts mode: a KEK that opens its canary, and accounts only for the allow list. */
+const accounts = userAuth ? await openAccounts() : undefined;
+
+async function openAccounts(): Promise<Accounts> {
+  try {
+    const keks = keksFromEnv(process.env);
+    const canaries = new JsonFile<Record<string, string>>(join(DATA_DIR, "kek-canaries.json"), () => ({}));
+    await checkKekAtStart(keks, {
+      read: async (version) => (canaries.read()[version] ? Buffer.from(canaries.read()[version]!, "base64") : undefined),
+      write: async (version, sealed) => canaries.write({ ...canaries.read(), [version]: sealed.toString("base64") }),
+    });
+    const allowed = parseAllowList(process.env.LENTE_ALLOWED_EMAILS);
+    if (allowed.size === 0) console.warn("LENTE_ALLOWED_EMAILS is empty: nobody can open an account.");
+    return new Accounts(new FileAccountStore(join(DATA_DIR, "accounts.json")), keks, allowed);
+  } catch (error) {
+    console.error(`Accounts cannot start: ${(error as Error).message}`);
+    process.exit(1);
+  }
+}
+
+/** Accounts mode: the refusal for a caller outside the allow list or without an account, if any. */
+async function refusal(who: Identity | undefined): Promise<string | undefined> {
+  if (!accounts || !who) return undefined;
+  const admission = await accounts.admit(who.userId, who.email);
+  if (admission.ok) return undefined;
+  return JSON.stringify({ error: admission.reason, message: admission.reason === "closed_test" ? CLOSED_TEST_MESSAGE : "Inicia sesión de nuevo." });
+}
 const identitySources: IdentitySources = {
   mode: AUTH_MODE,
   cookieName: SESSION_COOKIE,
   pairedSession: (cookie) => Boolean(auth?.checkSession(cookie)),
   knownDevice: (token) => Boolean(auth?.checkDevice(token)),
-  verifyAccessToken: async (token) => (await userAuth!.verify(token)).userId,
+  verifyAccessToken: (token) => userAuth!.verify(token),
   deviceUser: (token) => userDevices!.resolve(token),
 };
 /** Who each admitted request acts for; read by the routes once the hub keeps one runtime per user. */
@@ -1162,6 +1191,11 @@ function healthReport() {
 async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const path = req.url?.split("?")[0];
   const who = await identify({ authorization: req.headers.authorization, cookie: req.headers.cookie, url: req.url }, identitySources, "web");
+  const refused = path === "/health" ? undefined : await refusal(who);
+  if (refused) {
+    res.writeHead(403, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(refused);
+    return true;
+  }
   if (who) requestIdentity.set(req, who);
   switch (decideWeb({ method: req.method, path, plainHttp: plainHttp(req), identified: Boolean(who) }, AUTH_MODE)) {
     case "health": {
@@ -1366,6 +1400,7 @@ web.on("upgrade", async (req, raw, head) => {
     console.error(`[device] could not check the connection's credentials: ${(error as Error).message}`);
     return void raw.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
   }
+  if (await refusal(who).catch(() => "unavailable")) return void raw.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
   if (who) requestIdentity.set(req, who);
   const status = decideUpgrade({ path: req.url?.split("?")[0], plainHttp: plainHttp(req), identified: Boolean(who) }, DEVICE_WS_PATH, AUTH_MODE);
   const refusals: Record<number, string> = { 401: "Unauthorized", 404: "Not Found", 426: "Upgrade Required" };

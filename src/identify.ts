@@ -13,6 +13,8 @@ export interface Identity {
   /** How the caller proved who they are; `device` carries the device id for `last_seen_at` and the audit trail. */
   via: "owner" | "pairing" | "bearer" | "cookie" | "device";
   deviceId?: string;
+  /** From the access token only: the allow list is checked against it. */
+  email?: string;
 }
 
 export interface IdentitySources {
@@ -23,8 +25,8 @@ export interface IdentitySources {
   pairedSession?: (cookie: string) => boolean;
   /** Pairing mode: the token belongs to a device that has not been revoked. */
   knownDevice?: (token: string) => boolean;
-  /** Accounts mode: the user id of a valid access token; throws on any invalid token. */
-  verifyAccessToken?: (token: string) => Promise<string>;
+  /** Accounts mode: the user of a valid access token; throws on any invalid token. */
+  verifyAccessToken?: (token: string) => Promise<{ userId: string; email?: string }>;
   /** Accounts mode: the user of a live web session cookie. */
   sessionUser?: (cookie: string) => Promise<string | undefined>;
   /** Accounts mode: the user and device id of a device token that has not been revoked. */
@@ -67,7 +69,8 @@ export async function identify(creds: Credentials, sources: IdentitySources, sur
   if (bearer) {
     if (looksLikeJwt(bearer)) {
       try {
-        return { userId: await sources.verifyAccessToken!(bearer), via: "bearer" };
+        const { userId, email } = await sources.verifyAccessToken!(bearer);
+        return email === undefined ? { userId, via: "bearer" } : { userId, via: "bearer", email };
       } catch {
         return undefined;
       }

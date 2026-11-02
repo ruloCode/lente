@@ -11,7 +11,7 @@ const accounts: IdentitySources = {
   mode: "accounts",
   cookieName: "lente_session",
   verifyAccessToken: async (t) => {
-    if (t === JWT_ALICE) return ALICE;
+    if (t === JWT_ALICE) return { userId: ALICE, email: "alice@example.com" };
     throw new Error("bad signature");
   },
   sessionUser: async (c) => (c === "sess-bob" ? BOB : undefined),
@@ -33,8 +33,8 @@ test("pairing mode keeps today's rules: a paired cookie on the web, a device tok
 });
 
 test("accounts mode: a valid bearer token acts for its user, on the web and on /device", async () => {
-  assert.deepEqual(await identify({ authorization: `Bearer ${JWT_ALICE}` }, accounts, "web"), { userId: ALICE, via: "bearer" });
-  assert.deepEqual(await identify({ authorization: `Bearer ${JWT_ALICE}` }, accounts, "device"), { userId: ALICE, via: "bearer" });
+  assert.deepEqual(await identify({ authorization: `Bearer ${JWT_ALICE}` }, accounts, "web"), { userId: ALICE, via: "bearer", email: "alice@example.com" });
+  assert.deepEqual(await identify({ authorization: `Bearer ${JWT_ALICE}` }, accounts, "device"), { userId: ALICE, via: "bearer", email: "alice@example.com" });
 });
 
 test("accounts mode: an invalid bearer token is no one, even with a valid session cookie alongside", async () => {
