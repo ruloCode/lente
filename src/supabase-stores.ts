@@ -25,7 +25,7 @@ import { open, seal } from "./seal.ts";
 import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Meetings, Profile, Tasks, Traces, UsageStore } from "./stores.ts";
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
 import { type UsageSnapshot, priceTokens } from "./usage-meter.ts";
-import type { DeviceRecord } from "./user-devices.ts";
+import { AGENT_SCOPES, type AgentScope, type DeviceRecord } from "./user-devices.ts";
 import type { SessionRow, SessionStore } from "./web-session.ts";
 
 type Db = ReturnType<SupabaseRest["forUser"]>;
@@ -697,6 +697,7 @@ export class SupabaseDevices implements DeviceStore {
 
   private static record(r: Row): DeviceRecord {
     const device: DeviceRecord = { id: String(r.id), userId: String(r.user_id), kind: r.kind as DeviceRecord["kind"], label: String(r.label), tokenHash: fromBytea(r.token_hash).toString("hex"), createdAt: msOf(r.created_at) };
+    if (Array.isArray(r.scopes) && r.scopes.length) device.scopes = r.scopes.filter((s): s is AgentScope => AGENT_SCOPES.includes(s as AgentScope));
     const seen = msOrUndefined(r.last_seen_at);
     const revoked = msOrUndefined(r.revoked_at);
     if (seen !== undefined) device.lastSeenAt = seen;
@@ -705,7 +706,7 @@ export class SupabaseDevices implements DeviceStore {
   }
 
   async insert(d: DeviceRecord): Promise<void> {
-    await this.rest.forUser(d.userId).insert("devices", [{ id: d.id, kind: d.kind, label: d.label, token_hash: toBytea(Buffer.from(d.tokenHash, "hex")), created_at: iso(d.createdAt) }]);
+    await this.rest.forUser(d.userId).insert("devices", [{ id: d.id, kind: d.kind, label: d.label, token_hash: toBytea(Buffer.from(d.tokenHash, "hex")), scopes: d.scopes ?? [], created_at: iso(d.createdAt) }]);
   }
 
   async listFor(userId: string): Promise<DeviceRecord[]> {

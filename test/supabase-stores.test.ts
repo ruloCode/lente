@@ -171,6 +171,12 @@ test("devices on Supabase: create, resolve across users by hash, revoke scoped t
   assert.equal(await devices.revoke(BOB, made.id), false);
   assert.equal(await devices.revoke(ALICE, made.id), true);
   assert.equal(await devices.resolve(made.token), undefined);
+
+  // An agent token keeps its scopes in the row (add-agent-bridge).
+  const agent = await devices.create(ALICE, "mcp", "Claude Code", ["read", "tasks.write"]);
+  assert.deepEqual(fake.tables.get("devices")!.find((r) => r.id === agent.id)!.scopes, ["read", "tasks.write"]);
+  assert.deepEqual((await devices.resolveAgent(agent.token))?.scopes, ["read", "tasks.write"]);
+  assert.equal(await devices.resolveAgent(made.token), undefined);
 });
 
 test("accounts and the KEK canary on Supabase: the wrapped key and canary open with the KEK only", async () => {

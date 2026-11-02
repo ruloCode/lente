@@ -93,3 +93,36 @@ test("the file store keeps devices across restarts and never the token", async (
   await again.revoke(ALICE, made.id);
   assert.equal(await new UserDevices(new FileDeviceStore(file)).resolve(made.token), undefined);
 });
+
+test("agent tokens (add-agent-bridge): read by default, scopes only when asked, unknown scopes refused", async () => {
+  const { devices } = setup();
+  const reader = await devices.create(ALICE, "mcp", "Claude Code");
+  assert.deepEqual(reader.scopes, ["read"]);
+  const writer = await devices.create(ALICE, "mcp", "Cursor", ["tasks.write", "read"]);
+  assert.deepEqual(writer.scopes, ["read", "tasks.write"], "kept in canonical order");
+  assert.deepEqual((await devices.create(ALICE, "mcp", "Puente", "agent.run")).scopes, ["agent.run"]);
+  await assert.rejects(devices.create(ALICE, "mcp", "x", ["read", "admin"]), /unknown scope admin/);
+  await assert.rejects(devices.create(ALICE, "mcp", "x", []), /at least one scope/);
+  await assert.rejects(devices.create(ALICE, "clip", "x", ["read"]), /only agent/);
+  assert.deepEqual((await devices.create(ALICE, "clip", "Clip")).scopes, []);
+
+  assert.deepEqual(await devices.resolveAgent(writer.token), { userId: ALICE, deviceId: writer.id, label: "Cursor", scopes: ["read", "tasks.write"] });
+  await devices.revoke(ALICE, writer.id);
+  assert.equal(await devices.resolveAgent(writer.token), undefined, "revoked");
+});
+
+test("a clip's token is not an agent token", async () => {
+  const { devices } = setup();
+  const clip = await devices.create(ALICE, "clip", "Clip");
+  assert.equal(await devices.resolveAgent(clip.token), undefined);
+  assert.equal(await devices.resolveAgent("not-a-token"), undefined);
+});
+
+test("POST /devices takes scopes for an agent token and answers 400 for an unknown one", async () => {
+  const { devices } = setup();
+  const ok = await deviceRoute(devices, ALICE, "POST", "/devices", JSON.stringify({ kind: "mcp", label: "Codex", scopes: ["read", "tasks.write"] }));
+  assert.equal(ok?.status, 201);
+  assert.deepEqual((ok?.json as { scopes: string[] }).scopes, ["read", "tasks.write"]);
+  const bad = await deviceRoute(devices, ALICE, "POST", "/devices", JSON.stringify({ kind: "mcp", label: "Codex", scopes: ["root"] }));
+  assert.equal(bad?.status, 400);
+});
