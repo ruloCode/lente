@@ -65,10 +65,12 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 
 ## 6. Many wearers on one hub
 
-- [ ] 6.1 `WearerRuntime`: move the live state out of `pilot.ts` (clip link, ASR session, meeting, idle pause, silence gate, SSE clients, usage meter, live view) into one runtime per user, created on first use and evicted after 30 minutes idle with its writes flushed and its DEK dropped; tests for two users whose events never cross (`pnpm test`)
+- [x] 6.1 `WearerRuntime`: move the live state out of `pilot.ts` (clip link, ASR session, meeting, idle pause, silence gate, SSE clients, usage meter, live view) into one runtime per user, created on first use and evicted after 30 minutes idle with its writes flushed and its DEK dropped; tests for two users whose events never cross (`pnpm test`)
+  - Checked: `pnpm smoke` passes unchanged (14.5 s), the laptop and pairing hubs answer every probed route as before, and `test/wearers.test.ts` runs two signed-in users on one hub with streams that never cross.
 - [ ] 6.2 `LENTE_MAX_LISTENING`: past the cap, starting to listen answers busy with a clear message; test (`pnpm test`)
 - [ ] 6.3 Spend cap per user: `usage_daily` and a monthly cap that pauses listening with a note on the phone. Set the default from the measured cost of one hour of listening. Record that figure and the database bytes per hour of listening in `docs/benchmarks.md`, and from the bytes, how many hours fit before the Free plan's 70 % mark
 - [ ] 6.4 Capacity: simulated clips streaming test speech against the Modal hub; record how many listening users one container holds before the transcript lags, and set `LENTE_MAX_LISTENING` from it [key:MODAL_TOKEN_ID]
+- [ ] 6.5 Runtime on the sealed stores: in accounts mode a runtime opens its user's Supabase stores (`openUserStores`) instead of files, with every store call awaited; the profile is rewritten when a meeting closes (5.1), the nightly digests start with the runtime (5.2), and `/ask` uses the tiers (5.3). The laptop keeps its files and the 7-day window. Tests with a fake PostgREST served over HTTP (`pnpm test`); `pnpm smoke` unchanged
 
 ## 7. Android app
 

@@ -239,6 +239,8 @@ The decision "Memory as files and long context, not RAG" becomes "long context i
 - HTTP routes and sockets look up the runtime by `userId`.
 - In laptop mode there is one runtime for the owner.
 
+**How it is built.** `createWearerRuntime(userId, dataDir)` in `src/pilot.ts` holds what was module state; its repeating jobs are registered so eviction can clear them. `src/wearer-registry.ts` creates runtimes on first use, evicts them after 30 minutes with no phone following, no device, nothing listening and no meeting open, closes them (stop transcription, flush usage and recorded time, end the streams) and then drops the user's data key. The laptop's and a pairing hub's single owner (`local-owner`) is created at start, kept in `DATA_DIR` as before, and pinned. Until task 6.5 moves an account's runtime onto the sealed Supabase stores, it keeps its files under `DATA_DIR/users/<uuid>/`; accounts mode runs nowhere without keys, so nothing is stored that way in practice.
+
 **Limits.**
 - The container stays at one (`max_containers=1`).
 - A configurable cap on users listening at once (`LENTE_MAX_LISTENING`) answers "busy" past it.
