@@ -12,7 +12,7 @@ const files = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
 const migrations = files.map((f) => readFileSync(new URL(f, DIR), "utf8")).join("\n");
 
 /** The tables the design's schema names (search_terms only with group 10). */
-const DESIGN_TABLES = ["accounts", "user_keys", "kek_canaries", "sessions", "devices", "meetings", "meeting_turns", "meeting_notes", "day_entries", "facts", "tasks", "agent_actions", "agent_traces", "chat_messages", "memory_digests", "glossary", "usage_daily", "audit_events"];
+const DESIGN_TABLES = ["accounts", "user_keys", "kek_canaries", "sessions", "devices", "meetings", "meeting_turns", "meeting_notes", "day_entries", "facts", "tasks", "agent_actions", "agent_traces", "chat_messages", "memory_digests", "glossary", "usage_daily", "audit_events", "projects", "meeting_projects"];
 
 /** Comments out, whitespace folded, lowercased: the checks read statements, not prose. */
 const normalize = (text: string): string => text.replace(/--[^\n]*/g, "").replace(/\s+/g, " ").toLowerCase();

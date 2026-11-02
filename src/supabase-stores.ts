@@ -19,6 +19,8 @@ import type { GlossaryEntry } from "./language-profile.ts";
 import type { Meeting, MeetingTurn, Notes, ProposedFact } from "./meetings.ts";
 import { parseNames } from "./addressing.ts";
 import type { AssistMode } from "./profile.ts";
+import type { ProjectStore } from "./project-store.ts";
+import type { Project } from "./projects.ts";
 import { open, seal } from "./seal.ts";
 import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Meetings, Profile, Tasks, Traces, UsageStore } from "./stores.ts";
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
@@ -747,6 +749,73 @@ export class SupabaseSessions implements SessionStore {
   }
 }
 
+/** Projects (add-projects): sealed names, and a link from a meeting's row to its project's. */
+export class SupabaseProjects implements ProjectStore {
+  private readonly db: Db;
+  private readonly s: Sealer;
+  private readonly index: MeetingIndex;
+
+  constructor(db: Db, sealer: Sealer, index: MeetingIndex) {
+    this.db = db;
+    this.s = sealer;
+    this.index = index;
+  }
+
+  async list(): Promise<Project[]> {
+    const rows = await this.db.select<Row>(this.db.query("projects").order("created_at"), "id,name_enc,status,created_at");
+    return rows.map((r) => ({ id: String(r.id), name: this.s.openJson<string>("projects", "name_enc", String(r.id), r.name_enc), status: r.status as Project["status"], createdAt: msOf(r.created_at) }));
+  }
+
+  async create(name: string, now: number): Promise<Project> {
+    const id = randomUUID();
+    await this.db.insert("projects", [{ id, name_enc: this.s.json("projects", "name_enc", id, name), status: "active", created_at: iso(now) }]);
+    return { id, name, status: "active", createdAt: now };
+  }
+
+  async rename(id: string, name: string): Promise<boolean> {
+    if (!isUuid(id)) return false;
+    return (await this.db.update(this.db.query("projects").eq("id", id), { name_enc: this.s.json("projects", "name_enc", id, name) })).length > 0;
+  }
+
+  async setStatus(id: string, status: Project["status"]): Promise<boolean> {
+    if (!isUuid(id)) return false;
+    return (await this.db.update(this.db.query("projects").eq("id", id), { status })).length > 0;
+  }
+
+  async assignments(): Promise<Map<string, string>> {
+    const links = await this.db.select<Row>(this.db.query("meeting_projects"), "meeting_id,project_id");
+    if (links.length === 0) return new Map();
+    const meetings = await this.db.select<Row>(this.db.query("meetings"), "id,legacy_id");
+    const legacy = new Map(meetings.map((m) => [String(m.id), String(m.legacy_id)]));
+    const out = new Map<string, string>();
+    for (const l of links) {
+      const app = legacy.get(String(l.meeting_id));
+      if (app) out.set(app, String(l.project_id));
+    }
+    return out;
+  }
+
+  async assign(meetingId: string, projectId: string | null): Promise<void> {
+    const uuid = await this.index.uuidOf(meetingId);
+    if (!uuid) throw new Error(`no meeting ${meetingId}`);
+    if (projectId === null) {
+      await this.db.remove(this.db.query("meeting_projects").eq("meeting_id", uuid));
+      return;
+    }
+    if (!isUuid(projectId) || (await this.db.select(this.db.query("projects").eq("id", projectId).limit(1), "id")).length === 0) throw new Error(`no project ${projectId}`);
+    await this.db.insert("meeting_projects", [{ meeting_id: uuid, project_id: projectId }], { upsertOn: "meeting_id" });
+  }
+
+  async merge(from: string, to: string): Promise<number> {
+    if (from === to || !isUuid(from) || !isUuid(to)) return 0;
+    const ids = new Set((await this.list()).map((p) => p.id));
+    if (!ids.has(from) || !ids.has(to)) return 0;
+    const moved = await this.db.update(this.db.query("meeting_projects").eq("project_id", from), { project_id: to });
+    await this.setStatus(from, "archived");
+    return moved.length;
+  }
+}
+
 export class SupabaseAccounts implements AccountStore {
   private readonly rest: SupabaseRest;
 
@@ -798,6 +867,7 @@ export async function openUserStores(rest: SupabaseRest, userId: string, dek: Bu
     language,
     usage: new SupabaseUsage(db),
     digests: new SupabaseDigests(db, sealer),
+    projects: new SupabaseProjects(db, sealer, index),
     /** Waits for the written-behind settings (eviction flushes before dropping the key). */
     flush: async () => {
       await Promise.all([profile.flush(), language.flush()]);

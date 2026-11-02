@@ -21,6 +21,8 @@ export const DELETE_ORDER = [
   "agent_traces",
   "chat_messages",
   "memory_digests",
+  "meeting_projects",
+  "projects",
   "glossary",
   "usage_daily",
   "audit_events",
@@ -45,6 +47,8 @@ export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buf
   for (const scope of ["profile", "day", "week", "month"] as const) digests.push(...(await stores.digests.latest(scope, 10_000)));
   await section("digests", digests);
   await section("glossary", stores.language.glossary);
+  const assigned = await stores.projects.assignments();
+  await section("projects", (await stores.projects.list()).map((p) => ({ ...p, meetings: [...assigned].filter(([, id]) => id === p.id).map(([m]) => m) })));
   await section("day", await stores.day.entriesBetween(0, now + 1));
   const devices = await db.select<Record<string, unknown>>(db.query("devices").order("created_at"), "id,kind,label,created_at,last_seen_at,revoked_at");
   await section("devices", devices);
