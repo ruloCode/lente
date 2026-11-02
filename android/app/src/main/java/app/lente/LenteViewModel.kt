@@ -40,11 +40,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 
 /** Where the wearer is. Reunion carries the meeting and, optionally, the turn to show. */
+/** How long the record sheet waits for the phone to connect as the device. */
+private const val PHONE_READY_MS = 8_000L
+
 sealed interface Screen {
     data object Ahora : Screen
     data object Reuniones : Screen
@@ -239,7 +244,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         chat.value = before + asked + waiting
-        post("/ask", ChatJson.request(q, before)) { a ->
+        post("/ask", ChatJson.request(q, before).apply { chatProject.value?.let { put("project", it) } }) { a ->
             val reply = runCatching { ChatJson.answer(waiting.id, a.text) }.getOrNull()
                 ?: ChatLine(waiting.id, false, when {
                     a.code == 404 -> "Este hub todavía no tiene el chat: actualízalo para preguntarle a Lente."
@@ -480,9 +485,29 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- The phone as the device ------------------------------------------------------------
 
-    fun startPhone() {
+    fun startPhone(camera: Boolean = true) {
         val base = client?.base ?: return
-        viewModelScope.launch { CaptureService.start(getApplication(), base, prefs.cookie, account.accessToken()) }
+        viewModelScope.launch { CaptureService.start(getApplication(), base, prefs.cookie, account.accessToken(), camera) }
+    }
+
+    /** The project the chat asks within; null is the whole memory (add-record-sheet). */
+    val chatProject = MutableStateFlow<String?>(null)
+
+    /**
+     * Starts a recording from the sheet: the phone first when the clip is absent (and waits for the hub
+     * to see it), then a meeting in the chosen project, then listening.
+     */
+    fun record(project: String?, camera: Boolean, title: String, usePhone: Boolean) = viewModelScope.launch {
+        val c = client ?: return@launch say("No hay hub conectado: revisa Ajustes.")
+        if (usePhone) {
+            startPhone(camera)
+            if (withTimeoutOrNull(PHONE_READY_MS) { _hub.first { it.status.clip } } == null) return@launch say("El teléfono no pudo empezar a grabar. Revisa los permisos.")
+        }
+        val body = JSONObject().put("title", title.trim())
+        project?.let { body.put("project", it) }
+        val a = c.post("/meeting/start", body)
+        if (!a.ok) return@launch failed(a, "empezar a grabar")
+        setListening(true)
     }
 
     fun stopPhone() = CaptureService.stop(getApplication())

@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import app.lente.core.RecordChoice
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,11 +71,13 @@ private enum class HomeTab(val title: String) { Inicio("Inicio"), Tareas("Tareas
  * to ask Lente and the button that listens (add-projects 2.2).
  */
 @Composable
-fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit) {
+fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, record: (project: String?, camera: Boolean, title: String) -> Unit) {
     val c = Lente.c
     val s = hub.status
     var tab by rememberSaveable { mutableStateOf(HomeTab.Inicio) }
+    var sheet by rememberSaveable { mutableStateOf(false) }
     val lines by vm.chat.collectAsState()
+    if (sheet) RecordSheet(vm, hub, onDismiss = { sheet = false }) { project, camera, title -> sheet = false; tab = HomeTab.Inicio; record(project, camera, title) }
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             DevicePill(hub) { if (hub.status.listening && hub.status.clip) vm.openLive() else vm.go(Screen.Dispositivos) }
@@ -98,14 +105,14 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
                 }
             }
         }
-        if (tab == HomeTab.Inicio && lines.isEmpty()) Suggestions(vm, s.clip) { tab = HomeTab.Inicio }
+        if (tab == HomeTab.Inicio) Suggestions(vm, s.clip, showStarters = lines.isEmpty()) { tab = HomeTab.Inicio }
         Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Composer(enabled = lines.lastOrNull()?.pending != true, modifier = Modifier.weight(1f), placeholder = "Pregúntale a Lente…") { q ->
                 tab = HomeTab.Inicio
                 vm.askLente(q)
             }
             Spacer(Modifier.width(10.dp))
-            ListenButton(vm, s.listening)
+            ListenButton(s.listening) { if (s.listening) vm.toggleListening() else sheet = true }
         }
     }
 }
@@ -162,22 +169,79 @@ private fun androidx.compose.foundation.lazy.LazyListScope.projectsOnHome(vm: Le
     }
 }
 
-/** Small suggestions above the field, in place of the option cards. */
+/**
+ * Above the field: the chat's scope (the whole memory or one project) and, before a conversation,
+ * a few suggestions in place of the option cards.
+ */
 @Composable
-private fun Suggestions(vm: LenteViewModel, clip: Boolean, onAsk: () -> Unit) {
-    val chips = buildList {
-        add("Resumen de hoy" to { onAsk(); vm.askLente("Resumen de hoy") })
-        add("¿Qué me falta?" to { onAsk(); vm.askLente("¿Qué me falta por hacer?") })
-        if (clip) add("Mirar" to { vm.look() })
-    }
+private fun Suggestions(vm: LenteViewModel, clip: Boolean, showStarters: Boolean, onAsk: () -> Unit) {
+    val c = Lente.c
+    val projects by vm.projects.collectAsState()
+    val scope by vm.chatProject.collectAsState()
+    var picking by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    val chip = Modifier.clip(shape).border(0.5.dp, c.line, shape)
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        for ((label, action) in chips) {
-            val c = Lente.c
-            val shape = RoundedCornerShape(18.dp)
-            Text(label, style = Type.callout, color = c.ink, modifier = Modifier.clip(shape).background(c.surface).border(0.5.dp, c.line, shape).clickable(onClick = action).padding(horizontal = 14.dp, vertical = 8.dp).testTag("chip-${label.lowercase().filter { it.isLetter() }}"))
+        Box {
+            Row(chip.background(if (scope != null) c.tag else c.surface).clickable { picking = true }.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).testTag("chat-scope"), verticalAlignment = Alignment.CenterVertically) {
+                Text(RecordChoice.scopeLabel(scope, projects), style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = if (scope != null) c.accent else c.ink, maxLines = 1)
+                Icon(Glyph.ChevronDown, c.muted, Modifier.padding(start = 2.dp), size = 16.dp)
+            }
+            DropdownMenu(picking, { picking = false }) {
+                DropdownMenuItem(text = { Text(RecordChoice.WHOLE_MEMORY) }, onClick = { vm.chatProject.value = null; picking = false })
+                projects.filter { it.active }.forEach { p -> DropdownMenuItem(text = { Text(p.name) }, onClick = { vm.chatProject.value = p.id; picking = false }) }
+            }
+        }
+        if (showStarters) {
+            val starters = buildList {
+                add("Resumen de hoy" to { onAsk(); vm.askLente("Resumen de hoy") })
+                add("¿Qué me falta?" to { onAsk(); vm.askLente("¿Qué me falta por hacer?") })
+                if (clip) add("Mirar" to { vm.look() })
+            }
+            for ((label, action) in starters) {
+                Text(label, style = Type.callout, color = c.ink, modifier = chip.background(c.surface).clickable(onClick = action).padding(horizontal = 14.dp, vertical = 8.dp).testTag("chip-${label.lowercase().filter { it.isLetter() }}"))
+            }
+        }
+    }
+}
+
+/**
+ * Before recording (add-record-sheet): the project, microphone only or with the camera, and an
+ * optional title. The device is the clip when it is connected, the phone otherwise.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun RecordSheet(vm: LenteViewModel, hub: HubState, onDismiss: () -> Unit, onRecord: (project: String?, camera: Boolean, title: String) -> Unit) {
+    val c = Lente.c
+    val s = hub.status
+    val projects by vm.projects.collectAsState()
+    var project by rememberSaveable { mutableStateOf<String?>(vm.chatProject.value) }
+    var camera by rememberSaveable { mutableStateOf(false) }
+    var title by rememberSaveable { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.bg) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter).padding(bottom = 24.dp).testTag("record-sheet"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Grabar", style = Type.title, color = c.ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (s.clip && s.clipIsDevice) Glyph.Device else Glyph.Phone, c.accent, size = 20.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(RecordChoice.deviceLine(s.clip, s.clip && !s.clipIsDevice), style = Type.callout, color = c.muted, modifier = Modifier.testTag("record-device"))
+            }
+            Segmented(listOf("mic" to RecordChoice.captureLabel(false), "cam" to RecordChoice.captureLabel(true)), if (camera) "cam" else "mic", { camera = it == "cam" }, label = "Qué capturar")
+            Field(title, { title = it }, "Título (opcional)", tag = "record-title")
+            // The button before the list, so it stays in reach however many projects there are.
+            Button("Empezar a grabar", { onRecord(project, camera, title) }, Modifier.fillMaxWidth().testTag("record-start"), glyph = Glyph.Mic)
+            SectionTitle("Proyecto", trailing = RecordChoice.scopeLabel(project, projects).takeIf { project != null })
+            Group {
+                val options = listOf<Pair<String?, String>>(null to RecordChoice.AUTO_PROJECT) + projects.filter { it.active }.map { it.id to it.name }
+                options.forEachIndexed { i, (id, name) ->
+                    if (i > 0) Hairline()
+                    ListRow(name, onClick = { project = id }, chevron = false, trailing = { if (project == id) Icon(Glyph.Check, c.accent, size = 20.dp) })
+                }
+            }
         }
     }
 }
@@ -219,11 +283,11 @@ private fun LiveBarRow(vm: LenteViewModel, hub: HubState) {
 
 /** The round button beside the field: starts listening, or pauses (red) while it listens. */
 @Composable
-private fun ListenButton(vm: LenteViewModel, listening: Boolean) {
+private fun ListenButton(listening: Boolean, onClick: () -> Unit) {
     val c = Lente.c
     Box(
         Modifier.size(58.dp).shadow(if (c.dark) 0.dp else 12.dp, CircleShape).clip(CircleShape).background(if (listening) c.liveFill else c.accentFill)
-            .clickable(onClick = vm::toggleListening).testTag("pill").semantics { contentDescription = if (listening) "Pausar" else "Empezar a escuchar" },
+            .clickable(onClick = onClick).testTag("pill").semantics { contentDescription = if (listening) "Pausar" else "Grabar" },
         contentAlignment = Alignment.Center,
     ) {
         // A record dot to start, as on any recorder; two bars to pause. The field's own mic is for dictation.

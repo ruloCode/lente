@@ -58,7 +58,8 @@ class CaptureService : Service() {
         val hub = intent?.getStringExtra(EXTRA_HUB) ?: return START_NOT_STICKY.also { stopSelf() }
         val cookie = intent.getStringExtra(EXTRA_COOKIE)
         val bearer = intent.getStringExtra(EXTRA_BEARER)
-        val withCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        // The camera only when the wearer chose "Micrófono y cámara" and allowed it (add-record-sheet).
+        val withCamera = intent.getBooleanExtra(EXTRA_CAMERA, true) && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or (if (withCamera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), types)
         if (!running) open(hub, cookie, bearer, withCamera)
@@ -194,10 +195,11 @@ class CaptureService : Service() {
         private const val EXTRA_HUB = "hub"
         private const val EXTRA_COOKIE = "cookie"
         private const val EXTRA_BEARER = "bearer"
+        private const val EXTRA_CAMERA = "camera"
         private const val ACTION_STOP = "app.lente.STOP_CAPTURE"
 
-        fun start(context: Context, hub: String, cookie: String?, bearer: String? = null) {
-            val intent = Intent(context, CaptureService::class.java).putExtra(EXTRA_HUB, hub).putExtra(EXTRA_COOKIE, cookie).putExtra(EXTRA_BEARER, bearer)
+        fun start(context: Context, hub: String, cookie: String?, bearer: String? = null, camera: Boolean = true) {
+            val intent = Intent(context, CaptureService::class.java).putExtra(EXTRA_HUB, hub).putExtra(EXTRA_COOKIE, cookie).putExtra(EXTRA_BEARER, bearer).putExtra(EXTRA_CAMERA, camera)
             ContextCompat.startForegroundService(context, intent)
         }
 

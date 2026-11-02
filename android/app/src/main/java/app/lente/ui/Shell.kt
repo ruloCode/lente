@@ -58,6 +58,7 @@ import app.lente.LenteViewModel
 import app.lente.Link
 import app.lente.Screen
 import app.lente.capture.Capture
+import app.lente.core.RecordChoice
 import app.lente.core.Copy
 import kotlinx.coroutines.launch
 
@@ -137,7 +138,11 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
             if (screen == Screen.Ahora) Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
                 if (link is Link.Reconnecting) Notice("Reconectando con la computadora…", Modifier.statusBarsPadding().padding(horizontal = Lente.gutter, vertical = 4.dp), tag = "reconnecting")
-                Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } })
+                Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } }, record = { project, camera, title ->
+                    // The phone records whenever the clip is absent; it needs the microphone (and the camera) first.
+                    if (!RecordChoice.usePhone(hub.status.clip, hub.status.clip && !hub.status.clipIsDevice)) vm.record(project, camera, title, usePhone = false)
+                    else askMicrophone { ok -> if (ok) vm.record(project, camera, title, usePhone = !hub.status.clip) else vm.say("Lente necesita el micrófono para grabar con el teléfono.") }
+                })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
                 TopBar(title(screen), s, onMenu = { scope.launch { drawer.open() } }, onPill = vm::toggleListening, back = if (screen is Screen.Reunion || screen is Screen.Proyecto) ({ vm.back() }) else null)
