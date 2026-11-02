@@ -17,6 +17,13 @@ const HUB_VARIABLES = [
   "BASETEN_MODEL",
   "ELEVENLABS_API_KEY",
   "ELEVENLABS_VOICE_ID",
+  // Accounts (add-accounts): Supabase, the key-encryption key and who may sign up.
+  "SUPABASE_URL",
+  "SUPABASE_SECRET_KEY",
+  "LENTE_KEK",
+  "LENTE_KEK_VERSION",
+  "LENTE_KEK_PREVIOUS",
+  "LENTE_ALLOWED_EMAILS",
 ];
 
 const values = Object.fromEntries(HUB_VARIABLES.filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
