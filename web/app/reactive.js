@@ -1,10 +1,11 @@
 // A region that redraws when store keys change, keeping the focused field (and its caret) when it
-// is redrawn: inputs carry a `data-key` so the same one can be found again.
+// is redrawn: inputs carry a `data-key` so the same one can be found again. By default the region
+// lays out as if its children were the parent's (`display: contents`).
 
 import { h } from "./dom.js";
 import { subscribe } from "./store.js";
 
-export function reactive(keys, render, { tag = "div", cls = "" } = {}) {
+export function reactive(keys, render, { tag = "div", cls = "region" } = {}) {
   const host = h(tag, { class: cls });
   const draw = () => {
     const active = document.activeElement;

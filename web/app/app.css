@@ -35,6 +35,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .i { display: inline-flex; flex: none; }
 .icon { width: 20px; height: 20px; }
 .booting { min-height: 100vh; }
+.region { display: contents; }
 
 /* --- Frame: sidebar · main · chat ------------------------------------------------------------ */
 .shell { display: grid; grid-template-columns: 248px minmax(0, 1fr) 380px; height: 100dvh; }

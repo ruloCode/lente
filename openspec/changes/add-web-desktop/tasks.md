@@ -22,9 +22,11 @@ Depends on: `add-accounts`, `add-projects`, `add-task-owners`, `add-record-sheet
 
 ## 3. Tareas and Proyectos
 
-- [ ] 3.1 Task grouping and filters as pure code with tests (`pnpm test`)
-- [ ] 3.2 Tareas: by owner or project, filters, add with owner, reassign, done and delete with undo, "Por aprobar" with previews, approve and reject, "Hechas" folded; screenshots
-- [ ] 3.3 Proyectos: active and archived, detail with tasks and meetings, rename, merge, archive and restore; screenshots
+- [x] 3.1 Task grouping and filters as pure code with tests (`pnpm test`)
+- [x] 3.2 Tareas: by owner or project, filters, add with owner, reassign, done and delete with undo, "Por aprobar" with previews, approve and reject, "Hechas" folded; screenshots
+  - 2026-11-02 on the synthetic hub: added «PROBE Tarea desde la web», moved it Tú → Lente, deleted it and pressed «Deshacer» (it stayed on the hub), opened the email proposal (editable subject and body, its two quotes) and approved it, then grouped by project.
+- [x] 3.3 Proyectos: active and archived, detail with tasks and meetings, rename, merge, archive and restore; screenshots
+  - 2026-11-02: renamed a project, merged it into another (it went to «Archivados»).
 
 ## 4. Reuniones, Memoria and Hoy
 
