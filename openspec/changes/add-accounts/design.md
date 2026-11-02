@@ -280,8 +280,8 @@ All tables are in `public`, have RLS enabled with no policy for `anon` or `authe
 | `accounts` | `user_id` PK, `display_name_enc`, `locale` (default `es-CO`), `time_zone`, `assist_mode` (`assist`/`record`), `monthly_cap_cents`, `created_at`, `deleted_at` | One per user |
 | `kek_canaries` | `kek_version int` PK, `sealed bytea`, `created_at` | No `user_id`; a fixed value sealed under each KEK version (decision 5) |
 | `user_keys` | `user_id` PK, `kek_version int`, `wrapped_dek bytea`, `created_at`, `rotated_at` | Deleted first on account deletion |
-| `sessions` | `id` PK, `user_id`, `refresh_enc`, `created_at`, `last_used_at`, `revoked_at` | Web sessions behind the hub cookie |
-| `devices` | `id` PK, `user_id`, `kind` (`clip`/`desktop`/`mcp`), `label`, `token_hash bytea unique`, `created_at`, `last_seen_at`, `revoked_at` | Index `(user_id)` |
+| `sessions` | `id` PK, `user_id`, `token_hash bytea unique`, `refresh_enc`, `created_at`, `last_used_at`, `revoked_at` | Web sessions behind the hub cookie; the cookie is a random token found by its SHA-256, never stored |
+| `devices` | `id uuid` PK, `user_id`, `kind` (`clip`/`desktop`/`mcp`), `label`, `token_hash bytea unique`, `created_at`, `last_seen_at`, `revoked_at` | Index `(user_id)` |
 | `meetings` | `id uuid` PK, `user_id`, `started_at`, `ended_at`, `status`, `end_reason`, `auto bool`, `topic`, `title_enc`, `title_generated bool`, `asked int`, `answered int`, `dropped_items int`, `legacy_id text` | Index `(user_id, started_at desc)` |
 | `meeting_turns` | PK `(meeting_id, seq)`, `user_id`, `at`, `speaker_enc`, `wearer bool`, `text_enc` | `meeting_id` cascades; index `(user_id, at)` |
 | `meeting_notes` | `meeting_id` PK, `user_id`, `body_enc` (summary, decisions, commitments, open questions as sealed JSON), `model`, `created_at` | |
@@ -298,6 +298,8 @@ All tables are in `public`, have RLS enabled with no policy for `anon` or `authe
 | `audit_events` | `id bigint identity` PK, `user_id`, `at`, `actor` (`wearer`/`device:<id>`/`agent`/`mcp:<client>`), `action`, `target_kind`, `target_id` | Never content |
 
 Migrations are plain SQL in `supabase/migrations/`, applied with the Supabase CLI or the dashboard, and a schema test checks that every table has RLS enabled and no permissive policy.
+
+Beyond RLS, every table is revoked from `anon` and `authenticated` (Supabase grants them all on new public tables by default), and rows that name a meeting carry `(meeting_id, user_id)` foreign keys to `meetings (id, user_id)`, so a row can never point at another user's meeting. Rows that outlive their meeting (facts, tasks, actions, traces, day entries) use `on delete set null (meeting_id)` (Postgres 15+).
 
 ## Risks / Trade-offs
 

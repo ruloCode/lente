@@ -3,7 +3,7 @@
 // Every read and change is scoped to the caller: another user's device answers as if it did not
 // exist. The store is an interface: a JSON file here, the `devices` table on Supabase (4.3).
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -71,7 +71,7 @@ export class UserDevices {
     const live = (await this.store.listFor(userId)).filter((d) => d.revokedAt === undefined);
     if (live.length >= DEVICES_PER_USER_MAX) throw new DeviceError(`at most ${DEVICES_PER_USER_MAX} devices; revoke one first`);
     const token = randomBytes(24).toString("base64url");
-    const device: DeviceRecord = { id: randomBytes(8).toString("hex"), userId, kind: kind as DeviceKind, label: name, tokenHash: tokenHashOf(token), createdAt: this.now() };
+    const device: DeviceRecord = { id: randomUUID(), userId, kind: kind as DeviceKind, label: name, tokenHash: tokenHashOf(token), createdAt: this.now() };
     await this.store.insert(device);
     return { ...view(device), token };
   }
