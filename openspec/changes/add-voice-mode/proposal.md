@@ -66,7 +66,10 @@ Privacy:
   - `src/voice-agent.ts`: instructions, tool specs, the loop, sentences and confirmations; pure.
   - `src/voice-tools.ts`: the tools over the runtime's stores, with short ids and the pending confirmation; pure.
   - `src/voice-wire.ts`: the Responses adapter with function calls and web search.
-  - `src/voice-session.ts`: one session's state machine over the ASR and the agent; pure apart from timers.
+  - `src/voice-session.ts`: one session's state machine over the ASR and the agent; pure.
+  - `src/voice-hub.ts` and `src/ws-voice.ts`: the socket, the ENDPOINTING transcription and the model, at the edge.
+  - `src/chat-store.ts`: the chat as threads, on files; `SupabaseChats` sealed.
+  - `Task.projectId` (inside the sealed body), so a task added by voice in a project counts there.
   - `src/asr-session.ts` takes a mode.
   - A chat store: files and Supabase.
   - `src/pilot.ts`: the `/voice` upgrade, the tools on the runtime's stores, `GET /chat/voice`.

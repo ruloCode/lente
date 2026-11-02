@@ -11,9 +11,10 @@ Depends on: `add-accounts`, `add-task-owners`, `add-record-sheet`
 
 ## 2. The session in the hub
 
-- [ ] 2.1 `AsrSession` takes the mode (`ENDPOINTING` for voice); `src/voice-session.ts`: the session over ASR events, turns, barge-in and the echo guard; unit tests (`pnpm test`)
-- [ ] 2.2 The `Chats` store (files and Supabase, sealed) and `GET /chat/voice`; tests on the fake PostgREST (`pnpm test`)
-- [ ] 2.3 `/voice` on the hub with the runtime's tools (ask, projects, tasks, record sheet, delegate) and the clip tap; tests on the stubbed hub with synthetic audio: a turn is answered, barge-in cancels the reply, a wrong token is refused, two users' sessions stay apart (`pnpm test`, `pnpm smoke`)
+- [x] 2.1 `AsrSession` takes the mode (`ENDPOINTING` for voice); `src/voice-session.ts`: the session over ASR events, turns, barge-in and the echo guard; unit tests (`pnpm test`)
+- [x] 2.2 The `Chats` store (files and Supabase, sealed) and `GET /chat/voice`; tests on the fake PostgREST (`pnpm test`)
+- [x] 2.3 `/voice` on the hub with the runtime's tools (ask, projects, tasks, record sheet, delegate) and the clip tap; tests on the stubbed hub with synthetic audio: a turn is answered, barge-in cancels the reply, a wrong token is refused, two users' sessions stay apart (`pnpm test`, `pnpm smoke`)
+  - 2026-11-02: `test/voice-hub.test.ts` runs the real hub on the stub with tones at real time: the task lands in `tasks.json` with its due hint, barge-in on a long reply stops it after one sentence, the chat keeps the session without the cut reply, no meeting opens; in accounts mode no token, a bad token and a forged signature get 401, and Alice's spoken task never reaches Bob's list or chat. Web searches are priced in today's spend as `web-search` (US$ 2.50 per 1,000). A task added by voice in a project keeps `projectId` inside its sealed body.
 
 ## 3. The app
 

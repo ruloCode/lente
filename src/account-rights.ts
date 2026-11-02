@@ -47,6 +47,7 @@ export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buf
   for (const scope of ["profile", "day", "week", "month"] as const) digests.push(...(await stores.digests.latest(scope, 10_000)));
   await section("digests", digests);
   await section("glossary", stores.language.glossary);
+  await section("chat", await stores.chats.recent(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER));
   const assigned = await stores.projects.assignments();
   await section("projects", (await stores.projects.list()).map((p) => ({ ...p, meetings: [...assigned].filter(([, id]) => id === p.id).map(([m]) => m) })));
   await section("day", await stores.day.entriesBetween(0, now + 1));

@@ -13,6 +13,11 @@ export const TOKEN_USD_PER_M: Record<string, { input: number; cached: number; ou
   "muse-wonder-1.0": { input: 4.0, cached: 0.2, output: 20.0 },
 };
 
+/** Spark's web search grounding: US$ 2.50 per 1,000 queries on top of the tokens (docs/kb/meta-api.md). */
+export const WEB_SEARCH_USD_PER_K = 2.5;
+/** Searches are kept as a model of their own whose `calls` are the queries, so usage_daily needs no new column. */
+export const WEB_SEARCH_MODEL = "web-search";
+
 export interface ModelTokens {
   calls: number;
   /** Input tokens, cached ones included (the API reports cached as a part of the input). */
@@ -36,6 +41,7 @@ export interface UsageToday extends UsageSnapshot {
 const count = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
 
 export function priceTokens(model: string, t: ModelTokens): number | undefined {
+  if (model === WEB_SEARCH_MODEL) return (t.calls * WEB_SEARCH_USD_PER_K) / 1000;
   const p = TOKEN_USD_PER_M[model];
   if (!p) return undefined;
   const cached = Math.min(t.cached, t.input);

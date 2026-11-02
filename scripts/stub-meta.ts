@@ -195,7 +195,7 @@ export const STUB_ASK_ANSWER = "Te preguntaron si la beta sale el viernes; respo
 export const STUB_WEB_URL = "https://example.org/probe";
 export const STUB_LONG_REPLY = ["Esta es la primera frase larga de prueba.", "Esta es la segunda frase larga de prueba.", "Esta es la tercera frase larga de prueba."];
 /** Pause between the long reply's sentences, so a test can interrupt it. */
-export const STUB_LONG_GAP_MS = 600;
+export const STUB_LONG_GAP_MS = 900;
 
 type VoiceInput = { role?: string; type?: string; content?: unknown; name?: string; call_id?: string; output?: string; arguments?: string }[];
 

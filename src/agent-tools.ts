@@ -36,6 +36,8 @@ export interface Task {
   due?: string;
   /** The meeting the task came from; the phone links back to it. */
   meetingId: string;
+  /** A project chosen when the task was added by hand or by voice; otherwise its meeting's project counts. */
+  projectId?: string;
   evidence: string[];
   done: boolean;
   createdAt: number;

@@ -99,9 +99,14 @@ interface TaskLike {
   /** Tasks someone else promised are followed up, not counted as the wearer's. */
   who?: "me" | "lente" | "other";
   meetingId: string;
+  projectId?: string;
   done: boolean;
   createdAt: number;
 }
+
+/** A task's own project wins; otherwise it belongs to its meeting's project. */
+export const taskInProject = (t: Pick<TaskLike, "meetingId" | "projectId">, projectId: string, projectMeetings: ReadonlySet<string>): boolean =>
+  t.projectId ? t.projectId === projectId : projectMeetings.has(t.meetingId);
 
 /** Each project with what the phone shows; active first, by last activity, newest first. */
 export function summarize(
@@ -114,7 +119,7 @@ export function summarize(
   const out = projects.map((p): ProjectSummary => {
     const own = meetings.filter((m) => assignments.get(m.id) === p.id);
     const ids = new Set(own.map((m) => m.id));
-    const open = tasks.filter((t) => !t.done && t.who !== "other" && ids.has(t.meetingId)).sort((a, b) => a.createdAt - b.createdAt);
+    const open = tasks.filter((t) => !t.done && t.who !== "other" && taskInProject(t, p.id, ids)).sort((a, b) => a.createdAt - b.createdAt);
     const last = own.reduce<number | null>((max, m) => (max === null || m.startedAt > max ? m.startedAt : max), null);
     return {
       id: p.id,

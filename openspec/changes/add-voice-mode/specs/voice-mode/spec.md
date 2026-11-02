@@ -7,7 +7,7 @@ Letting the wearer talk to Lente, hands-free, about what it knows, and have it a
 ## ADDED Requirements
 
 ### Requirement: A voice session per user
-The hub SHALL serve a WebSocket `/voice` that admits the same credentials as `/device` and runs the session in the caller's own runtime. The phone SHALL send PCM16 mono audio at 16 kHz as binary messages and control messages as JSON text. The hub SHALL send the events `listening`, `partial`, `thinking`, `reply`, `tool`, `sources`, `bargeIn`, `confirm`, `recordSheet`, `error` and `end`.
+The hub SHALL serve a WebSocket `/voice` that admits the same credentials as `/device` and runs the session in the caller's own runtime.
 
 #### Scenario: Another user's credentials
 - **WHEN** a phone opens `/voice` with no credentials, or with credentials that are not valid
@@ -16,6 +16,13 @@ The hub SHALL serve a WebSocket `/voice` that admits the same credentials as `/d
 #### Scenario: Sessions stay apart
 - **WHEN** two users each open a voice session and one of them adds a task by voice
 - **THEN** the task lands only in that user's list
+
+### Requirement: The session's messages
+The phone SHALL send PCM16 mono audio at 16 kHz as binary messages and its controls (`spoken`, `bargeIn`, `pause`, `resume`, `end`) as JSON text. The hub SHALL answer with JSON events: `listening` with the microphone in use, `state`, `partial`, `heard`, `thinking`, `reply`, `tool`, `sources`, `bargeIn`, `confirm`, `done`, `recordSheet`, `error` and `end`.
+
+#### Scenario: Back to listening
+- **WHEN** the phone reports it has spoken every sentence of the last reply
+- **THEN** the session's state goes back to listening
 
 ### Requirement: Turns end where the wearer stops
 Transcription in a voice session SHALL run in `ENDPOINTING` mode. Each `speechComplete` SHALL start one turn of the voice agent, and the session SHALL send `thinking` when it starts.

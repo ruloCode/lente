@@ -40,6 +40,8 @@ test("the session request biases transcription Spanish first, then English", () 
   assert.deepEqual(req.languageBias, ["Spanish", "English"]);
   assert.equal(req.mode, "DIARIZATION");
   assert.deepEqual(sessionRequest("k", ["English"]).languageBias, ["English"]);
+  assert.equal(sessionRequest("k").mode, "DIARIZATION", "meetings keep diarization");
+  assert.equal(sessionRequest("k", undefined, "ENDPOINTING").mode, "ENDPOINTING", "the voice session asks for endpointing");
 });
 
 const pcm = (...samples: number[]) => {

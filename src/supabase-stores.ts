@@ -5,6 +5,7 @@
 // the outward ids; rows get uuids. What the live loop reads on every frame (today's entries, the
 // profile, the glossary) is held in memory, loaded when the store opens and written behind.
 
+import { type ChatLine, type ChatThread, type Chats, groupThreads, plainRefs } from "./chat-store.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Proposal, TraceStep } from "./agent-loop.ts";
 import { type Task, type TaskPatch, applyPatch } from "./agent-tools.ts";
@@ -513,6 +514,38 @@ export class SupabaseTraces implements Traces {
   }
 }
 
+/** The chat with Lente: each line's text and sources sealed, kinds and ids of its references in the clear. */
+export class SupabaseChats implements Chats {
+  private readonly db: Db;
+  private readonly s: Sealer;
+
+  constructor(db: Db, sealer: Sealer) {
+    this.db = db;
+    this.s = sealer;
+  }
+
+  async add(lines: ChatLine[]): Promise<void> {
+    if (!lines.length) return;
+    await this.db.insert("chat_messages", lines.map((l) => {
+      const id = randomUUID();
+      return { id, thread_id: l.threadId, role: l.role, text_enc: this.s.json("chat_messages", "text_enc", id, { text: l.text, sources: l.sources, via: l.via }), refs: plainRefs(l.sources), found: null, created_at: iso(l.at) };
+    }));
+  }
+
+  /** Reads the newest lines and groups them; a thread cut by the window shows its newest lines. */
+  async recent(limit: number, maxLines = CHAT_READ_LINES): Promise<ChatThread[]> {
+    const rows = await this.db.select<Row>(this.db.query("chat_messages").order("created_at", "desc").limit(maxLines), "id,thread_id,role,text_enc,created_at");
+    const lines = rows.map((r): ChatLine => {
+      const body = this.s.openJson<{ text: string; sources: ChatLine["sources"]; via: ChatLine["via"] }>("chat_messages", "text_enc", String(r.id), r.text_enc);
+      return { threadId: String(r.thread_id), role: r.role === "lente" ? "lente" : "user", text: body.text, sources: body.sources ?? [], via: body.via ?? "text", at: msOf(r.created_at) };
+    });
+    return groupThreads(lines, limit);
+  }
+}
+
+/** Chat lines read for the recent threads. */
+const CHAT_READ_LINES = 200;
+
 // In memory, written behind --------------------------------------------------------------------------
 
 /** Writes that run after a synchronous setter; `flush()` waits for them (runtime eviction, tests). */
@@ -887,6 +920,7 @@ export async function openUserStores(rest: SupabaseRest, userId: string, dek: Bu
     usage: new SupabaseUsage(db),
     digests: new SupabaseDigests(db, sealer),
     projects: new SupabaseProjects(db, sealer, index),
+    chats: new SupabaseChats(db, sealer),
     /** Waits for the written-behind settings (eviction flushes before dropping the key). */
     flush: async () => {
       await Promise.all([profile.flush(), language.flush()]);
