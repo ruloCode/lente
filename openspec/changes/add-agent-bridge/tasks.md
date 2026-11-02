@@ -30,6 +30,7 @@ Depends on: `add-task-owners`
 
 - [x] 5.1 Android: the "Agente" token kind with its scopes, the `run_agent` card and "Que lo haga un agente" on `lente` tasks; unit tests (`pnpm android:test`) and a build (`pnpm android:build`)
 - [ ] 5.2 A screenshot of the card and the token on the phone [phone]
+  - 2026-11-02: the branch's debug build is installed on the phone (`adb install -r`, same key, data kept). Not taken: the app is signed in to the owner's real hub with real projects, and the token screen needs a signed-in account, so the capture needs the owner (or a test account on a hub with this branch).
 
 ## 6. Docs and real clients
 
