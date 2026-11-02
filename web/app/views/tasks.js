@@ -16,7 +16,7 @@ const TOOL_ICON = { draft_email: "mail", create_task: "task", create_reminder: "
 
 export function tasksView() {
   const life = lifecycle();
-  const ui = { by: "owner", project: "", owner: "", hiding: new Set(), open: "" };
+  const ui = { by: "owner", project: "", owner: "", hiding: new Set(), open: "", edits: new Map() };
   const redraw = () => emit(["tasks-ui"]);
 
   const approvals = reactive(["actions", "tasks-ui"], () => {
@@ -134,16 +134,18 @@ function approvalCard(a, ui, redraw) {
     icon("chevron", open ? "rot" : ""),
   );
   if (!open) return h("article", { class: "card approval" }, head);
-  const edits = {};
+  // Edits survive a redraw (another event arriving while the wearer types).
+  if (!ui.edits.has(a.id)) ui.edits.set(a.id, {});
+  const edits = ui.edits.get(a.id);
   const fields = h(
     "dl",
     { class: "preview-fields" },
     preview.fields.flatMap((f) => {
       const key = preview.kind === "email" && f.label === "Asunto" ? "subject" : preview.kind !== "email" && preview.editable.includes("title") && f.label !== "Fecha" && f.label !== "Para cuándo" ? "title" : null;
-      return [h("dt", {}, f.label), h("dd", {}, key ? h("input", { class: "field", value: f.value, "aria-label": f.label, oninput: (e) => (edits[key] = e.target.value) }) : f.value)];
+      return [h("dt", {}, f.label), h("dd", {}, key ? h("input", { class: "field", value: edits[key] ?? f.value, "aria-label": f.label, "data-key": `${a.id}-${key}`, oninput: (e) => (edits[key] = e.target.value) }) : f.value)];
     }),
   );
-  const body = preview.kind === "email" ? h("textarea", { class: "field mail-body", rows: "8", "aria-label": "Cuerpo del correo", oninput: (e) => (edits.body = e.target.value) }, preview.body) : preview.body ? h("p", { class: "muted" }, preview.body) : null;
+  const body = preview.kind === "email" ? h("textarea", { class: "field mail-body", rows: "8", "aria-label": "Cuerpo del correo", "data-key": `${a.id}-body`, oninput: (e) => (edits.body = e.target.value) }, edits.body ?? preview.body) : preview.body ? h("p", { class: "muted" }, preview.body) : null;
   const quotes = (a.quotes ?? []).filter((q) => q.text);
   const decide = async (decision) => {
     const res = await post("/actions/decide", { id: a.id, decision, ...(decision === "approve" ? { args: editedArgs(a.args ?? {}, edits) } : {}) });

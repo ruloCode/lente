@@ -27,6 +27,8 @@ image = (
     modal.Image.from_registry("node:22-slim", add_python="3.12")
     .add_local_file(ROOT / "package.json", "/app/package.json")
     .add_local_dir(ROOT / "src", "/app/src")
+    # The desktop web app (add-web-desktop), served by the hub at /app.
+    .add_local_dir(ROOT / "web" / "app", "/app/web/app")
     .add_local_file(ROOT / "scripts" / "hub-token.ts", "/app/scripts/hub-token.ts")
 )
 volume = modal.Volume.from_name("lente-data", create_if_missing=True)
