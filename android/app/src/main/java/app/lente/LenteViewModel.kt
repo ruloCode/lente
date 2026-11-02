@@ -22,6 +22,7 @@ import app.lente.core.TraceStep
 import app.lente.core.Voice
 import app.lente.core.effectsOf
 import app.lente.platform.Answer
+import app.lente.platform.GoogleAccount
 import app.lente.platform.HubClient
 import app.lente.platform.Prefs
 import app.lente.platform.Speech
@@ -59,6 +60,11 @@ sealed interface Link {
 
 class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
+    /** The signed-in Google account, when there is one (add-accounts 7.1); a laptop hub needs none. */
+    val account = GoogleAccount.of(app)
+
+    /** A client for a hub: the pairing cookie, and the account's bearer with one refresh after a 401. */
+    private fun hubClient(base: String) = HubClient(base, { prefs.cookie }, { account.accessToken() }, { account.refreshAfter401() }, { account.signOut() })
     private var client: HubClient? = null
     private var stream: Job? = null
 
@@ -103,7 +109,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun tryHub(input: String): String? {
         val base = HubAddress.normalize(input) ?: return "Eso no parece una dirección: escribe la IP de la computadora, por ejemplo 192.168.1.20."
         if (base.startsWith("http://") && !HubAddress.isLocal(base)) return "Sin cifrar solo en tu red: para un hub en internet escribe https://."
-        val test = HubClient(base) { prefs.cookie }
+        val test = hubClient(base)
         val health = test.health()
         if (health.code == 0) return "No pude llegar al hub en $base. Revisa que esté corriendo y en la misma red Wi-Fi."
         if (health.code !in 200..503) return "En $base responde algo que no es Lente (${health.code})."
@@ -125,7 +131,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (client != null && client?.base != base) CaptureService.stop(getApplication())
         stream?.cancel()
         _hub.value = HubState()
-        val c = HubClient(base) { prefs.cookie }
+        val c = hubClient(base)
         client = c
         _link.value = Link.Connecting
         stream = viewModelScope.launch {
@@ -370,7 +376,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startPhone() {
         val base = client?.base ?: return
-        CaptureService.start(getApplication(), base, prefs.cookie)
+        viewModelScope.launch { CaptureService.start(getApplication(), base, prefs.cookie, account.accessToken()) }
     }
 
     fun stopPhone() = CaptureService.stop(getApplication())

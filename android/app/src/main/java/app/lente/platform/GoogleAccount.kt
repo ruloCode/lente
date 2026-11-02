@@ -74,6 +74,14 @@ class GoogleAccount(private val store: SecureSession) {
     /** After a 401: refresh once; null means back to sign-in. */
     suspend fun refreshAfter401(): String? = lock.withLock { session?.let { refreshLocked(it) }?.accessToken }
 
+    companion object {
+        @Volatile private var instance: GoogleAccount? = null
+
+        /** One account for the whole app: Supabase rotates refresh tokens, so two refreshers would undo each other. */
+        fun of(context: android.content.Context): GoogleAccount =
+            instance ?: synchronized(this) { instance ?: GoogleAccount(SecureSession(context.applicationContext)).also { instance = it } }
+    }
+
     fun signOut() {
         session = null
         store.clear()

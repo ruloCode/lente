@@ -1,5 +1,6 @@
 package app.lente.platform
 
+import app.lente.core.AuthRetry
 import app.lente.core.HubEvent
 import app.lente.core.HubJson
 import app.lente.core.SseParser
@@ -33,19 +34,32 @@ sealed interface Stream {
     data class Event(val event: HubEvent) : Stream
 }
 
-/** The hub over HTTP: JSON posts up, server-sent events down. Every call names what failed. */
-class HubClient(val base: String, private val cookie: () -> String?) {
+/**
+ * The hub over HTTP: JSON posts up, server-sent events down. Every call names what failed. With a
+ * signed-in account each call carries its access token as a bearer, and a 401 refreshes once
+ * (add-accounts 7.2); a laptop hub with pairing gets the cookie alone, as before.
+ */
+class HubClient(
+    val base: String,
+    private val cookie: () -> String?,
+    private val bearer: suspend () -> String? = { null },
+    private val refresh: suspend () -> String? = { null },
+    private val signedOut: suspend () -> Unit = {},
+) {
     private val http = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     /** The event stream stays open; the hub's 15 s keep-alive keeps reads under this timeout. */
     private val stream = http.newBuilder().readTimeout(45, TimeUnit.SECONDS).build()
     private val json = "application/json".toMediaType()
 
-    private fun request(path: String) = Request.Builder().url(base + path).apply { cookie()?.let { header("Cookie", it) } }
+    private fun request(path: String, token: String? = null) = Request.Builder().url(base + path).apply {
+        cookie()?.let { header("Cookie", it) }
+        AuthRetry.header(token)?.let { (k, v) -> header(k, v) }
+    }
 
-    suspend fun get(path: String): Answer = call(request(path).get().build())
+    suspend fun get(path: String): Answer = AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).get().build()) }, signedOut)
 
     suspend fun post(path: String, body: JSONObject? = null): Answer =
-        call(request(path).post((body?.toString() ?: "").toRequestBody(json)).build())
+        AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).post((body?.toString() ?: "").toRequestBody(json)).build()) }, signedOut)
 
     private suspend fun call(req: Request): Answer = withContext(Dispatchers.IO) {
         try {
@@ -74,12 +88,19 @@ class HubClient(val base: String, private val cookie: () -> String?) {
         var backoff = FIRST_RETRY_MS
         while (true) {
             var why: String
-            val call = stream.newCall(request("/events").header("Accept", "text/event-stream").build())
+            val token = bearer()
+            val call = stream.newCall(request("/events", token).header("Accept", "text/event-stream").build())
             // A cancelled collector does not interrupt a blocking read; cancelling the call does.
             val onCancel = currentCoroutineContext()[Job]?.invokeOnCompletion { call.cancel() }
             try {
                 call.execute().use { res ->
-                    if (res.code == 401) { emit(Stream.Unpaired); return@flow }
+                    if (res.code == 401) {
+                        // A signed-in account refreshes once and reconnects; otherwise (or if that fails) back to sign-in or pairing.
+                        if (token != null && refresh() != null) throw IOException("the session was refreshed")
+                        if (token != null) signedOut()
+                        emit(Stream.Unpaired)
+                        return@flow
+                    }
                     if (!res.isSuccessful) throw IOException("the hub answered ${res.code} on /events")
                     emit(Stream.Open)
                     backoff = FIRST_RETRY_MS

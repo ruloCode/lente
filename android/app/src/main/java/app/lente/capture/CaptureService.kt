@@ -21,6 +21,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import app.lente.MainActivity
 import app.lente.R
+import app.lente.core.AuthRetry
 import app.lente.core.ClipFrames
 import app.lente.core.HubAddress
 import app.lente.core.HubCommand
@@ -56,22 +57,27 @@ class CaptureService : Service() {
         }
         val hub = intent?.getStringExtra(EXTRA_HUB) ?: return START_NOT_STICKY.also { stopSelf() }
         val cookie = intent.getStringExtra(EXTRA_COOKIE)
+        val bearer = intent.getStringExtra(EXTRA_BEARER)
         val withCamera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or (if (withCamera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), types)
-        if (!running) open(hub, cookie, withCamera)
+        if (!running) open(hub, cookie, bearer, withCamera)
         return START_NOT_STICKY
     }
 
     // open, startMicrophone and stop run on the main thread, OkHttp's thread and the microphone thread:
     // one lock, and every step checks it still belongs to the running capture.
     @Synchronized
-    private fun open(hub: String, cookie: String?, withCamera: Boolean) {
+    private fun open(hub: String, cookie: String?, bearer: String?, withCamera: Boolean) {
         running = true
         Capture.set(Capture.State.Starting)
         camera = if (withCamera) StillCamera(this) else null
         val http = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
-        val req = Request.Builder().url(HubAddress.deviceSocket(hub)).apply { cookie?.let { header("Cookie", it) } }.build()
+        val req = Request.Builder().url(HubAddress.deviceSocket(hub)).apply {
+            cookie?.let { header("Cookie", it) }
+            // A hub with accounts takes the phone as the signed-in user's device (add-accounts 7.2).
+            AuthRetry.header(bearer)?.let { (k, v) -> header(k, v) }
+        }.build()
         socket = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 synchronized(this@CaptureService) {
@@ -187,10 +193,11 @@ class CaptureService : Service() {
         private const val NOTIFICATION_ID = 7
         private const val EXTRA_HUB = "hub"
         private const val EXTRA_COOKIE = "cookie"
+        private const val EXTRA_BEARER = "bearer"
         private const val ACTION_STOP = "app.lente.STOP_CAPTURE"
 
-        fun start(context: Context, hub: String, cookie: String?) {
-            val intent = Intent(context, CaptureService::class.java).putExtra(EXTRA_HUB, hub).putExtra(EXTRA_COOKIE, cookie)
+        fun start(context: Context, hub: String, cookie: String?, bearer: String? = null) {
+            val intent = Intent(context, CaptureService::class.java).putExtra(EXTRA_HUB, hub).putExtra(EXTRA_COOKIE, cookie).putExtra(EXTRA_BEARER, bearer)
             ContextCompat.startForegroundService(context, intent)
         }
 

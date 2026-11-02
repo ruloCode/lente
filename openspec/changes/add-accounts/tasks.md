@@ -79,6 +79,7 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 - [x] 7.1 Sign in with Google: Credential Manager with the Web client ID and a hashed nonce, the ID token exchanged with Supabase Auth over OkHttp with the raw nonce, tokens kept in the Android Keystore and refreshed before they expire; pure parts tested on the JVM (`./gradlew :app:testDebugUnitTest`)
   - `core/Auth.kt` (pure, 6 JVM tests), `platform/GoogleAccount.kt`, `platform/SecureSession.kt`; the project URL, publishable key and Web client ID come from `lente.*` Gradle properties (empty leaves sign-in off). The release APK builds (3.72 MB). Wired into the screens by 7.2 to 7.4.
 - [ ] 7.2 Bearer token on every hub call and on the `/device` WebSocket; a 401 refreshes once, then returns to sign-in; e2e with the stub hub (`pnpm android:e2e`)
+  - Built (2026-11-01): `core/AuthRetry.kt`, the bearer in `HubClient` and on the capture service's `/device` socket, one shared account. Verified on the JVM against a stand-in hub (`HubClientAuthTest`, 62 of 62 Android tests). Not ticked: `pnpm android:e2e` installs on the phone and uses its microphone and camera, so it waits for the owner [phone].
 - [ ] 7.3 Account screen in Ajustes: name and email, devices with last seen and revoke, a new clip token shown once, spend this month against the cap, export, delete account with confirmation, sign out
 - [ ] 7.4 First run starts with sign-in before the introduction; the pairing code stays only for a laptop hub; verify on the phone against the Modal hub [phone]
 
