@@ -103,3 +103,13 @@ test("a local day starts at its own midnight in the user's time zone", async () 
   assert.equal(new Date(localDayStart("2026-11-01", "UTC")).toISOString(), "2026-11-01T00:00:00.000Z");
   assert.equal(localDay(localDayStart("2026-11-01", BOGOTA), BOGOTA), "2026-11-01");
 });
+
+test("an import backfills past the catch-up window, while the nightly plan still stops at it (add-hermes-import 1.2)", () => {
+  const old = "2026-03-10";
+  assert.deepEqual(planDigests({ today: "2026-11-03", daysWithData: [old], existing: [] }), [], `the nightly plan ignores days older than ${CATCH_UP_DAYS}`);
+  assert.deepEqual(planDigests({ today: "2026-11-03", daysWithData: [old], existing: [], reachDays: 400 }), [
+    { scope: "day", day: old },
+    { scope: "week", periodStart: "2026-03-09" },
+    { scope: "month", periodStart: "2026-03-01" },
+  ]);
+});

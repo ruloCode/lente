@@ -48,12 +48,13 @@ const nextMonth = (month: string): string => {
 export type DigestJob = { scope: "day"; day: string } | { scope: "week"; periodStart: string } | { scope: "month"; periodStart: string };
 
 /**
- * What is missing, oldest first: every past day with data and no digest (within the catch-up
- * window), then every finished week and month that has day digests and no digest of its own.
+ * What is missing, oldest first: every past day with data and no digest (within `reachDays`, the
+ * catch-up window by default; an import backfills further), then every finished week and month
+ * that has day digests and no digest of its own.
  */
-export function planDigests(input: { today: string; daysWithData: Iterable<string>; existing: Iterable<string> }): DigestJob[] {
+export function planDigests(input: { today: string; daysWithData: Iterable<string>; existing: Iterable<string>; reachDays?: number }): DigestJob[] {
   const have = new Set(input.existing);
-  const oldest = addDays(input.today, -CATCH_UP_DAYS);
+  const oldest = addDays(input.today, -(input.reachDays ?? CATCH_UP_DAYS));
   const days = [...new Set(input.daysWithData)].filter((d) => d < input.today && d >= oldest).sort();
   const jobs: DigestJob[] = [];
   const dayDigests = new Set([...have].filter((id) => id.startsWith("day:")).map((id) => id.slice(4)));
