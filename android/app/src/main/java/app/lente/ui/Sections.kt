@@ -1,6 +1,13 @@
 package app.lente.ui
 
+import android.app.Activity
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,6 +53,7 @@ import app.lente.BuildConfig
 import app.lente.LenteViewModel
 import app.lente.Screen
 import app.lente.capture.Capture
+import app.lente.core.Account
 import app.lente.core.Copy
 import app.lente.core.Format
 import app.lente.core.HubState
@@ -283,6 +291,7 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
     val scope = rememberCoroutineScope()
     val link by vm.link.collectAsState()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter).padding(bottom = 32.dp).testTag("ajustes")) {
+        if (vm.account.configured || vm.account.signedIn) AccountSection(vm)
         SectionTitle("Tú")
         Group {
             ListRow("Tu nombre", value = s.names.joinToString(", ").ifBlank { "sin definir" }, onClick = { editing = !editing })
@@ -336,6 +345,77 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
             Hairline(); ListRow("Modelos", hint = "Muse Voice Transcribe y Muse Spark 1.3 de Meta, en el hub")
             Hairline(); ListRow("Versión", value = BuildConfig.VERSION_NAME)
         }
+    }
+}
+
+// --- Cuenta (add-accounts 7.3) ------------------------------------------------------------------
+
+/** The account in Ajustes: who, this month's spend, the clips, a new clip token, export, delete, sign out. */
+@Composable
+fun AccountSection(vm: LenteViewModel) {
+    val c = Lente.c
+    val signedIn by vm.signedIn.collectAsState()
+    val info by vm.accountInfo.collectAsState()
+    val devices by vm.devices.collectAsState()
+    val token by vm.newClipToken.collectAsState()
+    val activity = LocalContext.current as? Activity
+    val clipboard = LocalClipboardManager.current
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(vm::exportTo) }
+    var label by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(signedIn) { if (signedIn) vm.loadAccount() }
+    // The token is shown once: leaving the screen forgets it.
+    DisposableEffect(Unit) { onDispose { vm.forgetClipToken() } }
+
+    SectionTitle("Cuenta")
+    if (!signedIn) {
+        Card {
+            Text("Entra con tu cuenta de Google para tener tu memoria en la nube, en cualquier teléfono.", style = Type.callout, color = c.muted)
+            Spacer(Modifier.height(10.dp))
+            Button("Entrar con Google", { activity?.let(vm::signIn) }, Modifier.testTag("sign-in"))
+        }
+        return
+    }
+    Group {
+        ListRow(vm.account.name.ifBlank { "Tu cuenta" }, hint = info?.email?.ifBlank { null } ?: vm.account.email.ifBlank { null })
+        info?.let {
+            Hairline(); ListRow("Gasto", hint = "Modelos y transcripción, precios de lista", value = Account.spendLine(it))
+        }
+    }
+    SectionTitle("Dispositivos")
+    Group {
+        if (devices.isEmpty()) ListRow("Sin clips todavía", hint = "Crea un token y grábalo en el clip")
+        devices.forEachIndexed { i, d ->
+            if (i > 0) Hairline()
+            ListRow(d.label, hint = if (d.revoked) "Revocado" else Account.lastSeen(d.lastSeenAt, System.currentTimeMillis()))
+            if (!d.revoked) ConfirmButton("Revocar", "Toca de nuevo para revocar", { vm.revokeDevice(d.id) }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), tag = "revoke-${d.id}")
+        }
+    }
+    Card {
+        if (token == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Field(label, { label = it }, "Nombre del clip", Modifier.weight(1f), tag = "clip-label")
+                Spacer(Modifier.width(10.dp))
+                Button("Nuevo token", { vm.newClip(label); label = "" })
+            }
+        } else {
+            Text("Token del clip. Se muestra una sola vez: cópialo ahora en el firmware del clip.", style = Type.callout, color = c.muted)
+            Text(token!!, style = Type.measured, color = c.ink, modifier = Modifier.padding(vertical = 8.dp).testTag("clip-token"))
+            Row {
+                Button("Copiar", { clipboard.setText(AnnotatedString(token!!)) })
+                Spacer(Modifier.width(10.dp))
+                Button("Listo", vm::forgetClipToken, tone = Tone.Plain)
+            }
+        }
+    }
+    SectionTitle("Tus datos")
+    Card {
+        Text("Descarga todo lo que Lente guarda de ti, o borra tu cuenta: primero se borra tu clave, y lo que quede en copias ya no se puede leer.", style = Type.callout, color = c.ink)
+        Spacer(Modifier.height(12.dp))
+        Button("Exportar mis datos", { save.launch("lente-export.json") }, tone = Tone.Plain)
+        Spacer(Modifier.height(8.dp))
+        ConfirmButton("Borrar mi cuenta", "Toca de nuevo: se borra todo, sin vuelta atrás", vm::deleteAccount, tag = "delete-account")
+        Spacer(Modifier.height(8.dp))
+        Button("Cerrar sesión", vm::signOut, tone = Tone.Plain)
     }
 }
 

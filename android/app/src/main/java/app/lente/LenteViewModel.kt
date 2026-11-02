@@ -1,12 +1,15 @@
 package app.lente
 
+import android.app.Activity
 import android.app.Application
+import android.net.Uri
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.lente.capture.Capture
 import app.lente.capture.CaptureService
+import app.lente.core.Account
 import app.lente.core.Briefing
 import app.lente.core.ChatJson
 import app.lente.core.ChatLine
@@ -25,9 +28,12 @@ import app.lente.platform.Answer
 import app.lente.platform.GoogleAccount
 import app.lente.platform.HubClient
 import app.lente.platform.Prefs
+import app.lente.platform.SignInFailed
 import app.lente.platform.Speech
 import app.lente.platform.Stream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -307,6 +313,66 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             busy.update { it - "help-$kind" }
             if (!a.ok) say(runCatching { HubJson.help(a.text).message }.getOrNull()?.ifBlank { null } ?: "No se pudo pedir la ayuda; prueba otra vez.")
         }
+    }
+
+    // --- The account (add-accounts 7.3) -----------------------------------------------------------
+
+    val signedIn = MutableStateFlow(account.signedIn)
+    val accountInfo = MutableStateFlow<Account.Info?>(null)
+    val devices = MutableStateFlow<List<Account.Device>>(emptyList())
+    /** A clip token just made: shown once, then gone when the wearer leaves the screen. */
+    val newClipToken = MutableStateFlow<String?>(null)
+
+    fun signIn(activity: Activity) = viewModelScope.launch {
+        try {
+            account.signIn(activity)
+            signedIn.value = true
+            client?.base?.let(::connect)
+            loadAccount()
+        } catch (e: SignInFailed) {
+            say(e.message ?: "No se pudo iniciar sesión.")
+        }
+    }
+
+    fun loadAccount() {
+        val c = client ?: return
+        if (!account.signedIn) return
+        viewModelScope.launch {
+            c.get("/account").let { if (it.ok) accountInfo.value = runCatching { Account.info(it.text) }.getOrNull() }
+            c.get("/devices").let { if (it.ok) devices.value = runCatching { Account.devices(it.text) }.getOrDefault(emptyList()) }
+        }
+    }
+
+    fun newClip(label: String) = post("/devices", JSONObject().put("kind", "clip").put("label", label.ifBlank { "Clip" })) {
+        if (it.ok) { newClipToken.value = Account.createdToken(it.text); loadAccount() } else failed(it, "crear el token del clip")
+    }
+
+    fun forgetClipToken() { newClipToken.value = null }
+
+    fun revokeDevice(id: String) = post("/devices/revoke", JSONObject().put("id", id)) { if (it.ok) loadAccount() else failed(it, "revocar el dispositivo") }
+
+    /** Downloads everything Lente keeps about the wearer into the file they picked. */
+    fun exportTo(uri: Uri) {
+        val c = client ?: return
+        viewModelScope.launch {
+            val a = c.get("/account/export")
+            if (!a.ok) return@launch failed(a, "exportar tus datos")
+            val wrote = withContext(Dispatchers.IO) { runCatching { getApplication<Application>().contentResolver.openOutputStream(uri)?.use { it.write(a.text.toByteArray()) } != null }.getOrDefault(false) }
+            say(if (wrote) "Tus datos se guardaron." else "No se pudo guardar el archivo.")
+        }
+    }
+
+    fun deleteAccount() = post("/account/delete", JSONObject().put("confirm", true)) {
+        if (it.ok) { signOut(); say("Tu cuenta y tu memoria se borraron.") } else failed(it, "borrar tu cuenta")
+    }
+
+    fun signOut() {
+        account.signOut()
+        signedIn.value = false
+        accountInfo.value = null
+        devices.value = emptyList()
+        newClipToken.value = null
+        client?.base?.let(::connect)
     }
 
     fun deleteAll() = post("/meetings/delete-all") { failed(it, "borrar la memoria"); if (it.ok) { facts.value = emptyList(); say("Memoria borrada.") } }

@@ -145,3 +145,17 @@ test("on the hub: export downloads the memory; delete needs confirmation, then t
   assert.deepEqual(await (await fetch(`${base}/facts`, { headers: alice })).json(), { facts: [] });
   assert.equal((db.fake.tables.get("user_keys") ?? []).filter((k) => k.user_id === ALICE).length, 1, "a fresh key for the new account");
 });
+
+test("the account summary adds this month's spend from usage_daily and shows the cap", async () => {
+  const { accountSummary } = await import("../src/account-rights.ts");
+  const fake = fakePostgrest();
+  const db = fake.rest.forUser(ALICE);
+  await db.insert("usage_daily", [
+    { day: "2026-10-31", provider: "meta", model: "m", cost_micro_usd: 9_000_000 },
+    { day: "2026-11-01", provider: "meta", model: "m", cost_micro_usd: 1_234_567 },
+    { day: "2026-11-02", provider: "meta", model: "transcription", cost_micro_usd: 100_000 },
+  ]);
+  await fake.rest.forUser(BOB).insert("usage_daily", [{ day: "2026-11-01", provider: "meta", model: "m", cost_micro_usd: 50_000_000 }]);
+  assert.deepEqual(await accountSummary(fake.rest, ALICE, "alice@example.com", 1000, Date.UTC(2026, 10, 2)), { email: "alice@example.com", spend: { month: "2026-11", usd: 1.33, capUsd: 10 } });
+  assert.equal((await accountSummary(fake.rest, ALICE, undefined, undefined, Date.UTC(2026, 10, 2))).spend.capUsd, null);
+});

@@ -52,6 +52,15 @@ export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buf
   await write("\n}\n");
 }
 
+/** What the account screen shows: who, and this month's spend against the cap (US$; the cap may be unset). */
+export async function accountSummary(rest: SupabaseRest, userId: string, email: string | undefined, capCents: number | undefined, now = Date.now()) {
+  const db = rest.forUser(userId);
+  const monthStart = new Date(now).toISOString().slice(0, 8) + "01";
+  const rows = await db.select<{ cost_micro_usd: number }>(db.query("usage_daily").gte("day", monthStart), "cost_micro_usd");
+  const spentMicro = rows.reduce((sum, r) => sum + Number(r.cost_micro_usd ?? 0), 0);
+  return { email: email ?? null, spend: { month: monthStart.slice(0, 7), usd: Math.round(spentMicro / 1e4) / 100, capUsd: capCents === undefined ? null : capCents / 100 } };
+}
+
 export interface DeleteDeps {
   /** Drops the user's key from the hub's memory and closes their runtime. */
   forgetInMemory(userId: string): Promise<void>;
