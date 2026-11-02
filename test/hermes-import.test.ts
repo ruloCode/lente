@@ -50,7 +50,7 @@ test("a colon inside a sentence or a URL does not make a speaker", () => {
   assert.deepEqual(splitSpeaker("Ana:"), { text: "Ana:" });
 });
 
-test("memories become kept facts from hermes, summary first, cut, and never duplicated", () => {
+test("memories become facts to review from hermes, summary first, cut, and never duplicated", () => {
   let n = 0;
   const id = () => `f${++n}`;
   const rows = [
@@ -59,7 +59,7 @@ test("memories become kept facts from hermes, summary first, cut, and never dupl
     { id: "c", content: "prefiere reuniones CORTAS", summary: null, created_at: "2026-06-03T10:00:00Z" },
   ];
   const facts = factsFromHermes(rows, [], id);
-  assert.deepEqual(facts.map((f) => [f.id, f.status, f.meetingId]), [["f1", "kept", "hermes"], ["f2", "kept", "hermes"]]);
+  assert.deepEqual(facts.map((f) => [f.id, f.status, f.meetingId]), [["f1", "proposed", "hermes"], ["f2", "proposed", "hermes"]]);
   assert.equal(facts[0]!.text, "Prefiere reuniones cortas");
   assert.equal(facts[1]!.text.length, 500);
   assert.equal(facts[0]!.createdAt, Date.parse("2026-06-01T10:00:00Z"));

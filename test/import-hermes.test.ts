@@ -47,14 +47,15 @@ async function setup(withAccount = true) {
   await checkKekAtStart([kek], supabaseCanaries(fake.rest));
   if (withAccount) await new Accounts(new SupabaseAccounts(fake.rest), [kek], new Set(["owner@example.com"])).admit(OWNER, "owner@example.com");
   let calls = 0;
-  const call: DigestCall = async () => (calls++, JSON.stringify({ text: "Resumen sintético del periodo.", sources: [] }));
+  const inputs: string[] = [];
+  const call: DigestCall = async (messages) => (calls++, inputs.push(JSON.stringify(messages)), JSON.stringify({ text: "Resumen sintético del periodo.", sources: [] }));
   const hermes = fakeHermes();
   const deps = { lente: fake.rest, keks: [kek], hermes, userIdFor: async (e: string) => (e === "owner@example.com" ? OWNER : undefined), call, timeZone: "America/Bogota", now: () => NOW };
-  return { fake, kek, deps, hermes, calls: () => calls };
+  return { fake, kek, deps, hermes, calls: () => calls, inputs };
 }
 
 test("the import writes meetings, kept facts, the digests of the imported days and the profile; a second run duplicates nothing", async () => {
-  const { fake, kek, deps, calls } = await setup();
+  const { fake, kek, deps, calls, inputs } = await setup();
   const dry = await importHermes("owner@example.com", deps, true);
   assert.deepEqual(dry.meetings, { read: 205, skipped: 1, written: 0 });
   assert.equal(dry.facts.read, 2);
@@ -66,17 +67,19 @@ test("the import writes meetings, kept facts, the digests of the imported days a
   assert.equal(first.meetings.written, 204);
   assert.equal(first.facts.written, 2);
   assert.equal(first.digests.written, dry.digests.planned);
-  assert.deepEqual(first.range, { from: "2026-06-10", to: "2026-08-18" });
+  assert.deepEqual(first.range, { from: "2026-06-01", to: "2026-08-18" });
 
   const stores = await openUserStores(fake.rest, OWNER, await new Accounts(new SupabaseAccounts(fake.rest), [kek], new Set()).dek(OWNER), NOW);
   const meetings = await stores.meetings.list();
   assert.equal(meetings.length, 204);
   assert.ok(meetings.every((m) => m.id.startsWith("hermes-") && m.status === "done"));
   const facts = await stores.facts.list();
-  assert.deepEqual(facts.map((f) => [f.status, f.meetingId]), [["kept", "hermes"], ["kept", "hermes"]]);
+  assert.deepEqual(facts.map((f) => [f.status, f.meetingId]), [["proposed", "hermes"], ["proposed", "hermes"]]);
   assert.ok((await stores.digests.latest("month", 10)).length >= 2);
+  assert.ok(await stores.digests.get("day", "2026-06-02"), "a day with only a memory gets its digest");
+  assert.ok(inputs.some((i) => i.includes("Recuerdo (hermes): PROBE-HERMES trabaja en Lente")), "memories reach their day's digest");
   const [profile] = await stores.digests.latest("profile", 1);
-  assert.match(profile!.text, /PROBE-HERMES trabaja en Lente/, "kept facts reach the profile");
+  assert.ok(!profile!.text.includes("PROBE-HERMES trabaja"), "memories wait for review instead of filling the profile");
   assert.ok(!fake.dump().includes("PROBE-HERMES"), "nothing readable reaches the database");
 
   const turnsBefore = fake.tables.get("meeting_turns")!.length;

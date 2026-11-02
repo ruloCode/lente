@@ -11,7 +11,7 @@ The import SHALL copy the owner's hermes meetings and memories into his Lente ac
 
 #### Scenario: First import
 - **WHEN** the owner runs the import for his email after signing in to Lente once
-- **THEN** each hermes meeting with a transcript or summary appears as a Lente meeting with its turns and notes, each memory as a kept fact, and only counts are printed
+- **THEN** each hermes meeting with a transcript or summary appears as a Lente meeting with its turns and notes, each memory as a fact to review that also feeds its day's digest, and only counts are printed
 
 #### Scenario: Running it again
 - **WHEN** the owner runs the import a second time

@@ -1,5 +1,6 @@
 // Mapping the owner's hermes-os history into Lente (add-hermes-import, design decisions 2 and 3).
-// hermes meetings become Lente meetings with turns and notes; hermes memories become kept facts.
+// hermes meetings become Lente meetings with turns and notes; hermes memories become facts to review
+// and material for the day digest of the day they were written.
 // Pure: rows in, Lente records out. Reading hermes and writing Lente happen in scripts/import-hermes.ts.
 
 import type { Fact } from "./fact-store.ts";
@@ -84,8 +85,9 @@ export function factText(row: HermesMemory): string {
 }
 
 /**
- * hermes memories as kept facts, skipping any whose text the account already has (case-insensitive),
- * so a second run adds nothing. `newId` gives each fact its row id.
+ * hermes memories as facts to review in Memoria (219 of them, kept, would fill the profile 25 times
+ * over), skipping any whose text the account already has (case-insensitive), so a second run adds
+ * nothing. `newId` gives each fact its row id.
  */
 export function factsFromHermes(rows: HermesMemory[], existing: readonly { text: string }[], newId: () => string): Fact[] {
   const seen = new Set(existing.map((f) => f.text.toLowerCase()));
@@ -95,7 +97,14 @@ export function factsFromHermes(rows: HermesMemory[], existing: readonly { text:
     if (!text || seen.has(text.toLowerCase())) continue;
     seen.add(text.toLowerCase());
     const createdAt = Date.parse(row.created_at);
-    out.push({ id: newId(), text, status: "kept", meetingId: HERMES_FACT_SOURCE, evidence: [], createdAt: Number.isFinite(createdAt) ? createdAt : 0 });
+    out.push({ id: newId(), text, status: "proposed", meetingId: HERMES_FACT_SOURCE, evidence: [], createdAt: Number.isFinite(createdAt) ? createdAt : 0 });
   }
   return out;
+}
+
+/** A memory as a line of its day's record, for the day digest only (it is not stored in the record). */
+export function memoryEntry(row: HermesMemory): { at: number; kind: "summary"; text: string } | undefined {
+  const at = Date.parse(row.created_at);
+  const text = factText(row);
+  return Number.isFinite(at) && text ? { at, kind: "summary", text: `Recuerdo (hermes): ${text}` } : undefined;
 }

@@ -1,6 +1,7 @@
 // Imports the owner's hermes-os history into his Lente account (add-hermes-import). Reads hermes's
-// `meetings` and `memories` with hermes's secret key, writes them sealed under the owner's data key,
-// then writes the day, week and month digests for the imported days and rewrites the profile.
+// `meetings` and `memories` with hermes's secret key, writes them sealed under the owner's data key
+// (memories as facts to review), then writes the day, week and month digests for the imported days,
+// memories included, and rewrites the profile.
 // Prints counts only: never a key, a title, a name or any text.
 //   node --env-file=.env scripts/import-hermes.ts --email you@example.com --dry-run
 //   node --env-file=.env scripts/import-hermes.ts --email you@example.com
@@ -12,7 +13,8 @@ import { Accounts } from "../src/accounts.ts";
 import { completeChat } from "../src/chat.ts";
 import { type DigestCall, digestId, writeProfile } from "../src/digests.ts";
 import { keptFacts } from "../src/fact-store.ts";
-import { type HermesMeeting, type HermesMemory, factsFromHermes, meetingFromHermes } from "../src/hermes-import.ts";
+import { type HermesMeeting, type HermesMemory, factsFromHermes, meetingFromHermes, memoryEntry } from "../src/hermes-import.ts";
+import type { DayEntry } from "../src/day-log.ts";
 import { checkKekAtStart, keksFromEnv } from "../src/kek-check.ts";
 import type { Meeting } from "../src/meetings.ts";
 import { localDay, localDayStart, planDigests, runDigests } from "../src/nightly.ts";
@@ -80,7 +82,8 @@ export async function importHermes(email: string, deps: ImportDeps, dryRun: bool
   const hermesMemories = await readAll<HermesMemory>(deps.hermes, "memories", "id,content,summary,created_at");
   const meetings = hermesMeetings.map(meetingFromHermes).filter((m): m is Meeting => m !== undefined);
   const facts = factsFromHermes(hermesMemories, await stores.facts.list(), randomUUID);
-  const days = meetings.map((m) => localDay(m.startedAt, deps.timeZone)).sort();
+  const memoryEntries = hermesMemories.map(memoryEntry).filter((e): e is NonNullable<typeof e> => e !== undefined);
+  const days = [...meetings.map((m) => m.startedAt), ...memoryEntries.map((e) => e.at)].map((at) => localDay(at, deps.timeZone)).sort();
   const today = localDay(deps.now(), deps.timeZone);
   const existing: string[] = [];
   for (const scope of ["day", "week", "month"] as const) existing.push(...(await stores.digests.latest(scope, 100_000)).map(digestId));
@@ -88,7 +91,7 @@ export async function importHermes(email: string, deps: ImportDeps, dryRun: bool
   const jobs = planDigests({ today, daysWithData: days, existing, reachDays });
   const report: ImportReport = {
     meetings: { read: hermesMeetings.length, skipped: hermesMeetings.length - meetings.length, written: 0 },
-    facts: { read: hermesMemories.length, written: 0, keptChars: [...keptFacts(await stores.facts.list()), ...facts].reduce((n, f) => n + f.text.length + 3, 0) },
+    facts: { read: hermesMemories.length, written: 0, keptChars: keptFacts([...(await stores.facts.list()), ...facts]).reduce((n, f) => n + f.text.length + 3, 0) },
     digests: { planned: jobs.length, written: 0 },
     ...(days.length ? { range: { from: days[0]!, to: days.at(-1)! } } : {}),
   };
@@ -101,12 +104,17 @@ export async function importHermes(email: string, deps: ImportDeps, dryRun: bool
   await stores.facts.insert(facts);
   report.facts.written = facts.length;
 
-  const byDay = new Map<string, Meeting[]>();
+  const meetingsOn = new Map<string, Meeting[]>();
   for (const m of meetings) {
     const d = localDay(m.startedAt, deps.timeZone);
-    byDay.set(d, [...(byDay.get(d) ?? []), m]);
+    meetingsOn.set(d, [...(meetingsOn.get(d) ?? []), m]);
   }
-  const written = await runDigests(jobs, { digests: stores.digests, loadDay: async (d) => ({ meetings: byDay.get(d) ?? [], entries: [] }), call: deps.call, now: deps.now });
+  const memoriesOn = new Map<string, DayEntry[]>();
+  for (const e of memoryEntries) {
+    const d = localDay(e.at, deps.timeZone);
+    memoriesOn.set(d, [...(memoriesOn.get(d) ?? []), e]);
+  }
+  const written = await runDigests(jobs, { digests: stores.digests, loadDay: async (d) => ({ meetings: meetingsOn.get(d) ?? [], entries: memoriesOn.get(d) ?? [] }), call: deps.call, now: deps.now });
   report.digests.written = written.length;
 
   // The profile takes the kept facts verbatim and the newest imported meetings' notes.
@@ -149,8 +157,8 @@ async function main(): Promise<void> {
     now: Date.now,
   }, dryRun);
   const r = report;
-  console.log(`${dryRun ? "Dry run (nothing written)" : "Imported"}: meetings ${r.meetings.read} read, ${r.meetings.skipped} empty, ${r.meetings.written} written · memories ${r.facts.read} read, ${r.facts.written} kept facts written · digests ${r.digests.planned} planned, ${r.digests.written} written${r.range ? ` · days ${r.range.from} to ${r.range.to}` : ""}`);
-  console.log(`Kept facts in the profile: ${r.facts.keptChars} characters (the profile's own budget is 4000).`);
+  console.log(`${dryRun ? "Dry run (nothing written)" : "Imported"}: meetings ${r.meetings.read} read, ${r.meetings.skipped} empty, ${r.meetings.written} written · memories ${r.facts.read} read, ${r.facts.written} facts to review written · digests ${r.digests.planned} planned, ${r.digests.written} written${r.range ? ` · days ${r.range.from} to ${r.range.to}` : ""}`);
+  console.log(`Kept facts in the profile: ${r.facts.keptChars} characters (the profile's own budget is 4000); imported memories wait for review in Memoria.`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
