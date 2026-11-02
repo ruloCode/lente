@@ -25,7 +25,8 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 
 - [x] 2.1 `src/seal.ts`: DEK generation, wrap and unwrap under the KEK with its version, seal and open with AES-256-GCM and the row-bound AAD; tests for round trip, tampered bytes, wrong AAD, another user's key and an unknown KEK version (`pnpm test`)
 - [x] 2.2 KEK canary: sealed at setup, checked at start; the hub refuses to start with a KEK that cannot open it; test both cases (`pnpm test`)
-- [ ] 2.3 Log guard: a test that runs a stubbed meeting through the Supabase backend and asserts no turn, title or note text appears in the hub's stdout or in any plain column (`pnpm test`)
+- [x] 2.3 Log guard: a test that runs a stubbed meeting through the Supabase backend and asserts no turn, title or note text appears in the hub's stdout or in any plain column (`pnpm test`)
+  - `test/log-guard.test.ts`: the real hub in accounts mode, the stubbed Meta API, a fake clip on the WebSocket with the user's device token and a fake PostgREST; it fails if the stubbed question, the DILO line or the meeting title shows in the hub's output or anywhere in the database outside sealed columns (checked to fail with the redaction turned off). A hub with accounts logs content only by its length, and no longer opens the raw TCP clip port, which carries no token.
 - [ ] 2.4 `scripts/rotate-kek.ts`: re-wraps every DEK under a new KEK version without touching content; verify on the project with two test accounts [key:SUPABASE_SECRET_KEY]
 
 ## 3. Identity in the hub

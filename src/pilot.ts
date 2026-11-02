@@ -132,6 +132,12 @@ const supabase = SUPABASE_URL && process.env.SUPABASE_SECRET_KEY ? new SupabaseR
 const dbHealth = supabase ? new DatabaseHealth(() => supabase.system.ping()) : undefined;
 const DB_CHECK_EVERY_MS = 60_000;
 const AUTH_MODE: AuthMode = userAuth ? "accounts" : auth ? "pairing" : "open";
+/**
+ * What was said, heard or seen, as the log may show it: in full on the owner's own hub, only its
+ * length on a hub with accounts, whose logs must never carry users' content (task 2.3).
+ */
+const LOG_CONTENT = AUTH_MODE !== "accounts";
+const said = (text: string | undefined): string => (LOG_CONTENT ? (text ?? "") : `‹${(text ?? "").length} chars›`);
 /** Accounts mode: each user's clips, desktops and MCP clients, by token hash. */
 const userDevices = userAuth ? new UserDevices(supabase ? new SupabaseDevices(supabase) : new FileDeviceStore(join(DATA_DIR, "user-devices.json"))) : undefined;
 /** Accounts mode: a KEK that opens its canary, and accounts only for the allow list. */
@@ -535,7 +541,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const timed = { ...stages, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
       recordStaged({ at: Date.now(), kind: "cue", label: "DILO", text, meaning, ms, asker, why, model: reply.model, provider: reply.provider, stages: timed }, { turnId: turn.turnId });
       device?.write("B");
-      console.log(`[cue] ${ms} ms · ${reply.provider} ${reply.model} · ${text}${meaning ? ` (${meaning})` : ""}`);
+      console.log(`[cue] ${ms} ms · ${reply.provider} ${reply.model} · ${said(text)}${meaning ? ` (${said(meaning)})` : ""}`);
     } catch (error) {
       console.error(`[cue] failed: ${(error as Error).message.slice(0, 200)}`);
     }
@@ -630,7 +636,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
       recordStaged({ at: Date.now(), kind: "cue", label: "ON SCREEN", text, ms, stages }, { photo });
       device?.write("B");
-      console.log(`[look] ${ms} ms · ${text}`);
+      console.log(`[look] ${ms} ms · ${said(text)}`);
     } catch (error) {
       broadcast({ kind: "cue", label: "PHOTO", text: "Could not read the photo", photo });
       console.error(`[look] failed: ${(error as Error).message.slice(0, 200)}`);
@@ -656,7 +662,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     if (profile.assistMode !== "assist") return { ok: false, reason: "record-only", message: HELP_REFUSALS["record-only"] };
     const stages = reply && { asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
     recordStaged({ at: Date.now(), kind: "cue", label: out.label, text: out.text, meaning: out.meaning, ms: out.ms, stages });
-    console.log(`[help] ${out.label} · ${out.ms} ms · ${out.text}${out.meaning ? ` (${out.meaning})` : ""}`);
+    console.log(`[help] ${out.label} · ${out.ms} ms · ${said(out.text)}${out.meaning ? ` (${said(out.meaning)})` : ""}`);
     return out;
   }
 
@@ -764,7 +770,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     meetings.save(current);
     syncMeeting();
     broadcastMeetings();
-    console.log(`[meeting] started ${current.id}${current.title ? ` "${current.title}"` : ""}${auto ? " (episode)" : ""}`);
+    console.log(`[meeting] started ${current.id}${current.title ? ` "${said(current.title)}"` : ""}${auto ? " (episode)" : ""}`);
   }
 
   async function endMeeting(reason: EndReason): Promise<void> {
@@ -830,7 +836,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       maxTokens: 1500,
     });
     const { items, dropped } = validateBriefing(JSON.parse(text), all, language.glossary);
-    console.log(`[briefing] "${title}" in ${Math.round(performance.now() - started)} ms · ${items.length} items from ${ids.length} meeting(s) · ${dropped} dropped`);
+    console.log(`[briefing] "${said(title)}" in ${Math.round(performance.now() - started)} ms · ${items.length} items from ${ids.length} meeting(s) · ${dropped} dropped`);
     return { title, names, at: Date.now(), remembered: ids.length > 0, items, sources: citedSources(items, all), dropped };
   }
 
@@ -931,7 +937,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       lastSummaryAt = Date.now();
       const text = reply.trim().replace(/\s+/g, " ").slice(0, 400);
       record({ at: Date.now(), kind: "summary", text }, { ms: Math.round(performance.now() - started) });
-      console.log(`[summary] ${text}`);
+      console.log(`[summary] ${said(text)}`);
     } catch (error) {
       console.error(`[summary] failed: ${(error as Error).message.slice(0, 200)}`);
     } finally {
@@ -1000,7 +1006,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
         recordStaged({ at: Date.now(), kind: "live", text, stages }, { ms, photo });
       }
-      console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · ${text}`);
+      console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · ${said(text)}`);
     } catch (error) {
       console.error(`[live] failed: ${(error as Error).message.slice(0, 200)}`);
     } finally {
@@ -1147,7 +1153,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         health.ok("transcription");
         latestPartial = "";
         if (narration.repeats(turn.text, Date.now())) {
-          console.log(`[self-voice] dropped a turn that repeats Lente's own voice: ${turn.text}`);
+          console.log(`[self-voice] dropped a turn that repeats Lente's own voice: ${said(turn.text)}`);
           return;
         }
         const stages: Stages = { heard: turn.endMs === undefined ? undefined : arrivals.at(turn.endMs), turn: Date.now() };
@@ -1172,7 +1178,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         }
         record({ at: Date.now(), kind: "turn", turnId: turn.turnId, speaker: turn.speaker, text: turn.text, question, ...anchor });
         const where = anchor.audioStartMs === undefined ? "" : ` [${anchor.audioStartMs}–${anchor.audioEndMs} ms]`;
-        console.log(`[turn] ${turn.speaker ?? "?"}: ${turn.text}${where}${question ? "  ← question" : ""}`);
+        console.log(`[turn] ${turn.speaker ?? "?"}: ${said(turn.text)}${where}${question ? "  ← question" : ""}`);
         if (question && key) void cueIfAddressed(turn, earlier, anchor.spokeAt, stages);
       },
     });
@@ -1632,10 +1638,10 @@ const lanAddresses = Object.values(networkInterfaces())
   .filter((a) => a && a.family === "IPv4" && !a.internal)
   .map((a) => a!.address);
 
-// A cloud hub takes clips over TLS WebSocket only: raw TCP carries no device token.
-if (!CLOUD) tcp.listen(DEVICE_PORT, () => console.log(`Clip port ${DEVICE_PORT} (set HUB_HOST to ${lanAddresses.join(" or ")})`));
+// A cloud hub and a hub with accounts take clips over the WebSocket only: raw TCP carries no device token.
+if (AUTH_MODE === "open") tcp.listen(DEVICE_PORT, () => console.log(`Clip port ${DEVICE_PORT} (set HUB_HOST to ${lanAddresses.join(" or ")})`));
 // A clip whose HUB_HOST went stale (new DHCP address) finds this hub by broadcast.
-if (!CLOUD) {
+if (AUTH_MODE === "open") {
   const discovery = createSocket("udp4");
   discovery.on("message", (msg, from) => {
     const reply = discoveryReply(msg, DEVICE_PORT);

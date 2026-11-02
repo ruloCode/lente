@@ -173,6 +173,8 @@ The measured size per hour of listening (task 6.3) says when the first will happ
 
 **Leak.** The plain columns tell how much a user speaks and when. That is stated in the README.
 
+**Logs.** On a hub with accounts, log lines that would quote what was said, heard, seen or titled show only its length (`‹42 chars›`); the owner's own laptop hub keeps full lines for debugging. Such a hub also takes clips only on the authenticated WebSocket: the raw TCP port and the LAN discovery stay closed, since raw TCP carries no device token.
+
 ### 7. Finding the past without searching ciphertext (version 1); a blind index only if measured misses call for it
 
 Postgres cannot search what it cannot read, so version 1 does not search words in the database.
