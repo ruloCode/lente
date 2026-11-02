@@ -39,7 +39,7 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 ## 4. Stores on Supabase
 
 - [x] 4.1 One interface per store (meetings, day log, facts, tasks, actions, traces, profile, language, usage, devices); the file stores implement it unchanged; `pnpm test` and `pnpm smoke` pass with no keys
-- [ ] 4.2 `src/supabase-rest.ts`: a `fetch` client for PostgREST and RPC with the secret key, retries on 5xx and 429, and errors that name the table and status; a query builder that requires `userId`, with a test that fails if any store method builds a query without it (`pnpm test`)
+- [x] 4.2 `src/supabase-rest.ts`: a `fetch` client for PostgREST and RPC with the secret key, retries on 5xx and 429, and errors that name the table and status; a query builder that requires `userId`, with a test that fails if any store method builds a query without it (`pnpm test`)
 - [ ] 4.3 Supabase stores for every interface, sealing on write and opening on read; tests against a fake PostgREST that checks only ciphertext arrives in content columns (`pnpm test`)
 - [ ] 4.4 Atomic writes through RPC: a closed meeting with its turns and notes, and account creation with its wrapped DEK; verify on the project that a failure halfway leaves nothing behind [key:SUPABASE_SECRET_KEY]
 - [ ] 4.5 Database check in `/health` (ok, slow over 1 s, paused, unreachable; no content) and the phone's note when it fails; tests with a fake that times out and one that answers 503 (`pnpm test`)
