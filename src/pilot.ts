@@ -49,6 +49,7 @@ import { type DigestCall, writeProfile } from "./digests.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, summarize as summarizeProjects } from "./projects.ts";
+import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
 import { askTiers } from "./ask-tiers.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
@@ -64,7 +65,7 @@ import { MeetingStore } from "./meeting-store.ts";
 import { ActionStore, decide, parseDecision } from "./action-store.ts";
 import { runApproved } from "./agent-loop.ts";
 import { TraceWriter, traceLine } from "./agent-trace.ts";
-import { TaskStore, meetingTools } from "./agent-tools.ts";
+import { TASK_OWNERS, type TaskOwner, TaskStore, meetingTools, ownerOf } from "./agent-tools.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
@@ -797,11 +798,25 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       kind: "actions",
       pending: actions.list().filter((a) => a.status === "pending").map((a) => ({ ...a, meetingTitle: titles.get(a.meetingId) ?? "", quotes: a.evidence.map((id) => turnText(a.meetingId, id)) })),
       decided: actions.list().filter((a) => a.status !== "pending").slice(-10).reverse().map((a) => ({ id: a.id, tool: a.tool, status: a.status, meetingId: a.meetingId })),
-      tasks: taskStore.list().map((t) => ({ ...t, meetingTitle: titles.get(t.meetingId) ?? "" })),
+      tasks: taskStore.list().map((t) => ({ ...t, who: ownerOf(t), meetingTitle: titles.get(t.meetingId) ?? "", projectName: taskProjects.get(t.meetingId) ?? "" })),
     };
   }
 
   const broadcastActions = (): void => broadcast(actionsEvent());
+
+  /** Each meeting's project name, for the tasks on the phone; refreshed when projects change. */
+  let taskProjects = new Map<string, string>();
+  async function refreshTaskProjects(): Promise<void> {
+    try {
+      const [list, assigned] = await Promise.all([projects.list(), projects.assignments()]);
+      const names = new Map(list.map((p) => [p.id, p.name]));
+      taskProjects = new Map([...assigned].map(([meetingId, projectId]) => [meetingId, names.get(projectId) ?? ""]));
+      broadcastActions();
+    } catch (error) {
+      console.error(`[projects] could not read the project names: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+  void refreshTaskProjects();
 
   /** Runs one approved action with the arguments it was approved with, and traces it. */
   async function runDecided(body: unknown): Promise<{ status: number; body: unknown }> {
@@ -908,7 +923,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     if (deletedMeetings.has(m.id)) return;
     meetings.save(m);
     broadcastMeetings();
-    if (m.status === "done") void assignProject(m);
+    if (m.status === "done") void assignProject(m).then(() => extractTasks(m));
   }
 
   // --- Projects: each finished meeting goes to one of the wearer's projects (add-projects) ---------------
@@ -928,8 +943,26 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const id = choice.kind === "existing" ? choice.projectId : (await projects.create(choice.name, Date.now())).id;
       await projects.assign(m.id, id);
       console.log(`[projects] ${m.id} · ${choice.kind === "new" ? "new project" : "existing project"}`);
+      await refreshTaskProjects();
     } catch (error) {
       console.error(`[projects] assigning ${m.id} failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  /** The meeting's tasks with who does each, straight into Tareas (add-task-owners). */
+  async function extractTasks(m: Meeting): Promise<void> {
+    try {
+      const raw = await askSpark(tasksMessages(m), {
+        label: "tasks",
+        extra: { response_format: { type: "json_schema", json_schema: { name: "tasks", strict: true, schema: tasksSchema } } },
+        maxTokens: 1500,
+      });
+      const found = parseTasks(raw, (await taskStore.list()).filter((t) => t.meetingId === m.id));
+      for (const t of found) await taskStore.add({ title: t.title, who: t.who, ...(t.otherName ? { otherName: t.otherName } : {}), ...(t.due ? { due: t.due } : {}), meetingId: m.id, evidence: [], source: "meeting" }, Date.now());
+      console.log(`[tasks] ${m.id} · ${found.length} task(s)`);
+      await refreshTaskProjects();
+    } catch (error) {
+      console.error(`[tasks] extracting from ${m.id} failed: ${(error as Error).message.slice(0, 200)}`);
     }
   }
 
@@ -1511,6 +1544,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         ok = typeof body.into === "string" && body.into !== id && ids.has(id) && ids.has(body.into);
         if (ok) await projects.merge(id, body.into as string);
       } else ok = await projects.setStatus(id, req.url === "/projects/archive" ? "archived" : "active");
+      if (ok) void refreshTaskProjects();
       res.writeHead(ok ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/meetings/project") {
       const body = JSON.parse((await readBody(req)) || "{}") as { id?: unknown; project?: unknown };
@@ -1520,6 +1554,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       try {
         await sealed?.flush();
         await projects.assign(body.id as string, project);
+        void refreshTaskProjects();
         res.writeHead(204).end();
       } catch {
         res.writeHead(404).end();
@@ -1536,6 +1571,29 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const out = await runDecided(JSON.parse((await readBody(req)) || "{}"));
       res.writeHead(out.status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(out.body));
+    } else if (req.method === "POST" && req.url === "/tasks/add") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { title?: unknown; who?: unknown; otherName?: unknown; due?: unknown };
+      const title = typeof body.title === "string" ? body.title.replace(/\s+/g, " ").trim().slice(0, MAX_TASK_CHARS) : "";
+      const who = TASK_OWNERS.includes(body.who as TaskOwner) ? (body.who as TaskOwner) : "me";
+      if (!title) return void res.writeHead(400).end();
+      const otherName = who === "other" && typeof body.otherName === "string" && body.otherName.trim() ? body.otherName.trim().slice(0, 60) : undefined;
+      const due = typeof body.due === "string" && body.due.trim() ? body.due.trim().slice(0, 40) : undefined;
+      const task = await taskStore.add({ title, who, ...(otherName ? { otherName } : {}), ...(due ? { due } : {}), meetingId: "", evidence: [], source: "manual" }, Date.now());
+      broadcastActions();
+      res.writeHead(201, { "Content-Type": "application/json" }).end(JSON.stringify({ id: task.id }));
+    } else if (req.method === "POST" && req.url === "/tasks/update") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { id?: unknown; who?: unknown; otherName?: unknown; title?: unknown };
+      const who = body.who === undefined ? undefined : TASK_OWNERS.includes(body.who as TaskOwner) ? (body.who as TaskOwner) : null;
+      const title = typeof body.title === "string" ? body.title.replace(/\s+/g, " ").trim().slice(0, MAX_TASK_CHARS) : undefined;
+      if (typeof body.id !== "string" || who === null || title === "") return void res.writeHead(400).end();
+      const task = await taskStore.update(body.id, { ...(who ? { who } : {}), ...(typeof body.otherName === "string" ? { otherName: body.otherName.trim().slice(0, 60) } : {}), ...(title ? { title } : {}) });
+      if (task) broadcastActions();
+      res.writeHead(task ? 204 : 404).end();
+    } else if (req.method === "POST" && req.url === "/tasks/delete") {
+      const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: unknown };
+      const ok = typeof id === "string" && (await taskStore.remove(id));
+      if (ok) broadcastActions();
+      res.writeHead(ok ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/tasks/done") {
       const { id, done } = JSON.parse((await readBody(req)) || "{}") as { id?: string; done?: boolean };
       const task = typeof id === "string" && typeof done === "boolean" ? taskStore.setDone(id, done) : undefined;

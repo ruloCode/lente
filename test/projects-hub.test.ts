@@ -58,3 +58,54 @@ test("projects on the hub: list with summaries, detail, rename, move a meeting, 
   assert.equal(await post("/projects/archive", { id: b.id }), 204);
   assert.equal(await post("/projects/restore", { id: b.id }), 204);
 });
+
+/** The latest `actions` event the hub sends on /events (what the phone shows in Tareas). */
+async function latestActions(base: string): Promise<any> {
+  const res = await fetch(`${base}/events`);
+  const reader = res.body!.getReader();
+  let text = "";
+  const until = Date.now() + 1500;
+  while (Date.now() < until) {
+    const { value, done } = await Promise.race([reader.read(), new Promise<{ value: undefined; done: true }>((r) => setTimeout(() => r({ value: undefined, done: true }), 300))]);
+    if (value) text += new TextDecoder().decode(value);
+    if (done && text.includes('"kind":"actions"')) break;
+  }
+  await reader.cancel();
+  const events = text.split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6))).filter((e) => e.kind === "actions");
+  return events.at(-1);
+}
+
+test("tasks on the hub (add-task-owners 1.3): add by hand, change who does it, delete; owners, projects and project counts reach the phone", { timeout: 30_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "lente-tasks-hub-"));
+  const now = Date.now();
+  new MeetingStore(join(dir, "meetings")).save({ id: "m1", title: "PROBE m1", startedAt: now - 3600_000, status: "done", turns: [] });
+  const tasks = new TaskStore(join(dir, "tasks.json"));
+  tasks.add({ title: "PROBE mía", meetingId: "m1", evidence: [] }, now - 2);
+  tasks.add({ title: "PROBE de Ana", who: "other", otherName: "Ana", meetingId: "m1", evidence: [] }, now - 1);
+  const projects = new FileProjects(join(dir, "projects.json"));
+  projects.assign("m1", projects.create("PROBE Alfa", now).id);
+
+  const port = await freePort();
+  children.push(spawn(process.execPath, ["src/pilot.ts"], { env: { PATH: process.env.PATH, HOME: process.env.HOME, PILOT_WEB_PORT: String(port), PILOT_DEVICE_PORT: String(await freePort()), PILOT_DATA_DIR: dir }, stdio: "ignore" }));
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 200 && !(await fetch(`${base}/health`).then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 50));
+  const post = (path: string, body: unknown) => fetch(base + path, { method: "POST", body: JSON.stringify(body) });
+
+  let shown = (await latestActions(base)).tasks;
+  assert.deepEqual(shown.map((t: any) => [t.title, t.who, t.otherName ?? null, t.projectName]), [["PROBE mía", "me", null, "PROBE Alfa"], ["PROBE de Ana", "other", "Ana", "PROBE Alfa"]]);
+  const [card] = (await (await fetch(`${base}/projects`)).json()).projects;
+  assert.equal(card.openTasks, 1, "a task someone else promised does not count as the wearer's");
+
+  const added = await post("/tasks/add", { title: "  PROBE   correo de seguimiento ", who: "lente" });
+  assert.equal(added.status, 201);
+  const { id } = await added.json();
+  assert.equal((await post("/tasks/add", { title: "   " })).status, 400);
+  assert.equal((await post("/tasks/update", { id, who: "me" })).status, 204);
+  assert.equal((await post("/tasks/update", { id, who: "jefe" })).status, 400);
+  assert.equal((await post("/tasks/update", { id: "nope", who: "me" })).status, 404);
+  shown = (await latestActions(base)).tasks;
+  assert.deepEqual(shown.find((t: any) => t.id === id), { ...shown.find((t: any) => t.id === id), title: "PROBE correo de seguimiento", who: "me", source: "manual", projectName: "" });
+  assert.equal((await post("/tasks/delete", { id })).status, 204);
+  assert.equal((await post("/tasks/delete", { id })).status, 404);
+  assert.ok(!(await latestActions(base)).tasks.some((t: any) => t.id === id));
+});

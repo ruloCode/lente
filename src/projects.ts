@@ -96,6 +96,8 @@ export interface ProjectSummary {
 
 interface TaskLike {
   title: string;
+  /** Tasks someone else promised are followed up, not counted as the wearer's. */
+  who?: "me" | "lente" | "other";
   meetingId: string;
   done: boolean;
   createdAt: number;
@@ -112,7 +114,7 @@ export function summarize(
   const out = projects.map((p): ProjectSummary => {
     const own = meetings.filter((m) => assignments.get(m.id) === p.id);
     const ids = new Set(own.map((m) => m.id));
-    const open = tasks.filter((t) => !t.done && ids.has(t.meetingId)).sort((a, b) => a.createdAt - b.createdAt);
+    const open = tasks.filter((t) => !t.done && t.who !== "other" && ids.has(t.meetingId)).sort((a, b) => a.createdAt - b.createdAt);
     const last = own.reduce<number | null>((max, m) => (max === null || m.startedAt > max ? m.startedAt : max), null);
     return {
       id: p.id,
