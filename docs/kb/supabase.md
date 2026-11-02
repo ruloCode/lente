@@ -6,7 +6,7 @@ The project behind accounts (`add-accounts`). Only refs, URLs and public IDs liv
 
 - Name `lente`, ref `erufopbceodmnqbilovo`, organization Kuadra, region `us-east-1`, Free plan. Created 2026-11-02 through the Supabase MCP with the owner's yes (task 1.3).
 - URL `https://erufopbceodmnqbilovo.supabase.co`.
-- Schema: `supabase/migrations/`, applied through the MCP on 2026-11-02 (task 1.7). Checked the same day with the publishable key: all 18 tables answer 401 to a read and to an insert.
+- Schema: `supabase/migrations/`, applied through the MCP on 2026-11-02 (task 1.7). `20261102030000_agent_scopes.sql` (`devices.scopes`, add-agent-bridge) was applied the same day with the owner's yes. Checked the same day with the publishable key: all 18 tables answer 401 to a read and to an insert.
 - Advisors after applying:
   - Security: only `rls_enabled_no_policy` (INFO) on all 18 tables. That is the design: no policy, no grants, and only the hub reaches the tables, with the secret key.
   - Performance: `unindexed_foreign_keys` on the `(meeting_id, user_id)` keys. Fixed by `20261102000000_meeting_fk_indexes.sql`.

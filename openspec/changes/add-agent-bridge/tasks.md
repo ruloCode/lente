@@ -5,7 +5,8 @@ Depends on: `add-task-owners`
 ## 1. Agent tokens with scopes
 
 - [x] 1.1 Migration: `devices.scopes` with the default `{read}` and the allowed values; tests on the stores (`pnpm test`)
-- [ ] 1.3 Apply `20261102030000_agent_scopes.sql` to the live Supabase project with the owner's yes; until then, creating a device on the live project fails on the unknown `scopes` column [human]
+- [x] 1.3 Apply `20261102030000_agent_scopes.sql` to the live Supabase project with the owner's yes
+  - 2026-11-02: applied through the Supabase MCP as `agent_scopes`. `devices` had no rows. Security advisors afterwards: `rls_enabled_no_policy` (INFO, by design, as before) and `auth_leaked_password_protection` (WARN; email sign-up is off, so not from this change).
 - [x] 1.2 `UserDevices`: scopes on create, `resolveAgent`, and `POST /devices` taking `scopes`; tests (`pnpm test`)
 
 ## 2. MCP server
