@@ -12,8 +12,13 @@ Depends on: `add-accounts`
 
 ## 2. The app
 
-- [ ] 2.1 `core/Projects.kt` parsing and words; unit tests (`./gradlew :app:testDebugUnitTest`)
+- [x] 2.1 `core/Projects.kt` parsing and words; unit tests (`./gradlew :app:testDebugUnitTest`)
 - [ ] 2.2 Inicio redesigned and the projects screen; on the phone, a screenshot of Inicio with projects [phone]
+  - 2026-11-02 built and installed on the owner's Samsung against this branch's hub.
+  - The top row is now the device pill, Ajustes and the menu.
+  - The greeting no longer has the mark, the waiting note and the phone button are gone, and the option cards became the chips "Resumen de hoy" and "¿Qué me falta?" ("Mirar" appears with a clip).
+  - Proyectos is in the menu. `scripts/android-e2e.ts` now reaches "Usar el teléfono" through Dispositivos.
+  - The screenshot shows the empty state; the one with projects waits for the backfill (3.1).
 
 ## 3. On the owner's data
 

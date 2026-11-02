@@ -78,6 +78,7 @@ fun LenteRoot(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit) {
 
 private val MENU_MAIN = listOf(
     Triple(Screen.Ahora, "Ahora", Glyph.Wave),
+    Triple(Screen.Proyectos, "Proyectos", Glyph.Doc),
     Triple(Screen.Reuniones, "Reuniones", Glyph.Calendar),
     Triple(Screen.Acciones, "Acciones", Glyph.Tasks),
     Triple(Screen.Memoria, "Memoria", Glyph.Brain),
@@ -95,6 +96,8 @@ fun title(s: Screen) = when (s) {
     is Screen.Reunion -> "Reunión"
     Screen.Acciones -> "Acciones"
     Screen.Memoria -> "Memoria"
+    Screen.Proyectos -> "Proyectos"
+    is Screen.Proyecto -> "Proyecto"
     Screen.Dispositivos -> "Dispositivos"
     Screen.Ajustes -> "Ajustes"
     is Screen.Pronto -> SOON[s.what]?.first ?: "Pronto"
@@ -137,7 +140,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
-                TopBar(title(screen), s, onMenu = { scope.launch { drawer.open() } }, onPill = vm::toggleListening, back = if (screen is Screen.Reunion) ({ vm.back() }) else null)
+                TopBar(title(screen), s, onMenu = { scope.launch { drawer.open() } }, onPill = vm::toggleListening, back = if (screen is Screen.Reunion || screen is Screen.Proyecto) ({ vm.back() }) else null)
                 if (link is Link.Reconnecting) Notice("Reconectando con la computadora…", Modifier.padding(horizontal = Lente.gutter, vertical = 4.dp), tag = "reconnecting")
                 if (link == Link.Unpaired) Notice("Este hub pide emparejar el teléfono. Abre Ajustes para escribir el código.", Modifier.padding(horizontal = Lente.gutter, vertical = 4.dp))
                 Box(Modifier.weight(1f)) {
@@ -148,6 +151,8 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                             is Screen.Reunion -> Reunion(vm, sc)
                             Screen.Acciones -> Acciones(vm, hub)
                             Screen.Memoria -> Memoria(vm, hub)
+                            Screen.Proyectos -> ProyectosScreen(vm)
+                            is Screen.Proyecto -> ProyectoScreen(vm)
                             Screen.Dispositivos -> Dispositivos(vm, hub, usePhone)
                             Screen.Ajustes -> Ajustes(vm, hub, replayIntro)
                             is Screen.Pronto -> Pronto(sc.what)
@@ -225,7 +230,7 @@ private fun Drawer(vm: LenteViewModel, current: Screen, go: (Screen) -> Unit) {
         Spacer(Modifier.height(12.dp))
         for ((target, label, glyph) in MENU_MAIN) {
             val badge = if (target == Screen.Acciones) hub.actions.pending.size else 0
-            DrawerRow(label, glyph, current == target || (target == Screen.Reuniones && current is Screen.Reunion), badge) { go(target) }
+            DrawerRow(label, glyph, current == target || (target == Screen.Reuniones && current is Screen.Reunion) || (target == Screen.Proyectos && current is Screen.Proyecto), badge) { go(target) }
         }
         Text("PRONTO", style = Type.label, color = c.muted, modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 6.dp))
         for ((target, label, glyph) in MENU_SOON) DrawerRow(label, glyph, current == target, soon = true) { go(target) }

@@ -20,6 +20,7 @@ import app.lente.core.HubEvent
 import app.lente.core.HubJson
 import app.lente.core.HubState
 import app.lente.core.MeetingDetail
+import app.lente.core.Projects
 import app.lente.core.SearchResult
 import app.lente.core.TraceStep
 import app.lente.core.Voice
@@ -52,6 +53,8 @@ sealed interface Screen {
     data object Memoria : Screen
     data object Dispositivos : Screen
     data object Ajustes : Screen
+    data object Proyectos : Screen
+    data class Proyecto(val id: String) : Screen
     data class Pronto(val what: String) : Screen
 }
 
@@ -93,6 +96,9 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val theme = MutableStateFlow(prefs.theme)
     val facts = MutableStateFlow<List<Fact>>(emptyList())
     val detail = MutableStateFlow<MeetingDetail?>(null)
+    /** The wearer's projects for Inicio and the Proyectos screen, and the one open (add-projects). */
+    val projects = MutableStateFlow<List<Projects.Summary>>(emptyList())
+    val project = MutableStateFlow<Projects.Detail?>(null)
     val trace = MutableStateFlow<List<TraceStep>?>(null)
     val search = MutableStateFlow<List<SearchResult>?>(null)
     val briefing = MutableStateFlow<Briefing?>(null)
@@ -184,9 +190,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     // --- Navigation -------------------------------------------------------------------------
 
     fun go(screen: Screen) {
-        _screen.value = if (screen is Screen.Reunion) _screen.value + screen else listOf(screen)
+        _screen.value = if (screen is Screen.Reunion || screen is Screen.Proyecto) _screen.value + screen else listOf(screen)
         when (screen) {
             is Screen.Reunion -> openMeeting(screen.id)
+            is Screen.Proyecto -> openProject(screen.id)
+            Screen.Proyectos, Screen.Ahora -> loadProjects()
             Screen.Memoria -> loadFacts()
             else -> {}
         }
@@ -201,6 +209,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             s.size > 1 -> {
                 _screen.value = s.dropLast(1)
                 (_screen.value.last() as? Screen.Reunion)?.let { openMeeting(it.id) }
+                (_screen.value.last() as? Screen.Proyecto)?.let { openProject(it.id) }
                 true
             }
             s.last() != Screen.Ahora -> { _screen.value = listOf(Screen.Ahora); true }
@@ -387,6 +396,30 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun fact(id: String, keep: Boolean) = post(if (keep) "/facts/keep" else "/facts/discard", JSONObject().put("id", id)) { loadFacts() }
+
+    // --- Projects (add-projects) ------------------------------------------------------------------
+
+    fun loadProjects() {
+        val c = client ?: return
+        viewModelScope.launch { c.get("/projects").takeIf { it.ok }?.let { a -> runCatching { Projects.list(a.text) }.getOrNull()?.let { projects.value = it } } }
+    }
+
+    private fun openProject(id: String) {
+        val c = client ?: return
+        project.value = null
+        viewModelScope.launch { c.get("/projects/get?id=${enc(id)}").takeIf { it.ok }?.let { a -> project.value = runCatching { Projects.detail(a.text) }.getOrNull() } }
+    }
+
+    private fun afterProjectChange(id: String?) { loadProjects(); id?.let(::openProject) }
+
+    fun renameProject(id: String, name: String) = post("/projects/rename", JSONObject().put("id", id).put("name", name)) { failed(it, "renombrar el proyecto"); afterProjectChange(id) }
+
+    fun archiveProject(id: String, archived: Boolean) = post(if (archived) "/projects/archive" else "/projects/restore", JSONObject().put("id", id)) { failed(it, "archivar el proyecto"); afterProjectChange(id) }
+
+    fun mergeProject(id: String, into: String) = post("/projects/merge", JSONObject().put("id", id).put("into", into)) {
+        failed(it, "juntar los proyectos")
+        if (it.ok) { _screen.value = listOf(Screen.Proyectos); go(Screen.Proyecto(into)) } else afterProjectChange(id)
+    }
 
     private fun openMeeting(id: String) {
         val c = client ?: return

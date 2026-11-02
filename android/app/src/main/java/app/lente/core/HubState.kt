@@ -195,6 +195,9 @@ class Voice {
 
 /** The lines the page shows for the hub's state, in Spanish for the wearer. */
 object Copy {
+    /** The note while no clip is connected; Inicio leaves it to the device pill. */
+    const val WAITING_FOR_CLIP = "Esperando el clip. Revisa que tenga batería y esté en la misma red Wi-Fi."
+
     fun pill(s: Status) = when {
         !s.listening -> "En pausa"
         !s.clip -> "Esperando"
@@ -240,7 +243,7 @@ object Copy {
             "unreachable" -> "La memoria en la nube no responde. Lo nuevo no se guarda hasta que vuelva."
             else -> "La memoria en la nube falla."
         }
-        !s.clip -> "Esperando el clip. Revisa que tenga batería y esté en la misma red Wi-Fi."
+        !s.clip -> WAITING_FOR_CLIP
         s.listening && s.asr != "listening" && !s.asr.startsWith("listening ·") -> when {
             s.asr.startsWith("connecting") -> "Conectando la transcripción…"
             s.asr.startsWith("transcription closed") -> "Se cortó la transcripción. Reconectando…"
