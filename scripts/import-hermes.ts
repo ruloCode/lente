@@ -147,7 +147,7 @@ export function sparkCall(targets: ChatTarget[], complete: typeof completeChat =
   };
 }
 
-async function userIdByEmail(url: string, key: string, email: string): Promise<string | undefined> {
+export async function userIdByEmail(url: string, key: string, email: string): Promise<string | undefined> {
   const want = email.trim().toLowerCase();
   for (let page = 1; page < 50; page++) {
     const res = await fetch(`${url.replace(/\/+$/, "")}/auth/v1/admin/users?page=${page}&per_page=200`, { headers: { apikey: key } });

@@ -8,7 +8,7 @@ Depends on: `add-accounts`
 - [x] 1.2 Project store: interface, file implementation, Supabase implementation and migration (`projects`, `meeting_projects`, RLS, revoked); schema test and fake PostgREST tests (`pnpm test`)
 - [x] 1.3 The assignment after a meeting's notes, `GET /projects`, `GET /projects/get?id=`, `POST /projects/rename|merge|archive|restore`, `POST /meetings/project`; tests against the hub (`pnpm test`, `pnpm smoke`)
   - `test/projects-hub.test.ts` drives every route on a laptop hub seeded through the file stores. The assignment after the notes is one guarded call (a failure only logs); its parsing is covered in `test/projects.test.ts`.
-- [ ] 1.4 `scripts/assign-projects.ts --email [--dry-run]`; test against the fake PostgREST (`pnpm test`)
+- [x] 1.4 `scripts/assign-projects.ts --email [--dry-run]`; test against the fake PostgREST (`pnpm test`)
 
 ## 2. The app
 
