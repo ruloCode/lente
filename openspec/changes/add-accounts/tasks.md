@@ -50,7 +50,8 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 
 - [x] 5.1 Digests: profile, day, week and month writers on Muse Spark with structured output, each keeping the ids it came from, with the budgets in design.md; the profile is rewritten after a meeting closes; tests with a stubbed model for budgets, ids kept and kept facts winning (`pnpm test`)
   - Writers in `src/digests.ts`, stores in `src/stores.ts` (file) and `src/supabase-stores.ts` (sealed). Calling the profile writer when a meeting closes is wired with the per-user runtime (6.1), so the laptop hub makes no new model call until then.
-- [ ] 5.2 Nightly job per user at their local midnight, and catch-up on the next open; test the catch-up with a clock (`pnpm test`)
+- [x] 5.2 Nightly job per user at their local midnight, and catch-up on the next open; test the catch-up with a clock (`pnpm test`)
+  - `src/nightly.ts`: the plan, the run and a timer per user. Starting it when a user's runtime opens is wired with 6.1.
 - [ ] 5.3 Ask in tiers. Steps:
   - the profile and digests as the cached prefix
   - a lookup-plan call that names meetings, days, a date range and terms

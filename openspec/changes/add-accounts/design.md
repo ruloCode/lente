@@ -213,6 +213,8 @@ The decision "Memory as files and long context, not RAG" becomes "long context i
 3. **Lookup.** The hub opens those meetings and days (decision 7), ranks their turns against `terms` in memory, and shows the best ones, each with an id as today.
 4. **Answer.** The same schema as `add-ask-lente`. Cited ids are validated against everything shown in steps 1 and 3. No backing means `NOT_FOUND`.
 
+**When digests are written.** One plan (`src/nightly.ts`) serves the nightly run at the user's local midnight (from `accounts.time_zone`) and the catch-up when their runtime opens: every past day with data and no digest, then every finished week and month with day digests and none of its own, oldest first. Weeks and months are both built from day digests, so a month needs no week boundaries. A catch-up reaches back at most 31 days, so a long absence cannot spend without bound, and it stops at the first failed call so the next open resumes there.
+
 **Why two calls.** Two structured calls instead of open tool calling, because Muse Spark function calling is not verified yet (`add-closing-agent` 1.1). If it is verified, step 2 can become a tool loop of at most 3 rounds behind the same contract.
 
 **Edits.** The user can read and correct the profile in Memoria. A correction is stored as a kept fact and wins over the generated text.
