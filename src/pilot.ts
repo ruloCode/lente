@@ -39,7 +39,7 @@ import { type AuthMode, decideUpgrade, decideWeb } from "./access-gate.ts";
 import { type Identity, type IdentitySources, LOCAL_OWNER, identify } from "./identify.ts";
 import { BUSY_MESSAGE, EVICT_CHECK_MS, WearerRegistry, mayStartListening, parseListeningCap } from "./wearer-registry.ts";
 import { UserAuth } from "./user-auth.ts";
-import { FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
+import { type AgentIdentity, FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { Accounts, CLOSED_TEST_MESSAGE, FileAccountStore, JsonFile, parseAllowList } from "./accounts.ts";
 import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
 import { DatabaseHealth, dbFailing } from "./db-health.ts";
@@ -65,7 +65,9 @@ import { MeetingStore } from "./meeting-store.ts";
 import { ActionStore, decide, parseDecision } from "./action-store.ts";
 import { runApproved } from "./agent-loop.ts";
 import { TraceWriter, traceLine } from "./agent-trace.ts";
-import { TASK_OWNERS, type TaskOwner, TaskStore, meetingTools, ownerOf } from "./agent-tools.ts";
+import { TASK_OWNERS, type Task, type TaskOwner, TaskStore, meetingTools, ownerOf } from "./agent-tools.ts";
+import { type AgentApi, CallLimiter, type TaskView, agentServer } from "./agent-mcp-tools.ts";
+import { MCP_MAX_BODY_BYTES, serveMcp, unauthorizedResponse } from "./mcp.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
@@ -277,12 +279,12 @@ const databaseDown = (): string => {
 };
 // --- Web: the phone page, its event stream, its buttons and the voice --------------------------
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, max = 10_000): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 10_000) req.destroy();
+      if (body.length > max) req.destroy();
     });
     req.on("end", () => resolve(body));
     req.on("error", reject);
@@ -1458,6 +1460,134 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     socket.on("error", (error) => console.error(`[clip] ${error.message}`));
   }
 
+  /** Chat with Lente: one question with the conversation so far, answered from the memory with its sources. */
+  async function answerAsk(body: { question?: unknown; history?: unknown; project?: unknown }) {
+    // Asking within a project (add-record-sheet): only that project's meetings can be opened or cited.
+    const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
+    if (typeof body.project === "string" && !scope) return "no_project" as const;
+    const assigned = scope ? await projects.assignments() : new Map<string, string>();
+    const inScope = (list: Meeting[]) => scopeMeetings(list, assigned, scope?.id);
+    const question = scope && typeof body.question === "string" ? `(Sobre el proyecto «${scope.name}») ${body.question}` : body.question;
+    const failed = (error: Error) => {
+      console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
+      return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
+    };
+    const out = key && sealed
+      ? await askWhole({ question, history: body.history }, inScope).catch(failed)
+      : key
+      ? await ask(
+          { question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
+          async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
+        ).catch(failed)
+      : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
+    if (out.ok) console.log(`[ask] ${out.ms} ms · ${out.found ? out.sources.length + " fuentes" : "no encontrado"}`);
+    return out;
+  }
+
+  // --- Outside agents (add-agent-bridge): the API behind the MCP tools ----------------------------
+
+  const AGENTS_FILE = join(dataDir, "agents.json");
+  /** The wearer turned agent access off; kept across restarts (a flag, no content). */
+  let agentsPaused = readJson<{ paused: boolean }>(AGENTS_FILE, "agents")?.paused === true;
+  function setAgentsPaused(paused: boolean): void {
+    agentsPaused = paused;
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(AGENTS_FILE, JSON.stringify({ paused }) + "\n");
+    console.log(`[agents] ${paused ? "paused" : "resumed"} by the wearer`);
+  }
+
+  /** A project by id or by name (accents and case ignored), among this user's projects. */
+  async function findProject(ref: string) {
+    const fold = (v: string) => v.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+    const list = await projects.list();
+    return list.find((p) => p.id === ref) ?? list.find((p) => fold(p.name) === fold(ref));
+  }
+
+  const taskView = (t: Task): TaskView => ({
+    id: t.id,
+    title: t.title,
+    who: ownerOf(t),
+    otherName: t.otherName ?? null,
+    due: t.due ?? null,
+    done: t.done,
+    project: taskProjects.get(t.meetingId) || null,
+    meetingId: t.meetingId || null,
+    createdAt: t.createdAt,
+  });
+  const iso = (at: number | undefined) => (at === undefined ? null : new Date(at).toISOString());
+
+  const agentApi: AgentApi = {
+    paused: () => agentsPaused,
+    async ask(question, project) {
+      const ref = project ? await findProject(project) : undefined;
+      if (project && !ref) return "no_project";
+      const out = await answerAsk({ question, history: [], ...(ref ? { project: ref.id } : {}) });
+      if (out === "no_project") return "no_project";
+      if (!out.ok) return "unavailable";
+      return { answer: out.answer, found: out.found, sources: out.sources.map((s) => ({ label: s.label, ...(s.meetingId ? { meetingId: s.meetingId } : {}) })) };
+    },
+    async searchMeetings(query, from, to) {
+      const start = from ? localDayStart(from, TIME_ZONE) : -Infinity;
+      const end = to ? localDayStart(to, TIME_ZONE) + 24 * 3600 * 1000 : Infinity;
+      return searchMeetings(meetings.list(), query).filter((m) => m.startedAt >= start && m.startedAt < end).map((m) => ({ ...m, startedAt: m.startedAt }));
+    },
+    async getMeeting(id, maxChars) {
+      const m = meetings.list().find((x) => x.id === id);
+      if (!m) return undefined;
+      const assigned = (await projects.assignments()).get(m.id);
+      const project = assigned ? (await projects.list()).find((p) => p.id === assigned)?.name ?? null : null;
+      const hhmm = (at: number) => new Date(at).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
+      let transcript = "";
+      let truncated = false;
+      for (const t of m.turns) {
+        const line = `${hhmm(t.at)} ${t.wearer ? "Usuario" : t.speaker ?? "Alguien"}: ${t.text}\n`;
+        if (transcript.length + line.length > maxChars) {
+          truncated = true;
+          break;
+        }
+        transcript += line;
+      }
+      const n = m.notes;
+      return {
+        id: m.id,
+        title: m.title,
+        startedAt: iso(m.startedAt),
+        endedAt: iso(m.endedAt),
+        status: m.status,
+        project,
+        notes: n ? { summary: n.summary, decisions: n.decisions.map((d) => d.text), commitments: n.commitments.map((c) => ({ owner: c.owner === "you" ? "usuario" : c.owner, what: c.what, due: c.due ?? null })), openQuestions: n.openQuestions.map((q) => q.text) } : null,
+        transcript,
+        truncated,
+      };
+    },
+    projects: async () => projectSummaries(),
+    async tasks(filter) {
+      let ids: Set<string> | undefined;
+      if (filter.project) {
+        const ref = await findProject(filter.project);
+        if (!ref) return "no_project";
+        ids = new Set([...(await projects.assignments())].filter(([, p]) => p === ref.id).map(([m]) => m));
+      }
+      return (await taskStore.list()).filter((t) => (!filter.open || !t.done) && (!filter.who || ownerOf(t) === filter.who) && (!ids || ids.has(t.meetingId))).map(taskView);
+    },
+    async createTask(input) {
+      const task = await taskStore.add({ title: input.title, who: input.who, ...(input.otherName ? { otherName: input.otherName } : {}), ...(input.due ? { due: input.due } : {}), meetingId: "", evidence: [], source: "agent" }, Date.now());
+      broadcastActions();
+      return taskView(task);
+    },
+    async updateTask(id, patch) {
+      const task = await taskStore.update(id, patch);
+      if (task) broadcastActions();
+      return task && taskView(task);
+    },
+    async completeTask(id) {
+      const task = await taskStore.setDone(id, true);
+      if (task) broadcastActions();
+      return task && taskView(task);
+    },
+    note: (tool, client, sentence) => record({ at: Date.now(), kind: "agent", tool, client, text: sentence }),
+  };
+
   const ACTIONS: Record<string, () => void> = {
     "/look": () => device?.write("P"),
     "/live/on": () => setLive(true),
@@ -1666,31 +1796,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
     } else if (req.method === "POST" && req.url === "/ask") {
-      // Chat with Lente: one question with the conversation so far, answered from the memory with its sources.
       const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown };
-      // Asking within a project (add-record-sheet): only that project's meetings can be opened or cited.
-      const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
-      if (typeof body.project === "string" && !scope) return void res.writeHead(404).end();
-      const assigned = scope ? await projects.assignments() : new Map<string, string>();
-      const inScope = (list: Meeting[]) => scopeMeetings(list, assigned, scope?.id);
-      if (scope && typeof body.question === "string") body.question = `(Sobre el proyecto «${scope.name}») ${body.question}`;
-      const out = key && sealed
-        ? await askWhole(body, inScope).catch((error: Error) => {
-            console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
-            return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
-          })
-        : key
-        ? await ask(
-            { question: body.question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
-            async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
-          ).catch((error: Error) => {
-            console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
-            return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
-          })
-        : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
-      if (out.ok) console.log(`[ask] ${out.ms} ms · ${out.found ? out.sources.length + " fuentes" : "no encontrado"}`);
+      const out = await answerAsk(body);
+      if (out === "no_project") return void res.writeHead(404).end();
       res.writeHead(out.ok ? 200 : out.reason === "empty-question" ? 400 : 502, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
+    } else if (req.method === "GET" && req.url === "/agents") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ paused: agentsPaused }));
+    } else if (req.method === "POST" && (req.url === "/agents/pause" || req.url === "/agents/resume")) {
+      setAgentsPaused(req.url === "/agents/pause");
+      res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/narrated") {
       const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };
       if (typeof text === "string") narration.narrated(text, Date.now());
@@ -1710,6 +1825,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     userId,
     handle,
     serveDevice,
+    /** What an outside agent may read and change for this user, through the MCP tools. */
+    agentApi,
+    agent: async (): Promise<AgentApi> => agentApi,
     /** A clip or phone on the `/device` WebSocket, once its upgrade was admitted. */
     serveWebDevice(socket: Duplex, remote: string): void {
       webDevices.add(socket);
@@ -1744,6 +1862,7 @@ type WearerRuntime = ReturnType<typeof createWearerRuntime>;
 /** What the hub needs of a runtime; an account's runtime is opened asynchronously behind it. */
 type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" | "flush"> & {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
+  agent(): Promise<AgentApi>;
   serveDevice(socket: Duplex, remote: string | undefined): void;
   serveWebDevice(socket: Duplex, remote: string): void;
 };
@@ -1765,6 +1884,7 @@ function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
   );
   return {
     handle: async (req, res) => (await ready).handle(req, res),
+    agent: async () => (await ready).agentApi,
     serveDevice: (socket, remote) => void ready.then((rt) => rt.serveDevice(socket, remote), () => socket.destroy()),
     serveWebDevice: (socket, remote) => void ready.then((rt) => rt.serveWebDevice(socket, remote), () => socket.destroy()),
     pushStatus: () => open?.pushStatus(),
@@ -1806,12 +1926,71 @@ const tcp = createTcpServer((socket) => {
   wearers.get(LOCAL_OWNER).serveDevice(socket, socket.remoteAddress);
 });
 
+// --- Outside agents (add-agent-bridge): MCP for any agent, the job routes for the bridge -------------
+
+/** Agent tokens: each account's devices, or on the laptop and a pairing hub the owner's own file. */
+const agentDevices = userDevices ?? new UserDevices(new FileDeviceStore(join(DATA_DIR, "agent-devices.json")));
+const agentCalls = new CallLimiter();
+const MCP_PATH = "/mcp";
+
+/** The agent behind `Authorization: Bearer <agent token>`, if it is live and its user is admitted. */
+async function agentOf(req: IncomingMessage): Promise<AgentIdentity | undefined> {
+  const bearer = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1];
+  // A Supabase access token (a JWT) is a person, not an agent.
+  if (!bearer || bearer.split(".").length === 3) return undefined;
+  const agent = await agentDevices.resolveAgent(bearer);
+  if (!agent) return undefined;
+  if (await refusal({ userId: agent.userId, via: "device", deviceId: agent.deviceId })) return undefined;
+  return agent;
+}
+
+/** The hub's own origins: a browser page served from anywhere else may not call `/mcp`. */
+function ownOrigins(req: IncomingMessage): string[] {
+  const host = req.headers.host ?? "";
+  const list = [`http://${host}`, `https://${host}`];
+  if (process.env.LENTE_PUBLIC_URL) list.push(new URL(process.env.LENTE_PUBLIC_URL).origin);
+  return list;
+}
+
+/** `/mcp`: the token's user and scopes decide everything; no cookie or session counts here. */
+async function mcpRoute(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (plainHttp(req) && AUTH_MODE !== "open") return void res.writeHead(308, { Location: `https://${req.headers.host ?? ""}${req.url}` }).end();
+  const agent = await agentOf(req);
+  const send = (out: { status: number; headers: Record<string, string>; body?: string }) => void res.writeHead(out.status, out.headers).end(out.body);
+  if (!agent) return send(unauthorizedResponse());
+  const started = Date.now();
+  const body = req.method === "POST" ? await readBody(req, MCP_MAX_BODY_BYTES) : "";
+  const api = await wearers.get(agent.userId).agent();
+  const out = await serveMcp({ method: req.method ?? "GET", headers: req.headers, body, allowedOrigins: ownOrigins(req) }, agentServer(agent, api, agentCalls));
+  // Only the method and the tool's name: never arguments or answers.
+  const name = /"name"\s*:\s*"([\w.-]{1,64})"/.exec(body)?.[1];
+  const method = /"method"\s*:\s*"([\w/.-]{1,64})"/.exec(body)?.[1] ?? req.method;
+  console.log(`[mcp] ${method}${method === "tools/call" && name ? ` ${name}` : ""} · ${out.status} · ${Date.now() - started} ms`);
+  send(out);
+}
+
 const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
   try {
+    if (req.url?.split("?")[0] === MCP_PATH) return void (await mcpRoute(req, res));
     if (await gateWeb(req, res)) return;
     const who = requestIdentity.get(req);
     const devicesPath = req.url?.split("?")[0];
-    const devicesAnswer = userDevices && who && (devicesPath === "/devices" || devicesPath === "/devices/revoke") ? await deviceRoute(userDevices, who.userId, req.method ?? "GET", devicesPath, req.method === "POST" ? await readBody(req) : "") : undefined;
+    // Without accounts the hub keeps clip tokens apart (scripts/hub-token.ts); `/devices` makes agent tokens only.
+    const devicesStore = userDevices ?? agentDevices;
+    const isDevicesRoute = devicesPath === "/devices" || devicesPath === "/devices/revoke";
+    const devicesBody = who && isDevicesRoute && req.method === "POST" ? await readBody(req) : "";
+    const askedKind = (): unknown => {
+      try {
+        return (JSON.parse(devicesBody || "{}") as { kind?: unknown }).kind;
+      } catch {
+        return undefined;
+      }
+    };
+    if (!userDevices && req.method === "POST" && devicesPath === "/devices" && askedKind() !== "mcp") {
+      res.writeHead(400, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ error: "this hub makes agent (mcp) tokens only; clip tokens come from scripts/hub-token.ts" }));
+      return;
+    }
+    const devicesAnswer = who && isDevicesRoute ? await deviceRoute(devicesStore, who.userId, req.method ?? "GET", devicesPath, devicesBody) : undefined;
     if (devicesAnswer) {
       res.writeHead(devicesAnswer.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(devicesAnswer.json === undefined ? undefined : JSON.stringify(devicesAnswer.json));

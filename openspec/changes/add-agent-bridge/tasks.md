@@ -9,9 +9,9 @@ Depends on: `add-task-owners`
 
 ## 2. MCP server
 
-- [ ] 2.1 `src/mcp.ts`: dual-era JSON-RPC over Streamable HTTP, header checks, `server/discover`, `initialize`, notifications, 405, Origin check; unit tests (`pnpm test`)
-- [ ] 2.2 `src/agent-mcp-tools.ts`: the eight tools with scopes, error codes, the rate limit and the day sentences; unit tests with a fake API (`pnpm test`)
-- [ ] 2.3 `/mcp` in the hub, `POST /agents/pause|resume`, the `agent` day entry; tests on the real hub with the fake PostgREST: another user's token sees nothing, a `read` token has no write tools, a revoked token gets 401 (`pnpm test`, `pnpm smoke`)
+- [x] 2.1 `src/mcp.ts`: dual-era JSON-RPC over Streamable HTTP, header checks, `server/discover`, `initialize`, notifications, 405, Origin check; unit tests (`pnpm test`)
+- [x] 2.2 `src/agent-mcp-tools.ts`: the eight tools with scopes, error codes, the rate limit and the day sentences; unit tests with a fake API (`pnpm test`)
+- [x] 2.3 `/mcp` in the hub, `POST /agents/pause|resume`, the `agent` day entry; tests on the real hub with the fake PostgREST: another user's token sees nothing, a `read` token has no write tools, a revoked token gets 401 (`pnpm test`, `pnpm smoke`)
 
 ## 3. CLI
 
