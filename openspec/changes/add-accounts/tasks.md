@@ -13,13 +13,16 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
   [key:SUPABASE_URL]
 - [x] 1.2 Owner: free a Free-plan project slot (pause one of the organization's projects, or pick another organization) and say which; the agent never pauses or deletes another project [human]
   - 2026-11-01: the owner asked to pause `cotizacion-al-instante` (Kuadra, us-east-1); paused through the Supabase MCP at the owner's request
-- [ ] 1.3 Create the project `lente` on the Free plan in `us-east-1` through the Supabase MCP, after showing the cost and getting the owner's yes; record the project ref (not any key) in `docs/kb/supabase.md` [human]
+- [x] 1.3 Create the project `lente` on the Free plan in `us-east-1` through the Supabase MCP, after showing the cost and getting the owner's yes; record the project ref (not any key) in `docs/kb/supabase.md` [human]
+  - 2026-11-02: created `lente` (ref `erufopbceodmnqbilovo`, Kuadra, us-east-1, Free, USD 0) with the owner's yes; see `docs/kb/supabase.md`
 - [ ] 1.4 Owner: in Google Cloud, create the OAuth clients (Web, and Android with the SHA-1 of the debug and release keys). In Supabase, enable Google with the Web client ID first and add the hub's callback to the redirect allow list. Put `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in `.env` and the Modal secret [human]
+  - 2026-11-02 done: Google Cloud project `lente-513513`, Web and Android clients, test users; Supabase redirect list and Google provider through `supabase config push`. Left for the owner: the Google client secret into Supabase, and `SUPABASE_URL`/`SUPABASE_SECRET_KEY` into `.env` and the Modal secret
 - [x] 1.5 `scripts/new-kek.ts`: generates `LENTE_KEK` and writes it to `.env` without printing it, and tells the owner to keep an offline copy and to load the Modal secret with `deploy/modal/secret.ts`; test that the script's output never contains the key (`pnpm test`)
   - Written and tested on temporary files; not run on the real `.env`. The owner runs `node scripts/new-kek.ts` once, keeps the offline copy, then `node --env-file=.env deploy/modal/secret.ts` (which now also carries the Supabase, KEK and allow-list variables).
 - [x] 1.6 `supabase/migrations/` with the schema in design.md, without `search_terms`: tables, constraints, indexes, RLS on with no policy for `anon` and `authenticated`. Add a schema test that lists every table and fails if one lacks RLS or has a permissive policy [key:SUPABASE_SECRET_KEY]
   - Written, not applied to Supabase. `test/schema.test.ts` checks the SQL statically; the migration was also applied to a scratch Postgres 17 (Docker) with a stub `auth.users`: 18 tables with RLS, 0 policies, 0 grants to `anon`/`authenticated`, both roles get "permission denied", a turn pointing at another user's meeting fails its foreign key, deleting a user cascades. The live check on the project is 1.7.
-- [ ] 1.7 Apply the migrations through the Supabase MCP, run its security advisors and fix what they flag, and verify with the publishable key that every table returns no rows and no write succeeds [key:SUPABASE_SECRET_KEY]
+- [x] 1.7 Apply the migrations through the Supabase MCP, run its security advisors and fix what they flag, and verify with the publishable key that every table returns no rows and no write succeeds [key:SUPABASE_SECRET_KEY]
+  - 2026-11-02: applied both migrations through the MCP with the owner's yes; the publishable key gets 401 on read and insert for all 18 tables; advisors: RLS-without-policy (intended) and unindexed FKs (fixed by the second migration)
 
 ## 2. Encryption
 
