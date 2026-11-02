@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The Lente mark as a status-bar silhouette: the two lenses, open where they meet, with the voice bars inside. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.6"
-        android:pathData="M12,5.28 a5.76,5.76 0 1,1 0,11.52 a5.76,5.76 0 1,1 0,-11.52 z" />
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round"
-        android:pathData="M7.2,19.5 L16.8,19.5" />
+    <group android:translateX="-12.553" android:translateY="-12.269" android:scaleX="0.023835" android:scaleY="0.023835">
+        <path android:fillColor="#FFFFFF" android:fillType="evenOdd" android:pathData="M 1022.1 1227.1 C 1007.6 1241.9 992.9 1256.6 978.2 1271.2 C 940.8 1308.4 917.7 1326.8 861.2 1328.7 C 823.9 1329.9 779.8 1314.5 754.1 1287.4 C 729.9 1262.1 704.6 1237.6 680.2 1212.5 C 624.2 1155.2 568.6 1118.7 569.0 1029.5 C 569.4 946.0 609.4 913.0 663.2 858.7 L 737.6 782.6 C 791.0 728.3 854.9 704.8 927.9 740.8 C 949.7 751.5 964.6 768.2 981.4 785.2 C 995.8 800.0 1010.4 814.6 1025.1 829.2 C 1025.3 829.0 1025.5 828.8 1025.7 828.6 C 1049.9 807.1 1071.9 781.5 1096.0 760.1 C 1126.5 733.6 1167.8 720.5 1207.9 725.0 C 1228.4 727.4 1248.7 733.7 1266.4 744.1 C 1289.2 757.3 1305.7 776.0 1323.4 794.9 C 1335.8 808.1 1348.7 821.1 1361.4 834.1 L 1409.4 883.6 C 1420.8 895.2 1432.3 906.6 1442.5 919.3 C 1488.5 976.9 1491.6 1063.3 1451.6 1124.9 C 1436.6 1148.0 1416.5 1165.0 1396.8 1183.6 C 1382.5 1197.0 1368.4 1210.7 1354.5 1224.6 C 1332.4 1246.7 1308.7 1274.1 1285.2 1293.5 C 1254.3 1318.9 1205.8 1331.5 1166.6 1326.1 C 1109.1 1318.7 1086.6 1287 1047.4 1249.5 C 1043.1 1245.4 1027.3 1229.4 1023.0 1226.6 L 1022.1 1227.1 z M 1025.1 829.8 C 1036.4 837.6 1051.0 854.7 1061.1 865.0 C 1101.7 905.8 1137.9 937.8 1148.5 997.0 C 1165.8 1093.5 1109.3 1144.5 1045.6 1203.9 C 1039.1 1210.0 1028.9 1219.8 1023.0 1226.6 L 1022.1 1227.1 C 964.1 1166.5 887.9 1116.6 892.1 1022.7 C 895.0 956.2 922.1 928.2 967.2 884.9 L 1025.1 829.8 z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M 1007.8 942.7 L 1039.7 942.7 C 1039.9 998.3 1040.6 1056.0 1039.7 1111.4 L 1007.8 1111.4 L 1007.8 942.7 z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M 955.4 981.5 L 984.2 981.5 L 984.1 1072.3 L 955.4 1072.1 L 955.4 981.5 z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M 1063.2 981.8 L 1092 981.8 L 1092.1 1072.2 L 1063.2 1072.2 L 1063.2 981.8 z" />
+    </group>
 </vector>

@@ -30,7 +30,7 @@ State is shared and remembered (localStorage): listening state and timer across 
 - `lente-pages.js`: one renderer per screen.
 - `pages.css`: components of the demo screens.
 - `nav.css` + `lente-nav.js`: the dock (menu button + tab bar) and the side menu, with the spring curves.
-- `assets/`: made with Higgsfield for Lente: `logo-mark.svg` (Recraft V4.1 vector; cleaned into `logo-mark-clean.svg` and the themeable `#i-logo` symbol), `app-icon.png` (GPT Image 2.5; `app-icon-512.png`, `apple-touch-icon.png`, `favicon-64.png`), `clip-glasses.png` (GPT Image 2.5, transparent; `clip-glasses@720.png` is the one the menu loads).
+- `assets/`: made with Higgsfield for Lente: `logo-mark.svg` (Recraft V4.1 vector; cleaned into `logo-mark-clean.svg` and the themeable `#i-logo` symbol), `app-icon.png` (GPT Image 2.5; `app-icon-512.png`, `apple-touch-icon.png`, `favicon-64.png`), `clip-glasses.png` (GPT Image 2.5, transparent; `clip-glasses@720.png` is the one the menu loads). `assets/premium/`: the premium pack (new mark, icon in three appearances, product renders, 3D model, illustrations, backgrounds, launch and share images); see its README.
 - `asistir.html`, `reuniones.html`: screens built only from the kit.
 - `refs/`: the reference renders (Higgsfield, GPT Image 2.5, generated for Lente).
 - `tools/`: render, compare, zoom and interaction test (see Method).
