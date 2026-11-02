@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RUNTIME_IDLE_MS, WearerRegistry } from "../src/wearer-registry.ts";
+import { RUNTIME_IDLE_MS, WearerRegistry, mayStartListening, parseListeningCap } from "../src/wearer-registry.ts";
 
 function fake(userId: string, log: string[]) {
   let busy = false;
@@ -58,4 +58,17 @@ test("using a runtime resets its idle clock; the pinned owner is never evicted",
   now += RUNTIME_IDLE_MS * 5;
   assert.deepEqual(await reg.evictIdle(), ["a"]);
   assert.ok(reg.has("owner"));
+});
+
+test("the listening cap: unset means no cap, a bad value is refused, and the count excludes the asker", () => {
+  assert.equal(parseListeningCap(undefined), undefined);
+  assert.equal(parseListeningCap(""), undefined);
+  assert.equal(parseListeningCap("3"), 3);
+  for (const bad of ["0", "-1", "2.5", "many"]) assert.throws(() => parseListeningCap(bad), /LENTE_MAX_LISTENING/);
+  assert.equal(mayStartListening(5, undefined), true);
+  assert.equal(mayStartListening(1, 2), true);
+  assert.equal(mayStartListening(2, 2), false);
+  const reg = new WearerRegistry((id) => ({ ...fake(id, []), listening: id !== "c" }));
+  for (const id of ["a", "b", "c"]) reg.get(id);
+  assert.equal(reg.count((rt, id) => id !== "a" && rt.listening), 1);
 });

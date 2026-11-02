@@ -272,7 +272,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun failed(a: Answer, what: String) { if (!a.ok) say("No se pudo $what (${if (a.code == 0) "sin conexión" else a.code}).") }
 
-    fun setListening(on: Boolean) = post(if (on) "/listen/on" else "/listen/off") { failed(it, if (on) "empezar a escuchar" else "pausar") }
+    fun setListening(on: Boolean) = post(if (on) "/listen/on" else "/listen/off") {
+        // A hub at its cap of people listening answers 503 with a message for the wearer.
+        val busy = if (it.code == 503) runCatching { JSONObject(it.text).optString("message") }.getOrNull() else null
+        if (!busy.isNullOrEmpty()) say(busy) else failed(it, if (on) "empezar a escuchar" else "pausar")
+    }
     fun toggleListening() = setListening(!_hub.value.status.listening)
     fun stopSession() = post("/session/stop") { failed(it, "terminar") }
     fun setAssist(mode: String) = post("/assist-mode/$mode")

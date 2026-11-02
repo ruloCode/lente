@@ -80,7 +80,7 @@ before(async () => {
   const webPort = await freePort();
   base = `http://localhost:${webPort}`;
   hub = spawn(process.execPath, ["src/pilot.ts"], {
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, LENTE_CLOUD: "1", SUPABASE_URL: issuer, LENTE_KEK: randomBytes(32).toString("base64"), LENTE_ALLOWED_EMAILS: "alice@example.com bob@example.com", PILOT_WEB_PORT: String(webPort), PILOT_DEVICE_PORT: String(await freePort()), PILOT_DATA_DIR: mkdtempSync(join(tmpdir(), "lente-wearers-")) },
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, LENTE_CLOUD: "1", SUPABASE_URL: issuer, LENTE_KEK: randomBytes(32).toString("base64"), LENTE_ALLOWED_EMAILS: "alice@example.com bob@example.com", LENTE_MAX_LISTENING: "1", PILOT_WEB_PORT: String(webPort), PILOT_DEVICE_PORT: String(await freePort()), PILOT_DATA_DIR: mkdtempSync(join(tmpdir(), "lente-wearers-")) },
     stdio: "ignore",
   });
   for (let i = 0; i < 100; i++) {
@@ -126,4 +126,16 @@ test("two users each get their own state, and one's events never reach the other
 test("a request without a valid token reaches no runtime", async () => {
   assert.equal((await fetch(`${base}/profile`, { method: "POST", body: JSON.stringify({ names: "Nadie" }) })).status, 401);
   assert.equal((await fetch(`${base}/events`, { headers: { Authorization: "Bearer a.b.c" } })).status, 401);
+});
+
+test("LENTE_MAX_LISTENING: past the cap, starting to listen answers busy with a clear message", async () => {
+  const on = (sub: string, email: string) => fetch(`${base}/listen/on`, { method: "POST", headers: auth(sub, email) });
+  assert.equal((await on(ALICE, "alice@example.com")).status, 204);
+  const busy = await on(BOB, "bob@example.com");
+  assert.equal(busy.status, 503);
+  assert.deepEqual(await busy.json(), { error: "busy", message: "Lente está al máximo de personas escuchando ahora. Prueba de nuevo en unos minutos." });
+  assert.equal((await on(ALICE, "alice@example.com")).status, 204, "the one already listening is not refused");
+  assert.equal((await fetch(`${base}/listen/off`, { method: "POST", headers: auth(ALICE, "alice@example.com") })).status, 204);
+  assert.equal((await on(BOB, "bob@example.com")).status, 204);
+  await fetch(`${base}/listen/off`, { method: "POST", headers: auth(BOB, "bob@example.com") });
 });

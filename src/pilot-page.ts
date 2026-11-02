@@ -694,7 +694,13 @@ ${THEME_TOKENS}
 <script>
   const $ = (id) => document.getElementById(id);
   const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
-  const post = (path) => fetch(path, { method: "POST" }).catch(() => {});
+  const post = (path) => fetch(path, { method: "POST" }).then(async (r) => {
+    // The hub is at its cap of people listening: say so where the status note goes.
+    if (r.status === 503) {
+      const body = await r.json().catch(() => ({}));
+      if (body.message) { $("note").textContent = body.message; $("note").hidden = false; }
+    }
+  }).catch(() => {});
   const sendJson = (path, body) => fetch(path, { method: "POST", body: JSON.stringify(body || {}) }).catch(() => {});
   const fmt = (at) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const day = (at) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });

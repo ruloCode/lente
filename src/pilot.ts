@@ -37,7 +37,7 @@ import { HealthTracker } from "./health.ts";
 import { PAIR_PAGE } from "./pair-page.ts";
 import { type AuthMode, decideUpgrade, decideWeb } from "./access-gate.ts";
 import { type Identity, type IdentitySources, LOCAL_OWNER, identify } from "./identify.ts";
-import { EVICT_CHECK_MS, WearerRegistry } from "./wearer-registry.ts";
+import { BUSY_MESSAGE, EVICT_CHECK_MS, WearerRegistry, mayStartListening, parseListeningCap } from "./wearer-registry.ts";
 import { UserAuth } from "./user-auth.ts";
 import { FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { Accounts, CLOSED_TEST_MESSAGE, FileAccountStore, JsonFile, parseAllowList } from "./accounts.ts";
@@ -282,7 +282,7 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
  * meter and the live view. The laptop hub has one, for its owner, kept in `DATA_DIR` as before; a
  * hub with accounts makes one per signed-in user on first use and evicts it when idle.
  */
-function createWearerRuntime(userId: string, dataDir: string) {
+function createWearerRuntime(userId: string, dataDir: string, mayListen: () => boolean = () => true) {
   /** The runtime's repeating jobs, cleared when it is evicted. */
   const timers: ReturnType<typeof setInterval>[] = [];
   const every = (fn: () => void, ms: number): void => void timers.push(setInterval(fn, ms));
@@ -1259,6 +1259,11 @@ function createWearerRuntime(userId: string, dataDir: string) {
 
   /** The routes that act on this wearer's state; answers 404 for anything else. */
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === "POST" && req.url === "/listen/on" && !status.listening && !mayListen()) {
+      // LENTE_MAX_LISTENING: past the cap, starting to listen answers busy instead of overloading the hub.
+      res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      return void res.end(JSON.stringify({ error: "busy", message: BUSY_MESSAGE }));
+    }
     if (req.method === "GET" && req.url === "/manifest.webmanifest") {
       res.writeHead(200, { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" });
       res.end(webManifest());
@@ -1408,6 +1413,7 @@ function createWearerRuntime(userId: string, dataDir: string) {
       serveDevice(socket, remote);
     },
     pushStatus: (): void => broadcast(statusEvent()),
+    listening: (): boolean => status.listening,
     /** A phone follows, a device is connected, listening is on, or a meeting is open. */
     busy: (): boolean => clients.size > 0 || device !== undefined || status.listening || current !== undefined,
     /** Eviction: stop transcribing, flush usage and recorded time, end the streams, clear the timers. */
@@ -1431,7 +1437,10 @@ const runtimeDir = (userId: string): string => {
   if (!/^[0-9a-f-]{36}$/i.test(userId)) throw new Error(`user id ${userId.slice(0, 40)} is not a uuid`);
   return join(DATA_DIR, "users", userId);
 };
-const wearers = new WearerRegistry<WearerRuntime>((userId) => createWearerRuntime(userId, runtimeDir(userId)), { pinned: [LOCAL_OWNER], onEvict: (userId) => accounts?.forget(userId) });
+/** Users listening at once on this hub; unset means no cap (the laptop). Set from the capacity measured in task 6.4. */
+const LISTENING_CAP = parseListeningCap(process.env.LENTE_MAX_LISTENING);
+const othersListening = (userId: string): number => wearers.count((rt, id) => id !== userId && rt.listening());
+const wearers: WearerRegistry<WearerRuntime> = new WearerRegistry<WearerRuntime>((userId) => createWearerRuntime(userId, runtimeDir(userId), () => mayStartListening(othersListening(userId), LISTENING_CAP)), { pinned: [LOCAL_OWNER], onEvict: (userId) => accounts?.forget(userId) });
 // The laptop and a pairing hub have one wearer from the start, as before.
 if (AUTH_MODE !== "accounts") wearers.get(LOCAL_OWNER);
 setInterval(() => {

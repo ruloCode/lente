@@ -7,6 +7,19 @@
 export const RUNTIME_IDLE_MS = 30 * 60 * 1000;
 /** How often idle runtimes are looked for. */
 export const EVICT_CHECK_MS = 60 * 1000;
+/** What a user hears when the hub already has as many people listening as it can hold. */
+export const BUSY_MESSAGE = "Lente está al máximo de personas escuchando ahora. Prueba de nuevo en unos minutos.";
+
+/** `LENTE_MAX_LISTENING`: a positive whole number, or no cap when unset. */
+export function parseListeningCap(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const cap = Number(raw);
+  if (!Number.isInteger(cap) || cap < 1) throw new Error(`LENTE_MAX_LISTENING must be a whole number of at least 1, got ${raw}`);
+  return cap;
+}
+
+/** May one more user start listening, with `others` already listening? */
+export const mayStartListening = (others: number, cap: number | undefined): boolean => cap === undefined || others < cap;
 
 export interface Runtime {
   /** A phone follows, a device is connected, listening is on, or a meeting is open. */
@@ -48,6 +61,13 @@ export class WearerRegistry<R extends Runtime> {
 
   get size(): number {
     return this.runtimes.size;
+  }
+
+  /** How many runtimes match, e.g. how many are listening. */
+  count(match: (runtime: R, userId: string) => boolean): number {
+    let n = 0;
+    for (const [userId, { runtime }] of this.runtimes) if (match(runtime, userId)) n++;
+    return n;
   }
 
   each(fn: (runtime: R, userId: string) => void): void {
