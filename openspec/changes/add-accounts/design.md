@@ -215,6 +215,8 @@ The decision "Memory as files and long context, not RAG" becomes "long context i
 
 **When digests are written.** One plan (`src/nightly.ts`) serves the nightly run at the user's local midnight (from `accounts.time_zone`) and the catch-up when their runtime opens: every past day with data and no digest, then every finished week and month with day digests and none of its own, oldest first. Weeks and months are both built from day digests, so a month needs no week boundaries. A catch-up reaches back at most 31 days, so a long absence cannot spend without bound, and it stops at the first failed call so the next open resumes there.
 
+**Ids and chips.** Context lines use the records' own ids (`m…` meetings, `day:…`/`week:…`/`month:…`/`profile:…` digests, `F1` kept facts); looked-up lines use `m…:t5` for a meeting turn and `d2026-11-01:3` for a moment of a day. A digest cited in an answer becomes a chip labelled «Resumen · <period>» (kind `fact`); a turn opens its meeting at the turn as today. The plan may name only meetings and days that appear in the context, its range is cut to 92 days, and the loaders receive ids and dates, never the question's terms (`src/ask-tiers.ts`).
+
 **Why two calls.** Two structured calls instead of open tool calling, because Muse Spark function calling is not verified yet (`add-closing-agent` 1.1). If it is verified, step 2 can become a tool loop of at most 3 rounds behind the same contract.
 
 **Edits.** The user can read and correct the profile in Memoria. A correction is stored as a kept fact and wins over the generated text.

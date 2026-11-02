@@ -52,13 +52,14 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
   - Writers in `src/digests.ts`, stores in `src/stores.ts` (file) and `src/supabase-stores.ts` (sealed). Calling the profile writer when a meeting closes is wired with the per-user runtime (6.1), so the laptop hub makes no new model call until then.
 - [x] 5.2 Nightly job per user at their local midnight, and catch-up on the next open; test the catch-up with a clock (`pnpm test`)
   - `src/nightly.ts`: the plan, the run and a timer per user. Starting it when a user's runtime opens is wired with 6.1.
-- [ ] 5.3 Ask in tiers. Steps:
+- [x] 5.3 Ask in tiers. Steps:
   - the profile and digests as the cached prefix
   - a lookup-plan call that names meetings, days, a date range and terms
   - opening those records and ranking their turns in memory
   - the answer, with ids validated against everything shown
 
   Tests with a stubbed model: a question answered from a three-month-old meeting, one with nothing behind it, and a plan that names an id not shown (`pnpm test`)
+  - `src/ask-tiers.ts`; the `/ask` route uses it for an account's runtime once 6.1 lands, and the laptop keeps the 7-day window of `add-ask-lente`.
 - [ ] 5.4 Memoria shows the profile; a correction becomes a kept fact and the next profile reflects it; verify on the phone [phone]
 - [ ] 5.5 Long-history eval on about 60 synthetic meetings over 3 months. The questions are tagged by where the answer sits: in a digest, in an old meeting's notes, only in raw turns, or nowhere. Record accuracy per tag, refusals and latency p50/p90 against the 7-day window of `add-ask-lente` in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
