@@ -41,6 +41,8 @@ import { UserAuth } from "./user-auth.ts";
 import { FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { Accounts, CLOSED_TEST_MESSAGE, FileAccountStore, JsonFile, parseAllowList } from "./accounts.ts";
 import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
+import { DatabaseHealth, dbFailing } from "./db-health.ts";
+import { SupabaseRest } from "./supabase-rest.ts";
 import { type AddressDecision, type AddressTurn, addressMessages, isAddressed, parseNames, parseYesNo } from "./addressing.ts";
 import { LanguageStore } from "./language-store.ts";
 import { countAskedAnswered, forgetMeeting, mergeGlossary, totalAskedAnswered, viewGlossary, wearerPhrases } from "./language-profile.ts";
@@ -222,6 +224,10 @@ const auth = CLOUD ? new DeviceAuth(join(DATA_DIR, "devices.json")) : undefined;
 /** Accounts (add-accounts): with a Supabase project configured, every request acts for a signed-in user. */
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const userAuth = SUPABASE_URL ? new UserAuth(SUPABASE_URL) : undefined;
+const supabase = SUPABASE_URL && process.env.SUPABASE_SECRET_KEY ? new SupabaseRest({ url: SUPABASE_URL, secretKey: process.env.SUPABASE_SECRET_KEY }) : undefined;
+/** The database in health and on the phone (decision 13); checked every minute so a paused project shows. */
+const dbHealth = supabase ? new DatabaseHealth(() => supabase.system.ping()) : undefined;
+const DB_CHECK_EVERY_MS = 60_000;
 const AUTH_MODE: AuthMode = userAuth ? "accounts" : auth ? "pairing" : "open";
 /** Accounts mode: each user's clips, desktops and MCP clients, by token hash. */
 const userDevices = userAuth ? new UserDevices(new FileDeviceStore(join(DATA_DIR, "user-devices.json"))) : undefined;
@@ -269,7 +275,12 @@ const modelDown = () => {
   const h = health.snapshot();
   return h.model.state === "failing" ? h.model.reason : h.transcription.state === "failing" ? h.transcription.reason : "";
 };
-const statusEvent = () => ({ ...status, modelDown: modelDown(), session: sessionClock.view(Date.now()) });
+/** A failing database as its state (`paused`, `unreachable`, `refused`), `""` when fine or not configured. */
+const databaseDown = (): string => {
+  const db = dbHealth?.peek();
+  return db && dbFailing(db.state) ? db.state : "";
+};
+const statusEvent = () => ({ ...status, modelDown: modelDown(), databaseDown: databaseDown(), session: sessionClock.view(Date.now()) });
 
 /** What the phone read out loud lately; a turn that repeats it is Lente hearing itself. */
 const narration = new NarrationGuard();
@@ -1199,7 +1210,9 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
   if (who) requestIdentity.set(req, who);
   switch (decideWeb({ method: req.method, path, plainHttp: plainHttp(req), identified: Boolean(who) }, AUTH_MODE)) {
     case "health": {
-      const report = healthReport();
+      const base = healthReport();
+      const database = dbHealth ? await dbHealth.check() : undefined;
+      const report = database ? { ...base, ok: base.ok && !dbFailing(database.state), database } : base;
       res.writeHead(report.ok ? 200 : 503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(report));
       return true;
@@ -1413,6 +1426,16 @@ web.on("upgrade", async (req, raw, head) => {
 setInterval(() => {
   for (const res of clients) res.write(": keep-alive\n\n");
 }, 15_000);
+if (dbHealth) {
+  const checkDatabase = async () => {
+    const before = databaseDown();
+    const db = await dbHealth.check();
+    if (dbFailing(db.state) && !before) console.error(`[database] ${db.state}; memory writes will fail until it answers`);
+    if (databaseDown() !== before) broadcast(statusEvent());
+  };
+  void checkDatabase();
+  setInterval(() => void checkDatabase(), DB_CHECK_EVERY_MS);
+}
 
 const lanAddresses = Object.values(networkInterfaces())
   .flat()

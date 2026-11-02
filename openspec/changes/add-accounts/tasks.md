@@ -42,7 +42,7 @@ Depends on: `add-cloud-hub`, `add-ask-lente`
 - [x] 4.2 `src/supabase-rest.ts`: a `fetch` client for PostgREST and RPC with the secret key, retries on 5xx and 429, and errors that name the table and status; a query builder that requires `userId`, with a test that fails if any store method builds a query without it (`pnpm test`)
 - [x] 4.3 Supabase stores for every interface, sealing on write and opening on read; tests against a fake PostgREST that checks only ciphertext arrives in content columns (`pnpm test`)
 - [ ] 4.4 Atomic writes through RPC: a closed meeting with its turns and notes, and account creation with its wrapped DEK; verify on the project that a failure halfway leaves nothing behind [key:SUPABASE_SECRET_KEY]
-- [ ] 4.5 Database check in `/health` (ok, slow over 1 s, paused, unreachable; no content) and the phone's note when it fails; tests with a fake that times out and one that answers 503 (`pnpm test`)
+- [x] 4.5 Database check in `/health` (ok, slow over 1 s, paused, unreachable; no content) and the phone's note when it fails; tests with a fake that times out and one that answers 503 (`pnpm test`)
 - [ ] 4.6 `scripts/backup-db.ts`: nightly export of the sealed rows to the Modal volume, rotated after 7 days, never with the KEK; verify one export and one restore into a scratch schema [key:SUPABASE_SECRET_KEY]
 - [ ] 4.7 `scripts/import-data.ts`: seals today's files into the owner's account and prints counts per table against the files; run it on a copy of synthetic data first, then on the volume [key:SUPABASE_SECRET_KEY] [human]
 

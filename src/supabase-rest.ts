@@ -152,12 +152,13 @@ export class SupabaseRest {
       sessionByTokenHash: (hash: Buffer) => this.send<Row[]>("GET", "sessions", sys("sessions").eq("token_hash", toBytea(hash)).limit(1).search("*"), undefined, {}, undefined),
       canary: (version: number) => this.send<Row[]>("GET", "kek_canaries", sys("kek_canaries").eq("kek_version", version).search("kek_version,sealed"), undefined, {}, undefined),
       putCanary: (version: number, sealed: Buffer) => this.send<null>("POST", "kek_canaries", "", [{ kek_version: version, sealed: toBytea(sealed) }], { Prefer: "return=minimal" }, undefined),
-      /** One cheap select for health (decision 13), timed by the caller. */
-      ping: () => this.send<Row[]>("GET", "accounts", sys("accounts").limit(1).search("user_id"), undefined, {}, undefined),
+      /** One cheap select for health (decision 13), timed by the caller; no retries, so a failure shows at once. */
+      ping: () => this.send<Row[]>("GET", "accounts", sys("accounts").limit(1).search("user_id"), undefined, {}, undefined, false),
     };
   }
 
-  private async send<T>(method: string, path: string, search: string, body: unknown, extra: Record<string, string>, scopedTo: string | undefined): Promise<T> {
+  private async send<T>(method: string, path: string, search: string, body: unknown, extra: Record<string, string>, scopedTo: string | undefined, retry = true): Promise<T> {
+    const delays = retry ? RETRY_DELAYS_MS : [];
     const table = path.startsWith("rpc/") ? path : path.split("/")[0]!;
     if (scopedTo !== undefined && !new URLSearchParams(search).getAll("user_id").includes(`eq.${scopedTo}`)) {
       throw new Error(`refusing ${method} on ${table}: the query lost its user filter`);
@@ -175,13 +176,13 @@ export class SupabaseRest {
         if (res.ok) return (text ? JSON.parse(text) : null) as T;
       } catch (error) {
         if (error instanceof SyntaxError) throw new SupabaseError(table, status, undefined, "answered with a body that is not JSON");
-        if (attempt >= RETRY_DELAYS_MS.length) throw new SupabaseError(table, 0, undefined, `unreachable: ${(error as Error).name}`);
-        await this.sleep(RETRY_DELAYS_MS[attempt]!);
+        if (attempt >= delays.length) throw new SupabaseError(table, 0, undefined, `unreachable: ${(error as Error).name}`);
+        await this.sleep(delays[attempt]!);
         continue;
       }
       const retryable = status === 429 || status >= 500;
-      if (retryable && attempt < RETRY_DELAYS_MS.length) {
-        await this.sleep(RETRY_DELAYS_MS[attempt]!);
+      if (retryable && attempt < delays.length) {
+        await this.sleep(delays[attempt]!);
         continue;
       }
       throw new SupabaseError(table, status, errorCode(text), status === 401 || status === 403 ? "refused the secret key" : retryable ? "failed after retries" : "rejected the request");

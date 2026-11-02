@@ -110,8 +110,12 @@ test("4xx is not retried; a unique violation keeps only its code", async () => {
 test("a network failure is retried, then reported as unreachable", async () => {
   let n = 0;
   const rest = new SupabaseRest({ url: "https://ref.supabase.co", secretKey: SECRET, sleep: async () => {}, fetch: async () => { n++; throw new TypeError("fetch failed"); } });
-  await assert.rejects(rest.system.ping(), /accounts: 0 unreachable: TypeError/);
+  const db = rest.forUser(ALICE);
+  await assert.rejects(db.select(db.query("facts")), /facts: 0 unreachable: TypeError/);
   assert.equal(n, 3);
+  n = 0;
+  await assert.rejects(rest.system.ping(), /accounts: 0 unreachable/);
+  assert.equal(n, 1, "the health ping does not retry");
 });
 
 test("the cross-user lookups are the named ones only, by hash or version", async () => {

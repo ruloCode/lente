@@ -16,6 +16,14 @@ class CopyAndVoiceTest {
         assertNull(Copy.pause(Status(listening = true, pause = null)))
     }
 
+    @Test fun databaseNote() {
+        assertEquals("La memoria en la nube está pausada: reactiva el proyecto en Supabase. Lo nuevo no se guarda hasta entonces.", Copy.note(Status(clip = true, databaseDown = "paused")))
+        assertEquals("La memoria en la nube no responde. Lo nuevo no se guarda hasta que vuelva.", Copy.note(Status(clip = true, databaseDown = "unreachable")))
+        assertEquals("Meta no responde (key rejected): revisa la clave en el hub.", Copy.note(Status(clip = true, modelDown = "key rejected", databaseDown = "paused")))
+        assertNull(Copy.note(Status(clip = true)))
+        assertEquals("paused", HubJson.status(org.json.JSONObject("""{"kind":"status","databaseDown":"paused"}""")).databaseDown)
+    }
+
     @Test fun noteFirstMatchWins() {
         assertEquals("Esperando el clip. Revisa que tenga batería y esté en la misma red Wi-Fi.", Copy.note(Status()))
         assertEquals("Se cortó la transcripción. Reconectando…", Copy.note(Status(clip = true, listening = true, asr = "transcription closed (1006 )")))

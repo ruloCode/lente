@@ -234,6 +234,12 @@ object Copy {
         s.clipError.isNotEmpty() && !s.clip -> "El hub rechazó el clip: ${s.clipError}."
         s.asr.contains("MODEL_API_KEY") -> "Falta la clave de Meta: solo se ven la cámara y el nivel de audio."
         s.modelDown.isNotEmpty() -> "Meta no responde (${s.modelDown}): revisa la clave en el hub."
+        s.databaseDown.isNotEmpty() -> when (s.databaseDown) {
+            "paused" -> "La memoria en la nube está pausada: reactiva el proyecto en Supabase. Lo nuevo no se guarda hasta entonces."
+            "refused" -> "El hub no puede entrar a la memoria en la nube: revisa la clave de Supabase."
+            "unreachable" -> "La memoria en la nube no responde. Lo nuevo no se guarda hasta que vuelva."
+            else -> "La memoria en la nube falla."
+        }
         !s.clip -> "Esperando el clip. Revisa que tenga batería y esté en la misma red Wi-Fi."
         s.listening && s.asr != "listening" && !s.asr.startsWith("listening ·") -> when {
             s.asr.startsWith("connecting") -> "Conectando la transcripción…"

@@ -275,6 +275,8 @@ Usage moves to `usage_daily` per user, model and provider, priced from the list 
 
 `/health` gains a database check: one `select` on `accounts` with the secret key, timed. It reports ok, slow (over 1 s), paused or unreachable, never content. The phone shows a note when it fails, as it does for the model key.
 
+The check (`src/db-health.ts`) has no retries, times out after 5 s, and its result is reused for 15 s so health checks do not hammer the project; the hub also runs it every minute, logs when it starts failing, and sends the state to the phone as `databaseDown`. A rejected secret key reports `refused`, a fifth state, so a wrong key is not mistaken for an outage. A paused project is taken to answer 540 or 503; task 1.1 confirms the live answer.
+
 ## Schema
 
 All tables are in `public`, have RLS enabled with no policy for `anon` or `authenticated`, and carry `user_id uuid not null references auth.users(id) on delete cascade` unless noted. `*_enc` columns are `bytea` sealed per decision 5.

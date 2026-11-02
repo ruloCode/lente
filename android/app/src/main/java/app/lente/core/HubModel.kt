@@ -29,6 +29,8 @@ data class Status(
     val clipError: String = "",
     val asr: String = "",
     val modelDown: String = "",
+    /** A failing cloud database (`paused`, `unreachable`, `refused`), empty when fine or not configured. */
+    val databaseDown: String = "",
     val session: Session? = null,
 ) {
     val recordOnly get() = assistMode == "record"
@@ -161,6 +163,7 @@ object HubJson {
         clipError = o.optString("clipError"),
         asr = o.optString("asr"),
         modelDown = o.optString("modelDown"),
+        databaseDown = o.optString("databaseDown"),
         session = o.optJSONObject("session")?.let { Session(it.optLong("startedAt"), it.optLong("listenedMs"), it.optBoolean("running")) },
     )
 
