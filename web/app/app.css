@@ -163,7 +163,8 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border-radius: 7
 .soft-empty { display: grid; justify-items: center; gap: 12px; padding: 28px; text-align: center; }
 .loading { padding: 20px 0; }
 .error-box { display: grid; justify-items: start; gap: 10px; padding: 16px; border-radius: 14px; background: var(--warn-bg); color: var(--warn-ink); }
-.error-text { color: var(--live); font-size: 14px; min-height: 1em; }
+.error-text { color: var(--live); font-size: 14px; }
+.error-text:empty { display: none; }
 .note { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--raised); font-size: 13.5px; color: var(--muted); }
 .note.warn { background: var(--warn-bg); color: var(--warn-ink); }
 .plain-list { list-style: none; margin: 0; padding: 4px 0; }
@@ -180,8 +181,8 @@ a.row-link:hover { background: var(--raised); text-decoration: none; }
 .dilo-line { font: 700 28px/1.2 var(--display); letter-spacing: -.015em; border-left: 4px solid var(--accent); padding-left: 16px; }
 .dilo-meaning { color: var(--muted); }
 .dilo-meaning strong { color: var(--ink); }
-.help-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.help-row .btn { justify-content: center; }
+.help-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.help-row .btn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
 .transcript-card { grid-column: 2; grid-row: 1 / span 3; padding: 18px 20px; max-height: 70vh; overflow: auto; }
 .turns { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .turn { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; }

@@ -10,6 +10,9 @@ import { count, greeting } from "../lib/words.js";
 import { lifecycle, reactive } from "../reactive.js";
 import { store } from "../store.js";
 
+/** How long the last card stays on Inicio once listening stopped. */
+const CARD_FRESH_MS = 30 * 60_000;
+
 const HELP = [
   { kind: "aportar", label: "Aportar", icon: "plus" },
   { kind: "pregunta", label: "Pregunta", icon: "sparkle" },
@@ -38,7 +41,9 @@ function liveSection() {
   const cue = store.state.cue;
   const listening = Boolean(s?.listening);
   const parts = [];
-  if (cue && (listening || Date.now() - (cue.at ?? 0) < 30 * 60_000)) parts.push(diloCard(cue));
+  // While listening, only this session's card; otherwise the last one for half an hour.
+  const since = listening ? s.session?.startedAt ?? 0 : Date.now() - CARD_FRESH_MS;
+  if (cue && (cue.at ?? 0) >= since) parts.push(diloCard(cue));
   if (listening) {
     if (s.assistMode !== "record") parts.push(h("div", { class: "help-row", role: "group", "aria-label": "Ayuda ahora" }, HELP.map((x) => button(x.label, { class: "btn soft", onclick: (e) => askHelp(x.kind, e.currentTarget) }, x.icon))));
     parts.push(transcriptCard());

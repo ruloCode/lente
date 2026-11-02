@@ -13,9 +13,12 @@ Depends on: `add-accounts`, `add-projects`, `add-task-owners`, `add-record-sheet
 
 ## 2. Inicio, the chat and Grabar
 
-- [ ] 2.1 Inicio: greeting, project cards, "Ver los N proyectos", the DILO card, the live transcript bar while recording; screenshots
-- [ ] 2.2 The chat panel: scope chip, suggestions, answers with source chips that open the meeting at the turn, "Nueva conversación", dictation when the browser has it; checked against the hub with no model key (the hub's own refusal shows)
-- [ ] 2.3 Grabar: project, title, source and device; capture from this computer through the `/desktop` pipeline; the red bar with time, Pausar and Terminar; checked with the stubbed hub [human] for a real microphone and tab
+- [x] 2.1 Inicio: greeting, project cards, "Ver los N proyectos", the DILO card, the live transcript bar while recording; screenshots
+- [x] 2.2 The chat panel: scope chip, suggestions, answers with source chips that open the meeting at the turn, "Nueva conversación", dictation when the browser has it; checked against the hub with the stubbed Meta API
+  - 2026-11-02: «Resumen de hoy» got the stub's answer with a «Recuerdo» chip in 0.0 s (stub). Dictation shows only where the browser has speech recognition.
+- [x] 2.3 Grabar: project, title, source and device; capture from this computer through the `/desktop` pipeline; the red bar with time, Pausar and Terminar; checked with the stubbed hub
+  - 2026-11-02, with `scripts/fake-clip.ts` on a laptop hub and the stubbed Meta API: R opened Grabar, the clip was the default device, the meeting opened in the chosen project (its card went to 2 meetings this week), the live transcript showed the partial then the turn, «Pregunta» gave a help card, Pausar stopped the clock (Reanudar), and Terminar ended it on the second click. In the page, the generated pipeline resampled 4,800 samples at 48 kHz to 1,600 at 16 kHz and framed them.
+- [ ] 2.4 Grabar with this computer's microphone, camera and a Meet tab: the browser's permission prompts and a real source [human]
 
 ## 3. Tareas and Proyectos
 

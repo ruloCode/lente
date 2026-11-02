@@ -47,7 +47,7 @@ function form(close) {
     : h("p", { class: "note" }, icon("info"), "El clip no está conectado: grabará esta computadora.");
   computerPart.hidden = state.device === "clip";
 
-  const start = h("button", { type: "submit", class: "btn primary wide" }, icon("record"), h("span", {}, "Empezar a grabar"));
+  const start = h("button", { type: "submit", class: "btn primary" }, icon("record"), h("span", {}, "Empezar a grabar"));
   return h(
     "form",
     {
