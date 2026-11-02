@@ -97,6 +97,23 @@ export function unwrapDek(wrapped: Buffer, kekVersion: number, keks: readonly Ke
   return dek;
 }
 
+const CANARY = Buffer.from("lente-kek-canary", "utf8");
+const canaryAad = (version: number): Buffer => Buffer.from(`lente/v${SEAL_VERSION}/kek_canaries/sealed/kek-${version}`, "utf8");
+
+/** A fixed value sealed under the KEK at setup (`kek_canaries`), to prove at start that the KEK is the same one. */
+export function sealCanary(kek: Kek): Buffer {
+  return encrypt(kek.key, CANARY, canaryAad(kek.version));
+}
+
+/** True when the canary opens under this KEK to the fixed value. */
+export function opensCanary(kek: Kek, sealed: Buffer): boolean {
+  try {
+    return decrypt(kek.key, sealed, canaryAad(kek.version), "KEK canary").equals(CANARY);
+  } catch {
+    return false;
+  }
+}
+
 /** Seals a content value for one place in the database. */
 export function seal(dek: Buffer, value: string | Buffer, ref: SealRef): Buffer {
   return encrypt(dek, typeof value === "string" ? Buffer.from(value, "utf8") : value, aadOf(ref));

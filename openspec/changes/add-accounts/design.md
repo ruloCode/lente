@@ -136,6 +136,8 @@ The measured size per hour of listening (task 6.3) says when the first will happ
 - the wrong user's key
 - a wrong KEK version
 
+**Canary.** At setup the hub seals a fixed value under the KEK into `kek_canaries` (one row per KEK version, no `user_id`). At start it opens the canary of every KEK version it loaded; one that does not open stops the hub before it serves anything, so a wrong `LENTE_KEK` in the secret store is caught at start rather than as unreadable rows. The canary lives in the database, next to the wrapped DEKs it vouches for, not next to the KEK. The env carries the current KEK (`LENTE_KEK`, `LENTE_KEK_VERSION`, default 1) and, during a rotation, the previous one (`LENTE_KEK_PREVIOUS`, version one lower).
+
 **Caching.** Unwrapped DEKs are cached in the hub's memory per active user and dropped when that user's runtime is evicted.
 
 **Rejected.**
@@ -276,6 +278,7 @@ All tables are in `public`, have RLS enabled with no policy for `anon` or `authe
 | Table | Key columns | Notes |
 |---|---|---|
 | `accounts` | `user_id` PK, `display_name_enc`, `locale` (default `es-CO`), `time_zone`, `assist_mode` (`assist`/`record`), `monthly_cap_cents`, `created_at`, `deleted_at` | One per user |
+| `kek_canaries` | `kek_version int` PK, `sealed bytea`, `created_at` | No `user_id`; a fixed value sealed under each KEK version (decision 5) |
 | `user_keys` | `user_id` PK, `kek_version int`, `wrapped_dek bytea`, `created_at`, `rotated_at` | Deleted first on account deletion |
 | `sessions` | `id` PK, `user_id`, `refresh_enc`, `created_at`, `last_used_at`, `revoked_at` | Web sessions behind the hub cookie |
 | `devices` | `id` PK, `user_id`, `kind` (`clip`/`desktop`/`mcp`), `label`, `token_hash bytea unique`, `created_at`, `last_seen_at`, `revoked_at` | Index `(user_id)` |
