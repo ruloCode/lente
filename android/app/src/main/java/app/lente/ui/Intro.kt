@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,9 +44,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import app.lente.LenteViewModel
 import app.lente.Link
+import app.lente.R
 import kotlinx.coroutines.launch
 
 private const val STEPS = 6
+private val ART = 168.dp
 
 /** First run: what Lente does, the hub, the wearer's names, the clip, the voice, and the listening promise. */
 @Composable
@@ -93,9 +94,10 @@ fun Intro(vm: LenteViewModel, onDone: () -> Unit) {
                 when (s) {
                     0 -> {
                         Spacer(Modifier.height(32.dp))
-                        Box(Modifier.size(96.dp).clip(RoundedCornerShape(28.dp)).background(c.accentFill), contentAlignment = Alignment.Center) {
-                            Canvas(Modifier.size(64.dp)) { drawMark(androidx.compose.ui.graphics.Color.White, androidx.compose.ui.graphics.Color(0xFF8CC8FF)) }
-                        }
+                        androidx.compose.foundation.Image(
+                            androidx.compose.ui.res.painterResource(R.drawable.art_app_icon), contentDescription = "Lente",
+                            modifier = Modifier.size(104.dp).clip(RoundedCornerShape(24.dp)),
+                        )
                         Heading("Te dice qué decir, justo cuando te preguntan.")
                         Body("Lente escucha la reunión desde el clip de tus lentes. Cuando alguien te hace una pregunta, aquí aparece una frase para responder: DILO.")
                     }
@@ -108,24 +110,28 @@ fun Intro(vm: LenteViewModel, onDone: () -> Unit) {
                         if (connected) Text("Conectado con ${vm.hubAddress}.", style = Type.callout, color = c.ok, modifier = Modifier.padding(top = 10.dp))
                     }
                     2 -> {
+                        Art(R.drawable.art_intro_names, ART)
                         Heading("¿Cómo te llaman?")
                         Body("Lente te avisa cuando alguien dice uno de estos nombres. Separa los apodos con comas.")
                         Spacer(Modifier.height(20.dp))
                         Field(names.ifEmpty { hub.status.names.joinToString(", ") }, { names = it }, "Rulo, Raúl", onDone = ::next, tag = "intro-names")
                     }
                     3 -> {
+                        ClipPicture()
                         Heading("Conecta el clip")
                         Body("Enciéndelo: se conecta solo a la misma red Wi-Fi que la computadora donde corre Lente. Si no lo tienes a mano, en Ahora puedes usar el micrófono del teléfono.")
                         Spacer(Modifier.height(20.dp))
                         StatusLine(hub.status.clip, if (hub.status.clip) app.lente.core.Copy.device(hub.status) else "Esperando el clip…")
                     }
                     4 -> {
+                        Art(R.drawable.art_intro_voice, ART)
                         Heading("Que reconozca tu voz")
                         Body("Con el clip puesto, di en voz alta:")
                         Text("“Lente, soy …”", style = Type.large, color = c.ink, modifier = Modifier.padding(vertical = 20.dp))
                         StatusLine(hub.status.wearer.isNotEmpty(), if (hub.status.wearer.isNotEmpty()) "Te reconocí" else "Escuchando…")
                     }
                     else -> {
+                        Art(R.drawable.art_intro_privacy, ART)
                         Heading("Siempre a la vista")
                         Body("Mientras escucha verás la franja roja arriba y este botón. Tócalo cuando quieras pausar. Lente guarda solo texto, nunca audio.")
                         Spacer(Modifier.height(16.dp))

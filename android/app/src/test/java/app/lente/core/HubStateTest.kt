@@ -109,6 +109,20 @@ class SpeakerAfterResumeTest {
         org.junit.Assert.assertEquals("B", s.entries.first { it.text == "new" }.speaker)
     }
 
+    @Test fun liveFramesMoveThePictureAndKeepTheLastDescription() {
+        val on = HubState().reduce(HubEvent.StatusEvent(Status(live = true, mode = "camera")), 0)
+        val described = on.reduce(HubEvent.Day(Entry("frame", 1_000, "", photo = "data:image/jpeg;base64,AAAA")), 0)
+            .reduce(HubEvent.Day(Entry("frame", 1_600, "", photo = "data:image/jpeg;base64,BBBB")), 0)
+            .reduce(HubEvent.Day(Entry("live", 2_500, "Una mesa.", photo = "data:image/jpeg;base64,AAAA")), 0)
+        // The read keeps the frame it describes; the view keeps the newest frame and shows the text.
+        assertEquals("data:image/jpeg;base64,AAAA", described.liveReads.first().photo)
+        assertEquals("data:image/jpeg;base64,BBBB", described.view?.photo)
+        val moved = described.reduce(HubEvent.Day(Entry("frame", 3_000, "", photo = "data:image/jpeg;base64,CCCC")), 0)
+        assertEquals("Una mesa.", moved.view?.text)
+        assertEquals("data:image/jpeg;base64,CCCC", moved.view?.photo)
+        assertEquals(1, moved.liveReads.size)
+    }
+
     @Test fun liveViewKeepsTheSessionsReadsNewestFirst() {
         fun read(at: Long, text: String) = HubEvent.Day(Entry("live", at, text, photo = "data:image/jpeg;base64,AAAA"))
         val on = HubState().reduce(HubEvent.StatusEvent(Status(live = true, mode = "camera")), 5_000)

@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import app.lente.capture.Capture
 import app.lente.capture.CaptureService
 import app.lente.core.Briefing
+import app.lente.core.ChatJson
+import app.lente.core.ChatLine
 import app.lente.core.Effect
 import app.lente.core.Fact
 import app.lente.core.HubAddress
@@ -72,6 +74,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     /** The camera's live view is open over everything. */
     val cameraOpen = MutableStateFlow(false)
     val narrateLive = MutableStateFlow(prefs.narrateLive)
+    /** The chat with Lente on Inicio: its messages for this run of the app. */
+    val chat = MutableStateFlow<List<ChatLine>>(emptyList())
+    private var chatIds = 0L
+    /** "system", "light" or "dark". */
+    val theme = MutableStateFlow(prefs.theme)
     val facts = MutableStateFlow<List<Fact>>(emptyList())
     val detail = MutableStateFlow<MeetingDetail?>(null)
     val trace = MutableStateFlow<List<TraceStep>?>(null)
@@ -199,11 +206,44 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeCamera() { cameraOpen.value = false }
 
+    /** A question to Lente: shown at once, answered from the memory with its sources when the hub replies. */
+    fun askLente(question: String) {
+        val q = question.trim()
+        if (q.isEmpty() || chat.value.lastOrNull()?.pending == true) return
+        val before = chat.value
+        val asked = ChatLine(++chatIds, true, q)
+        val waiting = ChatLine(++chatIds, false, "", pending = true)
+        if (client == null) {
+            chat.value = before + asked + waiting.copy(text = "No hay hub conectado: revisa Ajustes.", pending = false, found = false)
+            return
+        }
+        chat.value = before + asked + waiting
+        post("/ask", ChatJson.request(q, before)) { a ->
+            val reply = runCatching { ChatJson.answer(waiting.id, a.text) }.getOrNull()
+                ?: ChatLine(waiting.id, false, when {
+                    a.code == 404 -> "Este hub todavía no tiene el chat: actualízalo para preguntarle a Lente."
+                    a.ok -> "No entendí la respuesta del hub."
+                    else -> "No pude preguntarle al hub; revisa la conexión."
+                }, found = false)
+            chat.value = chat.value.map { if (it.id == waiting.id) reply else it }
+        }
+    }
+
+    /** Reads one of Lente's answers aloud, whatever Voz says. */
+    fun speak(text: String) = speech.say(text, Voice.Priority.Normal)
+
+    fun clearChat() { chat.value = emptyList() }
+
     /** Detener en vivo: live reads off, back to where the wearer was. */
     fun stopCamera() {
         setLive(false)
         cameraOpen.value = false
         speech.stop()
+    }
+
+    fun setTheme(mode: String) {
+        theme.value = mode
+        prefs.theme = mode
     }
 
     fun setNarrateLive(on: Boolean) {

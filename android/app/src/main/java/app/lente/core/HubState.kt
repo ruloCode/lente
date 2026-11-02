@@ -98,10 +98,13 @@ data class HubState(
     private fun day(e: Entry): HubState = when {
         e.kind == "turn" -> addAll(listOf(e)).copy(partial = "")
         e.kind == "summary" -> addAll(listOf(e)).copy(summary = e)
+        // A live frame: the picture moves on, what Lente last said about it stays.
+        e.kind == "frame" -> copy(view = (view?.takeIf { it.badge == "EN VIVO" } ?: View("EN VIVO", "", null, null, null, emptyMap(), e.at)).copy(photo = e.photo))
         e.kind == "live" -> {
             val v = View("EN VIVO", e.text, e.ms, e.photo, e.id, e.stages, e.at)
             if (e.text.isBlank()) copy(view = v)
-            else addAll(listOf(e)).copy(view = v, liveReads = (listOf(v) + liveReads).take(MAX_LIVE_READS))
+            // The description is of a frame a moment old: the list keeps that frame, the view the newest one.
+            else addAll(listOf(e)).copy(view = v.copy(photo = view?.takeIf { it.badge == "EN VIVO" }?.photo ?: e.photo), liveReads = (listOf(v) + liveReads).take(MAX_LIVE_READS))
         }
         e.isPhoto -> {
             val v = View(if (e.label == "ON SCREEN") "EN PANTALLA" else "FOTO", e.text, e.ms, e.photo, e.id, e.stages, e.at)

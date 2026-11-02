@@ -53,6 +53,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -222,8 +223,9 @@ fun LevelBars(level: Float, color: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun Empty(text: String, modifier: Modifier = Modifier, action: String? = null, onAction: (() -> Unit)? = null) {
+fun Empty(text: String, modifier: Modifier = Modifier, action: String? = null, art: Int? = null, onAction: (() -> Unit)? = null) {
     Card(modifier) {
+        if (art != null) Art(art, 120.dp, Modifier.padding(bottom = 4.dp))
         Text(text, style = Type.callout, color = Lente.c.muted)
         if (action != null && onAction != null) {
             Spacer(Modifier.height(8.dp))
@@ -263,5 +265,13 @@ fun Notice(text: String, modifier: Modifier = Modifier, action: String? = null, 
             Text(text, style = Type.callout, color = c.ink, modifier = Modifier.weight(1f))
             if (action != null && onAction != null) Text(action, style = Type.headline, color = c.accent, modifier = Modifier.padding(start = 12.dp).clickable(onClick = onAction).padding(vertical = 6.dp))
         }
+    }
+}
+
+/** One of the pack's illustrations (docs/design/ios-kit/assets/premium), centered; decorative, so no description. */
+@Composable
+fun Art(@androidx.annotation.DrawableRes id: Int, size: Dp, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(id), contentDescription = null, modifier = Modifier.size(size))
     }
 }

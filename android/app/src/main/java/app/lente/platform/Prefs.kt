@@ -23,6 +23,10 @@ class Prefs(context: Context) {
     var narrateLive: Boolean
         get() = sp.getBoolean("narrateLive", false)
         set(v) = sp.edit().putBoolean("narrateLive", v).apply()
+    /** "system", "light" or "dark": the app's appearance, chosen in Ajustes. */
+    var theme: String
+        get() = sp.getString("theme", "system") ?: "system"
+        set(v) = sp.edit().putString("theme", v).apply()
     /** The listening session whose live view the wearer collapsed. */
     var collapsedSession: Long
         get() = sp.getLong("collapsedSession", 0)

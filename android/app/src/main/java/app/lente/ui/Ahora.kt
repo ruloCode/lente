@@ -51,6 +51,20 @@ import app.lente.core.Entry
 import app.lente.core.Format
 import app.lente.core.HubState
 import kotlinx.coroutines.delay
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import app.lente.core.Greeting
 
 /** Ahora: the live loop. Status, mode, the Dilo card, the meeting, what is happening, the photo and today's timeline. */
 @Composable
@@ -64,10 +78,9 @@ fun Ahora(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
     LazyColumn(
         Modifier.fillMaxSize().testTag("ahora"),
         contentPadding = PaddingValues(start = Lente.gutter, end = Lente.gutter, top = 4.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item("status") { StatusRow(hub) { vm.go(Screen.Dispositivos) } }
-        item("assist") { Segmented(listOf("assist" to "Asistir", "record" to "Solo grabar"), s.assistMode, vm::setAssist, label = "Modo de Lente") }
+        item("hero") { if (s.listening) ListeningHero(vm, hub) else RestingHero(vm, hub) }
         Copy.note(s)?.let { note -> item("note") { Notice(note, tag = "status-note") } }
         if (!s.clip && capture !is Capture.State.On && capture != Capture.State.Starting) item("use-phone") {
             Button("Usar el teléfono", usePhone, Modifier.fillMaxWidth().testTag("use-phone"), tone = Tone.Plain, glyph = Glyph.Phone)
@@ -76,10 +89,12 @@ fun Ahora(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
         Copy.pause(s)?.let { (text, action) -> item("pause") { Notice(text, action = action, tag = "pause-note") { vm.setListening(true) } } }
         val card = hub.card
         if (card != null && !s.recordOnly) item("cue") { DiloCard(card) }
+        item("actions") { QuickActions(vm, hub) }
+        if (s.listening || hub.summary != null) item("now") { NowCard(hub.summary) }
+        item("stats") { TodayCard(hub) }
         item("meeting") { MeetingCard(vm, hub) }
-        item("now") { NowCard(hub.summary) }
         item("view") { ViewCard(vm, hub) }
-        item("today") { SectionTitle("Hoy", trailing = if (hub.turnCount > 0) "${hub.turnCount} turnos" else null) }
+        item("today") { SectionTitle("Lo último", trailing = if (hub.turnCount > 0) "${hub.turnCount} turnos" else null) }
         if (timeline.isEmpty() && hub.partial.isBlank()) item("hint") {
             Text("Aquí aparece lo que se dice a tu alrededor, con una letra por persona. Solo se guarda como texto.", style = Type.callout, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp))
         }
@@ -88,6 +103,140 @@ fun Ahora(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
             Text(hub.partial, style = Type.body, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp).testTag("partial"))
         }
     }
+    }
+}
+
+/** Which device listens, as one row that opens Dispositivos; `device` is what the end-to-end script reads. */
+@Composable
+private fun DeviceLine(vm: LenteViewModel, hub: HubState, modifier: Modifier = Modifier, stacked: Boolean = false) {
+    val c = Lente.c
+    val s = hub.status
+    // Narrow (beside the clip picture) the mode goes under the device; wide, everything sits on one line with the sound level.
+    Column(modifier.clip(RoundedCornerShape(12.dp)).clickable { vm.go(Screen.Dispositivos) }.padding(vertical = 6.dp).testTag("status-row")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Dot(if (s.clip) c.ok else c.muted, 10.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(Copy.device(s), style = Type.headline, color = c.ink, modifier = Modifier.testTag("device"))
+            if (!stacked) {
+                Spacer(Modifier.width(8.dp))
+                Text(Copy.mode(s), style = Type.caption, color = c.muted, maxLines = 1)
+                Spacer(Modifier.width(8.dp))
+                LevelBars(if (s.listening) (hub.level / 3000f).coerceIn(0f, 1f) else 0f, if (s.listening && s.clip) c.liveFill else c.muted)
+            }
+        }
+        if (stacked) Text(Copy.mode(s), style = Type.caption, color = c.muted, maxLines = 1, modifier = Modifier.padding(start = 18.dp, top = 2.dp))
+    }
+}
+
+/** At rest: the clip on its glasses, which device is there, one big button to start, and Asistir or Solo grabar. */
+@Composable
+private fun RestingHero(vm: LenteViewModel, hub: HubState) {
+    val c = Lente.c
+    val s = hub.status
+    Card(padding = PaddingValues(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                androidx.compose.ui.res.painterResource(if (c.dark) app.lente.R.drawable.art_clip_dark else app.lente.R.drawable.art_clip),
+                contentDescription = "El clip de Lente en unos lentes", contentScale = ContentScale.Fit,
+                modifier = Modifier.weight(0.5f).aspectRatio(1.25f).clip(RoundedCornerShape(16.dp)),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(0.5f)) {
+                DeviceLine(vm, hub, stacked = true)
+                Text(
+                    if (s.clip) "Nada se transcribe hasta que toques." else "Sin clip, el teléfono puede escuchar por él.",
+                    style = Type.caption, color = c.muted, modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Button("Empezar a escuchar", { vm.setListening(true) }, Modifier.fillMaxWidth().height(54.dp).testTag("start-listening"), glyph = Glyph.Play)
+        Spacer(Modifier.height(12.dp))
+        Segmented(listOf("assist" to "Asistir", "record" to "Solo grabar"), s.assistMode, vm::setAssist, label = "Modo de Lente")
+    }
+}
+
+/** Listening: Lente's mark in a glass orb that breathes with the room's sound, and what it is doing. */
+@Composable
+private fun ListeningHero(vm: LenteViewModel, hub: HubState) {
+    val c = Lente.c
+    val s = hub.status
+    val level by animateFloatAsState((hub.level / 3000f).coerceIn(0f, 1f), spring(stiffness = 300f), label = "level")
+    val breath = rememberInfiniteTransition(label = "orb")
+    val pulse by breath.animateFloat(0f, 1f, infiniteRepeatable(tween(2200), RepeatMode.Restart), label = "pulse")
+    val ring = if (s.clip || s.listening) c.accent else c.muted
+    Card(padding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp)) {
+        Box(Modifier.fillMaxWidth().height(196.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(196.dp)) {
+                val r = size.minDimension / 2
+                // One ripple leaving the orb every 2.2 s, and a ring that swells with the sound.
+                drawCircle(ring.copy(alpha = 0.28f * (1f - pulse)), r * (0.56f + 0.44f * pulse), style = Stroke(2.dp.toPx()))
+                drawCircle(ring.copy(alpha = 0.55f), r * (0.6f + 0.18f * level), style = Stroke((2f + 4f * level).dp.toPx()))
+            }
+            GlassMark(112.dp)
+        }
+        Text(
+            if (s.recordOnly) "Grabo tu día como texto, sin sugerencias." else "Te escucho. Te aviso cuando te pregunten.",
+            style = Type.headline, color = c.ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Spacer(Modifier.height(10.dp))
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DeviceLine(vm, hub) }
+        Spacer(Modifier.height(8.dp))
+        Segmented(listOf("assist" to "Asistir", "record" to "Solo grabar"), s.assistMode, vm::setAssist, label = "Modo de Lente")
+    }
+}
+
+/** Mirar, En vivo, Voz and Resumen as four round glass buttons. */
+@Composable
+private fun QuickActions(vm: LenteViewModel, hub: HubState) {
+    val s = hub.status
+    val voice by vm.readAloud.collectAsState()
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        QuickAction("Mirar", Glyph.Eye, enabled = s.clip, pressed = false, "dock-look") { vm.look() }
+        QuickAction("En vivo", Glyph.Camera, enabled = s.clip, pressed = s.live, "dock-live") { vm.openCamera() }
+        QuickAction("Voz", Glyph.Speaker, enabled = true, pressed = voice, "dock-voice") { vm.setReadAloud(!voice) }
+        QuickAction("Resumen", Glyph.Summary, enabled = true, pressed = false, "dock-summary") { vm.summary() }
+    }
+}
+
+@Composable
+private fun QuickAction(label: String, glyph: Glyph, enabled: Boolean, pressed: Boolean, tag: String, onClick: () -> Unit) {
+    val c = Lente.c
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.semantics(mergeDescendants = true) {}) {
+        Box(
+            Modifier.size(64.dp).shadow(if (c.dark || !enabled) 0.dp else 8.dp, CircleShape).clip(CircleShape)
+                .background(if (pressed) c.accentFill else c.surface).border(0.5.dp, if (pressed) androidx.compose.ui.graphics.Color.Transparent else c.line, CircleShape)
+                .clickable(enabled = enabled, onClick = onClick).testTag(tag).semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) { Icon(glyph, when { pressed -> c.onAccent; enabled -> c.accent; else -> c.muted }, size = 26.dp) }
+        Text(label, style = Type.caption.copy(fontWeight = FontWeight.Medium), color = if (enabled) c.ink else c.muted, modifier = Modifier.padding(top = 6.dp))
+    }
+}
+
+/** Today in three numbers: minutes transcribed, DILO lines, and what it cost. */
+@Composable
+private fun TodayCard(hub: HubState) {
+    val c = Lente.c
+    val dilos = hub.entries.count { it.kind == "cue" && it.isDilo }
+    Card(padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+        Text("Hoy", style = Type.headline, color = c.ink)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth().testTag("today-stats")) {
+            Stat(Glyph.Wave, Format.minutes(hub.spend.audioSeconds), "transcritos", Modifier.weight(1f))
+            Stat(Glyph.Sparkle, "$dilos", if (dilos == 1) "DILO" else "DILO", Modifier.weight(1f))
+            Stat(Glyph.Summary, Format.usd(hub.spend.usd, hub.spend.unpriced), "aprox.", Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun Stat(glyph: Glyph, value: String, label: String, modifier: Modifier) {
+    val c = Lente.c
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(glyph, c.accent, size = 20.dp)
+        Text(value, style = Type.title, color = c.ink, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+        Text(label, style = Type.caption, color = c.muted)
     }
 }
 
@@ -115,22 +264,6 @@ fun ticker(): Long {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(500); now = System.currentTimeMillis() } }
     return now
-}
-
-@Composable
-private fun StatusRow(hub: HubState, onClick: () -> Unit) {
-    val c = Lente.c
-    val s = hub.status
-    Card(Modifier.clickable(onClick = onClick).testTag("status-row"), padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Dot(if (s.clip) c.ok else c.muted, 10.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(Copy.device(s), style = Type.headline, color = c.ink, modifier = Modifier.testTag("device"))
-            Spacer(Modifier.width(8.dp))
-            Text(Copy.mode(s), style = Type.callout, color = c.muted, modifier = Modifier.weight(1f))
-            LevelBars(if (s.listening) (hub.level / 3000f).coerceIn(0f, 1f) else 0f, if (s.listening && s.clip) c.liveFill else c.muted)
-        }
-    }
 }
 
 /** The one card: label, the line to say large, the Spanish meaning, and measured numbers in muted text. */

@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.lente.LenteViewModel
 import app.lente.core.Format
 import app.lente.core.HubState
@@ -205,7 +206,11 @@ private fun Controls(vm: LenteViewModel, hub: HubState, narrate: Boolean, modifi
                     .semantics { contentDescription = "Narrar en voz alta" }.testTag("camera-narrate"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Narrar", style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = c.ink, modifier = Modifier.weight(1f))
+                // One line at any font size: the word shrinks before it wraps («Narr / ar» at large system text).
+                androidx.compose.foundation.text.BasicText(
+                    "Narrar", Modifier.weight(1f), style = Type.callout.copy(fontWeight = FontWeight.SemiBold, color = c.ink), maxLines = 1,
+                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = Type.callout.fontSize),
+                )
                 Switch(
                     checked = narrate, onCheckedChange = vm::setNarrateLive,
                     colors = SwitchDefaults.colors(checkedTrackColor = c.accentFill, checkedThumbColor = c.onAccent, uncheckedTrackColor = c.track, uncheckedThumbColor = c.thumb, uncheckedBorderColor = c.line),

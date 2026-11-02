@@ -96,7 +96,7 @@ fun Reuniones(vm: LenteViewModel, hub: HubState) {
                 }
             }
         } else if (hub.meetings.isEmpty()) {
-            item { Empty("Aún no hay reuniones guardadas. Inicia una desde Ahora y aquí verás sus notas.", action = "Ir a Ahora") { vm.go(Screen.Ahora) } }
+            item { Empty("Aún no hay reuniones guardadas. Inicia una desde Ahora y aquí verás sus notas.", action = "Ir a Ahora", art = app.lente.R.drawable.art_empty_meetings) { vm.go(Screen.Ahora) } }
         } else {
             item {
                 Group {

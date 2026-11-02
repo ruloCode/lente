@@ -131,7 +131,11 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
         },
     ) {
         Box(Modifier.fillMaxSize().background(c.bg)) {
-            Column(Modifier.fillMaxSize()) {
+            if (screen == Screen.Ahora) Column(Modifier.fillMaxSize()) {
+                if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
+                if (link is Link.Reconnecting) Notice("Reconectando con la computadora…", Modifier.statusBarsPadding().padding(horizontal = Lente.gutter, vertical = 4.dp), tag = "reconnecting")
+                Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } })
+            } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
                 TopBar(title(screen), s, onMenu = { scope.launch { drawer.open() } }, onPill = vm::toggleListening, back = if (screen is Screen.Reunion) ({ vm.back() }) else null)
                 if (link is Link.Reconnecting) Notice("Reconectando con la computadora…", Modifier.padding(horizontal = Lente.gutter, vertical = 4.dp), tag = "reconnecting")
@@ -139,7 +143,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 Box(Modifier.weight(1f)) {
                     Crossfade(screen, animationSpec = tween(180), label = "screen") { sc ->
                         when (sc) {
-                            Screen.Ahora -> Ahora(vm, hub, usePhone)
+                            Screen.Ahora -> {}
                             Screen.Reuniones -> Reuniones(vm, hub)
                             is Screen.Reunion -> Reunion(vm, sc)
                             Screen.Acciones -> Acciones(vm, hub)
@@ -150,7 +154,6 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                         }
                     }
                 }
-                if (screen == Screen.Ahora) Dock(vm, hub)
             }
             AnimatedVisibility(toast != null, Modifier.align(Alignment.BottomCenter).padding(bottom = 104.dp, start = 24.dp, end = 24.dp), enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
                 Text(toast ?: "", style = Type.callout, color = c.surface, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(c.ink).padding(horizontal = 16.dp, vertical = 12.dp).testTag("toast"))
@@ -175,7 +178,7 @@ private fun TopBar(title: String, s: app.lente.core.Status, onMenu: () -> Unit, 
             contentAlignment = Alignment.Center,
         ) { Icon(if (back != null) Glyph.Back else Glyph.Menu, c.ink) }
         Spacer(Modifier.width(12.dp))
-        if (title == "Lente") Mark(c.ink, c.accent, size = 22.dp)
+        if (title == "Lente") Mark(size = 26.dp)
         if (title == "Lente") Spacer(Modifier.width(8.dp))
         One(title, Type.title, c.ink, Modifier.weight(1f).testTag("screen-title"))
         Pill(s, onPill)
@@ -210,7 +213,7 @@ private fun Drawer(vm: LenteViewModel, current: Screen, go: (Screen) -> Unit) {
     val s = hub.status
     Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).statusBarsPadding().padding(vertical = 16.dp)) {
         Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Mark(c.ink, c.accent, size = 28.dp)
+            Mark(size = 30.dp)
             Spacer(Modifier.width(10.dp))
             Text("Lente", style = Type.title, color = c.ink)
         }
@@ -253,40 +256,6 @@ private fun DrawerRow(label: String, glyph: Glyph, selected: Boolean, badge: Int
         Text(label, style = Type.body.copy(fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal), color = if (selected) c.accent else c.ink, modifier = Modifier.weight(1f))
         if (badge > 0) Text("$badge", style = Type.label, color = c.onAccent, modifier = Modifier.clip(CircleShape).background(c.accentFill).padding(horizontal = 8.dp, vertical = 3.dp))
         if (soon) Text("Pronto", style = Type.caption, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.raised).padding(horizontal = 8.dp, vertical = 2.dp))
-    }
-}
-
-/** Ahora's floating dock: Mirar, En vivo, Voz, Resumen. */
-@Composable
-private fun Dock(vm: LenteViewModel, hub: app.lente.core.HubState) {
-    val c = Lente.c
-    val s = hub.status
-    val voice by vm.readAloud.collectAsState()
-    val shape = RoundedCornerShape(26.dp)
-    Row(
-        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)
-            .shadow(if (c.dark) 0.dp else 14.dp, shape).clip(shape).background(c.glass).border(0.5.dp, c.line, shape).padding(6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        DockButton("Mirar", Glyph.Eye, enabled = s.clip, pressed = false, Modifier.weight(1f), "dock-look") { vm.look() }
-        DockButton("En vivo", Glyph.Wave, enabled = s.clip, pressed = s.live, Modifier.weight(1f), "dock-live") { vm.openCamera() }
-        DockButton("Voz", Glyph.Speaker, enabled = true, pressed = voice, Modifier.weight(1f), "dock-voice") { vm.setReadAloud(!voice) }
-        DockButton("Resumen", Glyph.Summary, enabled = true, pressed = false, Modifier.weight(1f), "dock-summary") { vm.summary() }
-    }
-}
-
-@Composable
-private fun DockButton(label: String, glyph: Glyph, enabled: Boolean, pressed: Boolean, modifier: Modifier, tag: String, onClick: () -> Unit) {
-    val c = Lente.c
-    val fg = when { pressed -> c.onAccent; enabled -> c.ink; else -> c.muted }
-    Column(
-        modifier.height(58.dp).clip(RoundedCornerShape(20.dp)).background(if (pressed) c.accentFill else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable(enabled = enabled, onClick = onClick).testTag(tag).semantics { contentDescription = label },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(glyph, fg.copy(alpha = if (enabled) 1f else 0.6f), size = 22.dp)
-        Text(label, style = Type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium), color = if (pressed) c.onAccent else if (enabled) c.ink else c.muted)
     }
 }
 

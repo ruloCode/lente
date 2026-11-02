@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -70,7 +71,7 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
     LazyColumn(Modifier.fillMaxSize().testTag("acciones"), contentPadding = PaddingValues(Lente.gutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (a.pending.isEmpty() && a.tasks.isEmpty()) {
             item { Spacer(Modifier.height(8.dp)) }
-            item { Empty("Aún no hay tareas. Al terminar una reunión, Lente propone aquí tareas y correos; nada se hace sin que lo apruebes.") }
+            item { Empty("Aún no hay tareas. Al terminar una reunión, Lente propone aquí tareas y correos; nada se hace sin que lo apruebes.", art = app.lente.R.drawable.art_empty_actions) }
             return@LazyColumn
         }
         if (a.pending.isNotEmpty()) {
@@ -147,7 +148,7 @@ fun Memoria(vm: LenteViewModel, hub: HubState) {
     LazyColumn(Modifier.fillMaxSize().testTag("memoria"), contentPadding = PaddingValues(Lente.gutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (empty) {
             item { Spacer(Modifier.height(8.dp)) }
-            item { Empty("Cuando termines una reunión, aquí verás cuántas veces te preguntaron, las frases que repites y las palabras nuevas.") }
+            item { Empty("Cuando termines una reunión, aquí verás cuántas veces te preguntaron, las frases que repites y las palabras nuevas.", art = app.lente.R.drawable.art_empty_memory) }
             return@LazyColumn
         }
         item {
@@ -217,6 +218,7 @@ fun Dispositivos(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
     val capture by Capture.state.collectAsState()
     val phoneOn = capture is Capture.State.On || capture == Capture.State.Starting
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter).padding(bottom = 32.dp).testTag("dispositivos")) {
+        ClipPicture(Modifier.padding(top = 8.dp))
         SectionTitle("Clip")
         Group {
             ListRow(Copy.device(s), leading = { Dot(if (s.clip) c.ok else c.muted, 10.dp) }, value = Copy.mode(s))
@@ -254,6 +256,18 @@ fun Dispositivos(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
     }
 }
 
+/** The clip on a pair of glasses: the transparent render in light, the one lit on black in dark. */
+@Composable
+fun ClipPicture(modifier: Modifier = Modifier) {
+    val c = Lente.c
+    androidx.compose.foundation.Image(
+        androidx.compose.ui.res.painterResource(if (c.dark) app.lente.R.drawable.art_clip_dark else app.lente.R.drawable.art_clip),
+        contentDescription = "El clip de Lente en unos lentes",
+        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        modifier = modifier.fillMaxWidth().aspectRatio(3f / 2f).clip(RoundedCornerShape(Lente.card)),
+    )
+}
+
 // --- Ajustes ----------------------------------------------------------------------------------
 
 @Composable
@@ -282,6 +296,9 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
             }
             Hairline(); ListRow("Tu voz", hint = "Di “Lente, soy …” con el clip puesto", value = if (s.wearer.isNotEmpty()) "Reconocida" else "Sin reconocer")
         }
+        SectionTitle("Apariencia")
+        val theme by vm.theme.collectAsState()
+        Segmented(listOf("system" to "Sistema", "light" to "Claro", "dark" to "Oscuro"), theme, vm::setTheme, label = "Tema")
         SectionTitle("Lente")
         Group {
             SwitchRow("Solo grabar", s.recordOnly, { vm.setAssist(if (it) "record" else "assist") }, hint = "Guarda tu día como texto y aprende, sin sugerencias", tag = "set-record")

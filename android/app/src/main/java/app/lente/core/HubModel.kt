@@ -138,7 +138,7 @@ object HubJson {
             "spend" -> HubEvent.SpendEvent(spend(o))
             "meetings" -> HubEvent.Meetings(o.optJSONArray("items").objects().map(::meeting), language(o.optJSONObject("language")))
             "actions" -> HubEvent.ActionsEvent(actions(o))
-            "turn", "cue", "live", "summary" -> HubEvent.Day(entry(o))
+            "turn", "cue", "live", "frame", "summary" -> HubEvent.Day(entry(o))
             else -> HubEvent.Other(kind)
         }
     }

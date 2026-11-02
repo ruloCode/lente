@@ -47,8 +47,8 @@ object Type {
 }
 
 @Composable
-fun LenteTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun LenteTheme(mode: String = "system", content: @Composable () -> Unit) {
+    val dark = when (mode) { "light" -> false; "dark" -> true; else -> isSystemInDarkTheme() }
     val p = remember(dark) { Palette(if (dark) Tokens.DARK else Tokens.LIGHT, dark) }
     val scheme = if (dark) {
         darkColorScheme(primary = p.accentFill, onPrimary = p.onAccent, background = p.bg, onBackground = p.ink, surface = p.surface, onSurface = p.ink, surfaceVariant = p.raised, onSurfaceVariant = p.muted, outline = p.line, error = p.live)

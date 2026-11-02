@@ -11,6 +11,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import app.lente.core.HubAddress
 import app.lente.ui.LenteRoot
@@ -29,7 +33,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         fromLaunch(intent)
         setContent {
-            LenteTheme {
+            val mode by vm.theme.collectAsState()
+            val dark = when (mode) { "light" -> false; "dark" -> true; else -> isSystemInDarkTheme() }
+            // The status and navigation bar icons follow the app's theme, not only the system's.
+            LaunchedEffect(dark) {
+                val bars = if (dark) SystemBarStyle.dark(0x00000000) else SystemBarStyle.light(0x00000000, 0x00000000)
+                enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+            }
+            LenteTheme(mode) {
                 LenteRoot(vm, askMicrophone = ::askMicrophone)
             }
         }
