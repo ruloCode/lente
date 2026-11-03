@@ -3,12 +3,16 @@
 # (WebSocket at /device, the page and its event stream on the same origin).
 #
 #   node --env-file=.env deploy/modal/secret.ts   # the hub's keys into the Modal secret `lente-hub`
-#   modal deploy deploy/modal/hub.py
+#   pnpm deploy:hub                                # modal deploy --strategy recreate (see below)
 #   modal app logs lente-hub                       # the pairing code for the phone
 #   modal container exec <id> node scripts/hub-token.ts add clip   # a clip token, on the volume
 #
 # State lives in memory (one clip, one phone), so there is exactly one container. The day record,
 # memory, traces and tokens live on the volume `lente-data`, which survives redeploys.
+#
+# Always deploy with `--strategy recreate`. The default rolling strategy keeps the old container until
+# its inputs finish, and the phone's event stream and the clip's WebSocket never finish; with
+# max_containers=1 the new version cannot start beside it, so the hub stays on the old code (or down).
 
 import os
 import subprocess
