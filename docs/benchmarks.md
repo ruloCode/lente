@@ -354,3 +354,21 @@ How to read the deep path's number:
 - It is low partly because of the set. The tiers find older meetings through day digests, and here each day's digest is a thin stand-in: its meetings' titles and first card fact, with their ids, not a real nightly digest.
 - In production the digests are written by the model and are richer, so this table overstates the gap. It does not reverse it: the deep path also failed every cross-lingual question, which is what the plan call was meant to solve.
 - The fast path's misses were 7 cross-lingual, 4 paraphrase and 4 exact questions. Its refusals were perfect on both kinds of trap question.
+
+### Consolidation while recording (task 6.6)
+
+`scripts/bench-consolidation.ts`: Solo grabar on a scratch hub with `LENTE_RECALL=fast`. `scripts/fake-clip.ts --loop` streams 16 minutes of synthetic bilingual speech at real time, looped. Real Muse Voice Transcribe and Muse Spark 1.3. Each window card is written 10 minutes into an episode.
+
+| Run (2026-11-03) | Audio the hub received | Window cards | Window close → card | Failed card calls | Cost per recorded hour (cards / all model calls / with transcription) |
+|---|---|---|---|---|---|
+| 120 min, before the card timeout (`1bc37b0`) | **21.9 min**: the clip emulator stopped sending at minute 22 | 2 | 11–12 s | 0 | US$ 0.014 / 0.018 / 0.049 (over 120 min with 22 min of speech: not a real hourly rate) |
+| 32 min, with the timeout | 30.9 min (1,855 s billed by transcription) | 3 | 9 s, 11 s, 222 s | 1 (retried: the 222 s card) | US$ 0.091 / 0.096 / 0.270 |
+
+What the first run showed:
+- **The stall was not a hung card call.** Both card calls finished in about 12 s.
+- **The hub stopped receiving audio.** Turns stop at minute 22, and so does the hub's recorded time.
+- **The emulator exits on the first closed link and does not reconnect, unlike the clip's firmware.** Its output was discarded, so the cause of the drop is not recorded.
+- **The bench now keeps the emulator's link lines and reports `clipExit` and `recordedAudioMin`.**
+- **The 32-minute rerun passed minute 22 without a drop.**
+
+The 2-hour measurement is being run again. 6.6 stays open until it has two hours of audio.

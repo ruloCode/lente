@@ -74,12 +74,23 @@ const hub: ChildProcess = spawn(process.execPath, ["src/pilot.ts"], {
   env: { PATH: process.env.PATH, HOME: process.env.HOME, MODEL_API_KEY: process.env.MODEL_API_KEY, LENTE_RECALL: "fast", PILOT_WEB_PORT: String(webPort), PILOT_DEVICE_PORT: String(devicePort), PILOT_DATA_DIR: dir },
   stdio: ["ignore", "pipe", "pipe"],
 });
-for (const s of [hub.stdout!, hub.stderr!]) s.on("data", (b: Buffer) => log.push(...b.toString().split("\n").filter(Boolean).map((l) => `${Date.now()} ${l}`)));
+/** Hub lines about listening itself (pauses, the wearer, episodes), shown as they happen: no turn text. */
+const LISTENING_LINE = /^\[(idle|wearer|meeting|listen|clip|fake-clip)\]/;
+let runStart = 0;
+for (const s of [hub.stdout!, hub.stderr!])
+  s.on("data", (b: Buffer) => {
+    for (const l of b.toString().split("\n").filter(Boolean)) {
+      log.push(`${Date.now()} ${l}`);
+      if (runStart && LISTENING_LINE.test(l)) console.error(`  ${((Date.now() - runStart) / 60_000).toFixed(1)} min · ${l.slice(0, 120)}`);
+    }
+  });
 for (let i = 0; i < 200 && !(await fetch(`${base}/health`).then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 50));
 
 // Every model call's usage, by label, from the hub's own events.
 const calls: { label: string; model: string; input: number; cached: number; output: number }[] = [];
 let audioSeconds = 0;
+/** The audio the hub received, from its own recorded-time counter: less than the run if the link dropped. */
+let recordedMs = 0;
 const events = new AbortController();
 void (async () => {
   const res = await fetch(`${base}/events`, { signal: events.signal });
@@ -87,19 +98,33 @@ void (async () => {
   const decoder = new TextDecoder();
   for await (const chunk of res.body!) {
     for (const data of parser.push(decoder.decode(chunk, { stream: true }))) {
-      const e = JSON.parse(data) as { kind?: string; label?: string; model?: string; promptTokens?: number; cachedTokens?: number; completionTokens?: number; audioSeconds?: number };
+      const e = JSON.parse(data) as { kind?: string; label?: string; model?: string; promptTokens?: number; cachedTokens?: number; completionTokens?: number; audioSeconds?: number; ms?: number };
       if (e.kind === "usage") calls.push({ label: e.label ?? "?", model: e.model ?? "?", input: e.promptTokens ?? 0, cached: e.cachedTokens ?? 0, output: e.completionTokens ?? 0 });
       if (e.kind === "spend" && typeof e.audioSeconds === "number") audioSeconds = e.audioSeconds;
+      if (e.kind === "recorded" && typeof e.ms === "number") recordedMs = e.ms;
     }
   }
 })().catch(() => {});
 
 const post = (path: string) => fetch(`${base}${path}`, { method: "POST" }).then((r) => r.status);
 await post("/assist-mode/record");
-const clip = spawn(process.execPath, ["scripts/fake-clip.ts", wav, "--port", String(devicePort), "--loop"], { stdio: "ignore" });
+const clip = spawn(process.execPath, ["scripts/fake-clip.ts", wav, "--port", String(devicePort), "--loop"], { stdio: ["ignore", "pipe", "pipe"] });
+// The emulator exits when its link closes; keep why, so a run that stops hearing audio says so.
+let clipExit: string | undefined;
+for (const s of [clip.stdout!, clip.stderr!])
+  s.on("data", (b: Buffer) => {
+    for (const l of b.toString().split("\n").filter((x) => /closed|error|refused|\[fake-clip\] [a-z]/i.test(x) && !x.includes("photo"))) {
+      log.push(`${Date.now()} ${l}`);
+      if (runStart) console.error(`  ${((Date.now() - runStart) / 60_000).toFixed(1)} min · ${l.slice(0, 120)}`);
+    }
+  });
+clip.on("exit", (code) => {
+  if (runStart && Date.now() - runStart < minutes * 60_000) clipExit = `exited with ${code} at ${((Date.now() - runStart) / 60_000).toFixed(1)} min`;
+});
 await new Promise((r) => setTimeout(r, 3000));
 await post("/listen/on");
 const started = Date.now();
+runStart = started;
 console.error(`recording ${minutes} min of synthetic speech in Solo grabar (hub log kept in memory, lengths only)`);
 while (Date.now() - started < minutes * 60_000) {
   await new Promise((r) => setTimeout(r, 60_000));
@@ -147,6 +172,9 @@ const summary = {
   audioSeconds: Math.round(audioSeconds),
   usd: { model: Number(modelUsd.toFixed(4)), transcription: Number(asrUsd.toFixed(4)), total: Number((modelUsd + asrUsd).toFixed(4)) },
   usdPerRecordedHour: { cards: Number((cardUsd / hours).toFixed(4)), allModelCalls: Number((modelUsd / hours).toFixed(4)), withTranscription: Number(((modelUsd + asrUsd) / hours).toFixed(4)) },
+  clipExit: clipExit ?? null,
+  recordedAudioMin: Number((recordedMs / 60_000).toFixed(1)),
+  idlePauses: log.filter((l) => l.includes("[idle] paused")).length,
   failures: log.filter((l) => /\[cards\] window card failed|notes for .* failed/.test(l)).length,
 };
 writeFileSync(join(out, `summary-${Date.now()}.json`), JSON.stringify(summary, null, 2));
