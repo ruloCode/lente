@@ -15,7 +15,7 @@ Depends on: `add-consent`, `add-memory-engine`
 - [x] 2.1 Migration `media_chunks` (ids, times, kind, ms, bytes, codec, object; no content) with RLS and no policy for `anon`/`authenticated`; private bucket; sealed upload and open through `fetch` in `src/supabase-stores.ts`; file store under `data/media/` on the laptop. Tests with the fake PostgREST and a fake Storage that no plain column or object key carries content (`pnpm test`)
 - [x] 2.2 Hub taps: audio after the silence gate into the open segment's chunk, frames after description; the gate (switch on by default, owner or accepted terms that describe media, `LENTE_MEDIA` not `off`). Tests: the owner stores by default; an account without media terms stores nothing; turning a switch off mid-segment stores nothing after that moment (`pnpm test`)
 - [x] 2.3 `GET /media/audio/<segment>` and `GET /media/frame/<moment>` behind the user gate with `Range`; sources carry `media: { audio?, frame? }`. Hub tests (`pnpm test`)
-- [ ] 2.4 Apply the migration and bucket on the project, run the security advisors, check that the publishable key reads nothing [key:SUPABASE_SECRET_KEY]
+- [x] 2.4 Apply the migration and bucket on the project, run the security advisors, check that the publishable key reads nothing [key:SUPABASE_SECRET_KEY]. Applied 2026-11-03 on `lente`: advisors as above; the publishable key gets 42501 on `media_chunks`, an empty list and 403 on upload to the `media` bucket
 
 ## 3. Retention and deletion
 
