@@ -37,6 +37,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -94,17 +95,33 @@ private val CARD_H = 66.dp
 private const val STEP_DEG = 18f
 /** How the wheel settles on a moment when the finger lets go or a card is tapped: a soft, slightly springy stop. */
 private val SETTLE = spring<Float>(dampingRatio = 0.72f, stiffness = 170f)
+/** Revivir fetches this many photos ahead of the clock (and again each time it passes that many). */
+private const val PREFETCH_FRAMES = 6
 
 /**
- * Recuerdos (add-home-dock, the phone side of add-memory-timeline on sample moments): a visor with the
- * time rings that turn with the finger, the chosen moment, and the moments by day. Tapping the visor or
- * a moment relives it.
+ * Recuerdos (add-home-dock, the phone side of add-memory-timeline): the wearer's own moments from the hub,
+ * a visor with the time rings that turn with the finger, the chosen moment with its photo, and the moments
+ * by day. Tapping the visor or a moment relives it: its photos in turn, its speech and its lines.
  */
 @Composable
-fun Recuerdos() {
+fun Recuerdos(vm: app.lente.LenteViewModel) {
     val c = Lente.c
-    val moments = Memories.MOCK
-    var sel by rememberSaveable { mutableStateOf(3) }
+    val loaded by vm.memories.collectAsState()
+    LaunchedEffect(Unit) { vm.loadMemories() }
+    val moments = loaded
+    if (moments.isNullOrEmpty()) {
+        Column(Modifier.fillMaxSize().padding(horizontal = Lente.gutter, vertical = 32.dp).testTag("recuerdos"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (moments == null) "Cargando tus recuerdos…" else "Aún no hay recuerdos", style = Type.title.copy(fontWeight = FontWeight.Medium), color = c.ink)
+            if (moments != null) Text("Graba con las gafas en Solo grabar: cada conversación aparece aquí con sus fotos y su audio, para revivirla.", style = Type.callout, color = c.muted)
+        }
+        return
+    }
+    androidx.compose.runtime.key(moments.size, moments.last().id) { Wheel(vm, moments) }
+}
+
+@Composable
+private fun Wheel(vm: app.lente.LenteViewModel, moments: List<Memory>) {
+    var sel by rememberSaveable { mutableStateOf(moments.lastIndex) }
     val relived = remember { mutableStateListOf(*Array(moments.size) { 0 }) }
     var reliving by remember { mutableStateOf<Int?>(null) }
     // Where the wheel is, in moments: it follows the finger continuously and settles on the nearest one.
@@ -129,10 +146,10 @@ fun Recuerdos() {
                     .using(androidx.compose.animation.SizeTransform(clip = false))
             },
             label = "preview",
-        ) { i -> Preview(moments[i], relived[i]) { open(i) } }
-        Visor(moments, sel, pos.value, relived[sel], Modifier.weight(1f), onDrag = { drag(it) }, onRelease = { settle() }, onPick = { pick(it) }, onOpen = { open(sel) })
+        ) { i -> Preview(vm, moments[i], relived[i]) { open(i) } }
+        Visor(vm, moments, sel, pos.value, relived[sel], Modifier.weight(1f), onDrag = { drag(it) }, onRelease = { settle() }, onPick = { pick(it) }, onOpen = { open(sel) })
     }
-    reliving?.let { i -> Revivir(moments[i], relived[i], onAgain = { relived[i] = relived[i] + 1 }, onClose = { reliving = null }) }
+    reliving?.let { i -> Revivir(vm, moments[i], relived[i], onAgain = { relived[i] = relived[i] + 1 }, onClose = { reliving = null }) }
 }
 
 /**
@@ -140,11 +157,11 @@ fun Recuerdos() {
  * its title, where and how long, the lines said, its summary and how often it was relived.
  */
 @Composable
-private fun Preview(m: Memory, count: Int, onOpen: () -> Unit) {
+private fun Preview(vm: app.lente.LenteViewModel, m: Memory, count: Int, onOpen: () -> Unit) {
     val c = Lente.c
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).testTag("recuerdo-preview")) {
         Box(Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).clickable(onClick = onOpen)) {
-            Canvas(Modifier.fillMaxSize()) { scene(m, Memories.DURATION_S * 0.4f) }
+            MomentPicture(vm, m, 0f, Modifier.fillMaxSize())
             Text(m.rel, style = Type.caption.copy(letterSpacing = 2.sp), color = Color.White, modifier = Modifier.align(Alignment.TopStart).padding(12.dp))
             Text(m.time, style = Type.callout.copy(fontFamily = Mono, fontSize = 14.sp), color = Color.White, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp))
             Row(
@@ -161,7 +178,6 @@ private fun Preview(m: Memory, count: Int, onOpen: () -> Unit) {
             Text(m.title, style = Type.title.copy(fontWeight = FontWeight.Medium), color = c.ink, modifier = Modifier.testTag("recuerdo-title"))
             Text(Memories.meta(m) + if (count > 0) " · revivido $count×" else "", style = Type.callout, color = c.muted)
             Text(m.summary, style = Type.callout, color = c.ink, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            Text("Maqueta con recuerdos de ejemplo.", style = Type.caption, color = c.muted, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
@@ -173,7 +189,7 @@ private fun Preview(m: Memory, count: Int, onOpen: () -> Unit) {
  * time; tapping a card chooses it, tapping the chosen one (or the wheel) relives it.
  */
 @Composable
-private fun Visor(moments: List<Memory>, sel: Int, pos: Float, count: Int, modifier: Modifier, onDrag: (Float) -> Unit, onRelease: () -> Unit, onPick: (Int) -> Unit, onOpen: () -> Unit) {
+private fun Visor(vm: app.lente.LenteViewModel, moments: List<Memory>, sel: Int, pos: Float, count: Int, modifier: Modifier, onDrag: (Float) -> Unit, onRelease: () -> Unit, onPick: (Int) -> Unit, onOpen: () -> Unit) {
     val c = Lente.c
     val m = moments[sel]
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).testTag("recuerdos-visor")) {
@@ -250,7 +266,7 @@ private fun Visor(moments: List<Memory>, sel: Int, pos: Float, count: Int, modif
                     .clickable { if (on) onOpen() else onPick(i) }
                     .testTag("recuerdo-card-${mem.id}"),
             ) {
-                Canvas(Modifier.fillMaxSize()) { scene(mem, Memories.DURATION_S * 0.4f) }
+                MomentPicture(vm, mem, 0f, Modifier.fillMaxSize())
                 Text(mem.time.take(5), style = Type.caption.copy(fontFamily = Mono, fontSize = 10.sp), color = Color.White.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp))
             }
         }
@@ -288,23 +304,37 @@ private fun DrawScope.rings(pos: Float, centre: Offset, r: Float, ink: Color, li
  * Never shared: there is no share action here.
  */
 @Composable
-private fun Revivir(m: Memory, count: Int, onAgain: () -> Unit, onClose: () -> Unit) {
+private fun Revivir(vm: app.lente.LenteViewModel, m: Memory, count: Int, onAgain: () -> Unit, onClose: () -> Unit) {
     val c = Lente.c
     var t by remember(m.id) { mutableStateOf(0f) }
     var playing by remember(m.id) { mutableStateOf(true) }
     var summary by remember(m.id) { mutableStateOf(false) }
-    val ended = t >= Memories.DURATION_S
+    /** Bumped by «again» and by scrubbing, so the sound starts over where the clock is. */
+    var epoch by remember(m.id) { mutableStateOf(0) }
+    val ended = t >= m.durationS
     LaunchedEffect(playing) {
         if (!playing) return@LaunchedEffect
         var last = withFrameNanos { it }
-        while (playing && t < Memories.DURATION_S) {
+        while (playing && t < m.durationS) {
             val now = withFrameNanos { it }
-            t = min(Memories.DURATION_S, t + (now - last) / 1e9f)
+            t = min(m.durationS, t + (now - last) / 1e9f)
             last = now
         }
         playing = false
     }
-    val again = { onAgain(); summary = false; t = 0f; playing = true }
+    // The sound follows the clock: each scene plays its kept speech from where the clock is in it.
+    val scene = Memories.sceneAt(m, t)?.first
+    LaunchedEffect(playing, scene, epoch) {
+        val audio = scene?.audio
+        if (!playing || audio == null) vm.stopScene() else vm.playScene(audio, ((t - scene.startS) * 1000).toInt())
+    }
+    androidx.compose.runtime.DisposableEffect(m.id) { onDispose { vm.stopScene() } }
+    // A photo takes a few seconds to come from the hub: fetch the next ones ahead of the clock, in parallel.
+    val shown = m.frames.indexOfLast { it.atS <= t }.coerceAtLeast(0)
+    LaunchedEffect(m.id, shown / PREFETCH_FRAMES) {
+        m.frames.drop(shown).take(PREFETCH_FRAMES * 2).forEach { f -> launch { vm.frame(f.path) } }
+    }
+    val again = { onAgain(); summary = false; t = 0f; epoch++; playing = true }
     val blink by rememberInfiniteTransition(label = "rec").animateFloat(1f, 0.2f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "rec-dot")
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(c.bg).testTag("revivir")) {
@@ -322,7 +352,7 @@ private fun Revivir(m: Memory, count: Int, onAgain: () -> Unit, onClose: () -> U
                     Spacer(Modifier.size(44.dp))
                 }
                 Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).clip(RoundedCornerShape(12.dp))) {
-                    Canvas(Modifier.fillMaxSize()) { scene(m, t) }
+                    MomentPicture(vm, m, t, Modifier.fillMaxSize())
                     Text(Memories.clockAt(m.time, t), style = Type.callout.copy(fontFamily = Mono, fontWeight = FontWeight.Medium), color = Color.White, modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).testTag("revivir-clock"))
                     Text("$count× REVIVIR", style = Type.caption.copy(fontFamily = Mono, letterSpacing = 1.sp), color = Color.White.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp))
                 }
@@ -336,7 +366,7 @@ private fun Revivir(m: Memory, count: Int, onAgain: () -> Unit, onClose: () -> U
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Slider(
-                        value = t / Memories.DURATION_S, onValueChange = { t = it * Memories.DURATION_S }, modifier = Modifier.weight(1f).testTag("revivir-scrub"),
+                        value = t / m.durationS, onValueChange = { t = it * m.durationS; epoch++ }, modifier = Modifier.weight(1f).testTag("revivir-scrub"),
                         colors = SliderDefaults.colors(thumbColor = c.ink, activeTrackColor = c.ink, inactiveTrackColor = c.raised),
                     )
                     Box(
@@ -351,9 +381,24 @@ private fun Revivir(m: Memory, count: Int, onAgain: () -> Unit, onClose: () -> U
     }
 }
 
+/**
+ * The moment's picture at `t`: the photo taken then (the last one shown stays until the next arrives, so
+ * the photos play as a video), over the moment's colours while it loads or when none was kept.
+ */
+@Composable
+private fun MomentPicture(vm: app.lente.LenteViewModel, m: Memory, t: Float, modifier: Modifier) {
+    val path = Memories.frameAt(m, t)?.path
+    var img by remember(m.id) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(path) { if (path != null) vm.frame(path)?.let { img = it } }
+    Box(modifier) {
+        Canvas(Modifier.fillMaxSize()) { scene(m, t) }
+        img?.let { androidx.compose.foundation.Image(it, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop) }
+    }
+}
+
 /** The moment's colours as a slow point of view: two soft lights drifting and a vignette, no picture. */
 private fun DrawScope.scene(m: Memory, t: Float) {
-    val p = t / Memories.DURATION_S
+    val p = t / m.durationS
     drawRect(Brush.verticalGradient(listOf(Color(m.tint), Color(m.tint2))))
     val sway = sin(t * 0.9f) * 0.03f
     drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), center = Offset(size.width * (0.3f + p * 0.1f + sway), size.height * 0.32f), radius = size.width * 0.7f), size.width * 0.7f, Offset(size.width * (0.3f + p * 0.1f + sway), size.height * 0.32f))

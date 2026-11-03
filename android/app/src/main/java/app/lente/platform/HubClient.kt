@@ -105,6 +105,16 @@ class HubClient(
         }
     }
 
+    /** The bytes at `path` (a kept photo for Recuerdos), or null when the hub has none or is unreachable. */
+    suspend fun bytes(path: String): ByteArray? = withContext(Dispatchers.IO) {
+        val req = request(path, bearer()).get().build()
+        try {
+            http.newCall(req).execute().use { if (it.isSuccessful) it.body.bytes() else null }
+        } catch (e: IOException) {
+            null
+        }
+    }
+
     /** `GET /health`: whether a hub answers at this address at all. */
     suspend fun health(): Answer = get("/health")
 

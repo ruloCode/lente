@@ -6,6 +6,12 @@ data class MemoryLine(val atS: Float, val who: String, val text: String) {
     val camera: Boolean get() = who == Memories.CAMERA
 }
 
+/** A stretch of a relived moment that plays one kept speech recording (`audio`, a hub path), when there is one. */
+data class MemoryScene(val startS: Float, val lengthS: Float, val audio: String?)
+
+/** A photo of the moment, shown from `atS` until the next one: together they play as its video. */
+data class MemoryFrame(val atS: Float, val path: String)
+
 /** A moment to relive (add-memory-timeline): when, where, its lines as timed text, and a one-line summary. */
 data class Memory(
     val id: String,
@@ -18,51 +24,65 @@ data class Memory(
     val summary: String,
     val tint: Long,
     val tint2: Long,
+    /** How long it plays, in seconds: what was said, back to back. */
+    val durationS: Float = Memories.DURATION_S,
+    val scenes: List<MemoryScene> = emptyList(),
+    val frames: List<MemoryFrame> = emptyList(),
 )
 
 /**
- * Recuerdos on the phone (add-home-dock), on sample moments until add-memory-timeline brings the real
- * ones from the hub. The people and meetings are made up. Pure.
+ * Recuerdos on the phone (add-home-dock): the wearer's moments as the hub gives them (`GET /memories`),
+ * each a meeting or a Solo grabar episode with its lines, its kept speech audio and its photos. Pure.
  */
 object Memories {
     const val CAMERA = "cam"
-    /** How long a relived moment plays, in seconds. */
+    /** How long a moment with no timings plays, in seconds. */
     const val DURATION_S = 14f
+    /** Colours for a moment with no photo yet, picked by its id so it keeps them. */
+    private val TINTS = listOf(0xFF8A6A4A to 0xFF2A1C10, 0xFF8A4A6E to 0xFF1A1428, 0xFF9A6A3A to 0xFF160E09, 0xFF6A5040 to 0xFF171211, 0xFF6C6B66 to 0xFF2E2D2A, 0xFF2C3E66 to 0xFF07080C)
+    private val ES = java.util.Locale.forLanguageTag("es")
+
+    /**
+     * The hub's moments (newest first there) as the visor lists them, oldest first so later moments come
+     * below; days and times in `zone`, «Hoy» and «Ayer» against `now`.
+     */
+    fun fromJson(text: String, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): List<Memory> {
+        val arr = org.json.JSONObject(text).optJSONArray("moments") ?: return emptyList()
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            val start = java.time.Instant.ofEpochMilli(o.getLong("startedAt")).atZone(zone)
+            val date = start.toLocalDate()
+            val weekday = start.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, ES)
+            val month = start.month.getDisplayName(java.time.format.TextStyle.SHORT, ES).trimEnd('.')
+            val (day, rel) = when (date) {
+                today -> "Hoy · $weekday ${date.dayOfMonth} $month" to "HOY"
+                today.minusDays(1) -> "Ayer · $weekday ${date.dayOfMonth} $month" to "AYER"
+                else -> "${weekday.replaceFirstChar { it.uppercase() }} ${date.dayOfMonth} $month" to "${weekday.take(3).uppercase()} ${date.dayOfMonth}"
+            }
+            val minutes = ((o.optLong("endedAt", o.getLong("startedAt")) - o.getLong("startedAt")) / 60_000).coerceAtLeast(1)
+            val lines = o.optJSONArray("lines")?.let { a -> (0 until a.length()).map { k -> a.getJSONObject(k).let { l -> MemoryLine(l.getDouble("atS").toFloat(), l.getString("who"), l.getString("text")) } } } ?: emptyList()
+            val scenes = o.optJSONArray("scenes")?.let { a -> (0 until a.length()).map { k -> a.getJSONObject(k).let { c -> MemoryScene(c.getDouble("startS").toFloat(), c.getDouble("lengthS").toFloat(), c.optString("audio").ifEmpty { null }) } } } ?: emptyList()
+            val frames = o.optJSONArray("frames")?.let { a -> (0 until a.length()).map { k -> a.getJSONObject(k).let { f -> MemoryFrame(f.getDouble("atS").toFloat(), f.getString("path")) } } } ?: emptyList()
+            val id = o.getString("id")
+            val (tint, tint2) = TINTS[Math.floorMod(id.hashCode(), TINTS.size)]
+            Memory(
+                id, day, rel, "%02d:%02d:%02d".format(start.hour, start.minute, start.second), o.optString("title").ifEmpty { "Momento" },
+                "$minutes min", lines, o.optString("summary"), tint, tint2,
+                durationS = o.optDouble("durationS", DURATION_S.toDouble()).toFloat().coerceAtLeast(1f), scenes = scenes, frames = frames,
+            )
+        }.reversed()
+    }
+
+    /** The photo on screen at `t`: the last one already taken, or the first before it. */
+    fun frameAt(m: Memory, t: Float): MemoryFrame? = m.frames.lastOrNull { it.atS <= t } ?: m.frames.firstOrNull()
+
+    /** The scene playing at `t`, and how far into it. */
+    fun sceneAt(m: Memory, t: Float): Pair<MemoryScene, Float>? =
+        m.scenes.lastOrNull { it.startS <= t }?.let { it to (t - it.startS).coerceIn(0f, it.lengthS) }
     /** From this relive of the same moment on, Lente offers the summary to move on. */
     const val NUDGE_AT = 3
 
-    val MOCK: List<Memory> = listOf(
-        Memory(
-            "r1", "Viernes 31 oct", "VIE 31", "09:30:04", "Revisión de diseño", "Estudio · 22 min",
-            listOf(MemoryLine(0.8f, "Tú", "¿Probamos los anillos en el teléfono?"), MemoryLine(4.2f, "Luis", "Sí, pero que el texto se lea con sol."), MemoryLine(7.8f, "Tú", "Subo el contraste y lo vemos el lunes."), MemoryLine(11f, CAMERA, "Una pantalla de Recuerdos en un teléfono, sobre la mesa.")),
-            "Probaron los anillos en el teléfono; tú subes el contraste para el lunes.", 0xFF8A6A4A, 0xFF2A1C10,
-        ),
-        Memory(
-            "r2", "Ayer · sábado 1 nov", "AYER", "18:40:15", "Camino a casa", "Fuera de reuniones",
-            listOf(MemoryLine(0.8f, CAMERA, "Tráfico y una canción en la radio."), MemoryLine(4.4f, "Tú", "Lente, recuérdame comprar pan."), MemoryLine(7.8f, "Lente", "Listo, te lo recuerdo al llegar."), MemoryLine(11f, CAMERA, "Calle al atardecer, luces de los carros.")),
-            "Pediste un recordatorio para comprar pan al llegar.", 0xFF8A4A6E, 0xFF1A1428,
-        ),
-        Memory(
-            "r3", "Hoy · domingo 2 nov", "HOY", "08:12:33", "Café con Ana", "Café · 15 min",
-            listOf(MemoryLine(0.8f, "Ana", "¿Al final cuánto cuesta la fase dos?"), MemoryLine(4.2f, "Tú", "Lo reviso hoy y te digo en la reunión."), MemoryLine(7.6f, "Ana", "Perfecto, la necesito antes del viernes."), MemoryLine(10.8f, "Tú", "Te la mando el jueves.")),
-            "Ana necesita el costo de la fase dos antes del viernes; prometiste enviarlo el jueves.", 0xFF9A6A3A, 0xFF160E09,
-        ),
-        Memory(
-            "r4", "Hoy · domingo 2 nov", "HOY", "10:41:12", "Planeación de la beta", "Sala grande · 34 min",
-            listOf(MemoryLine(0.8f, "Ana", "¿Cuánto nos cuesta si entra la fase dos?"), MemoryLine(4.2f, "Tú", "Unos cuarenta mil; te mando la cotización el viernes."), MemoryLine(7.8f, "Ana", "Perfecto, con eso cerramos el presupuesto."), MemoryLine(11f, "Tú", "Listo, lo anoto.")),
-            "La fase dos cuesta unos cuarenta mil; tú envías la cotización el viernes y con eso se cierra el presupuesto.", 0xFF6A5040, 0xFF171211,
-        ),
-        Memory(
-            "r5", "Hoy · domingo 2 nov", "HOY", "11:30:51", "Pizarra del sprint", "Pasillo · 9 min",
-            listOf(MemoryLine(0.8f, "Luis", "«Fase 2» va en por hacer, ¿no?"), MemoryLine(4.2f, "Tú", "Sí, hasta que Ana apruebe el presupuesto."), MemoryLine(7.6f, "Luis", "Entonces la marco en rojo."), MemoryLine(10.8f, CAMERA, "Una pizarra con tres columnas y «Fase 2» en rojo.")),
-            "«Fase 2» queda en por hacer, marcada en rojo, hasta que Ana apruebe el presupuesto.", 0xFF6C6B66, 0xFF2E2D2A,
-        ),
-        Memory(
-            "r6", "Hoy · domingo 2 nov", "HOY", "15:05:09", "Llamada con el cliente", "Videollamada · 27 min",
-            listOf(MemoryLine(0.8f, "Cliente", "¿La beta sale el viernes?"), MemoryLine(4.2f, "Tú", "Sí, si QA aprueba el jueves."), MemoryLine(7.6f, "Cliente", "¿Y el reporte semanal?"), MemoryLine(10.8f, "Tú", "Lo recibe cada lunes a las nueve.")),
-            "La beta sale el viernes si QA aprueba el jueves; el reporte llega cada lunes a las nueve.", 0xFF2C3E66, 0xFF07080C,
-        ),
-    )
 
     /** The line on screen at `t` seconds: the last one already said, or none before the first. */
     fun lineAt(m: Memory, t: Float): MemoryLine? = m.lines.lastOrNull { it.atS <= t }

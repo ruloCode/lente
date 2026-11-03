@@ -116,7 +116,7 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
                 when (t) {
                     HomeTab.Inicio -> Inicio(vm, hub, usePhone)
                     HomeTab.Tareas -> Acciones(vm, hub)
-                    HomeTab.Recuerdos -> Recuerdos()
+                    HomeTab.Recuerdos -> Recuerdos(vm)
                 }
             }
         }

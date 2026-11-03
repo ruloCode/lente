@@ -5,6 +5,7 @@ import android.app.Application
 import android.net.Uri
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.lente.capture.Capture
@@ -381,6 +382,53 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             }.onFailure { say("No pude reproducir ese audio.") }
         }
     }
+    // --- Recuerdos: the wearer's moments with their photos and speech audio (GET /memories) ---------
+
+    val memories = MutableStateFlow<List<app.lente.core.Memory>?>(null)
+    fun loadMemories() {
+        val c = client ?: return
+        viewModelScope.launch {
+            c.get("/memories").takeIf { it.ok }?.let { a -> runCatching { app.lente.core.Memories.fromJson(a.text, System.currentTimeMillis()) }.getOrNull()?.let { memories.value = it } }
+        }
+    }
+
+    /** Decoded photos by hub path, halved (512 px wide): enough for the visor and Revivir. */
+    private val frames = android.util.LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(80)
+    suspend fun frame(path: String): androidx.compose.ui.graphics.ImageBitmap? {
+        frames.get(path)?.let { return it }
+        val bytes = client?.bytes(path) ?: return null
+        val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 })
+        } ?: return null
+        return bmp.asImageBitmap().also { frames.put(path, it) }
+    }
+
+    /** Revivir's sound: the scene's kept speech from `offsetMs`, one at a time. */
+    private var scenePlayer: android.media.MediaPlayer? = null
+    private var scenePath: String? = null
+    fun playScene(path: String, offsetMs: Int) {
+        val c = client ?: return
+        stopScene()
+        scenePath = path
+        viewModelScope.launch {
+            val headers = c.authHeaders()
+            if (scenePath != path) return@launch
+            runCatching {
+                scenePlayer = android.media.MediaPlayer().apply {
+                    setDataSource(getApplication(), Uri.parse(c.base + path), headers)
+                    setOnPreparedListener { if (scenePlayer === it) { if (offsetMs > 0) it.seekTo(offsetMs); it.start() } }
+                    setOnErrorListener { mp, _, _ -> mp.release(); if (scenePlayer === mp) scenePlayer = null; true }
+                    prepareAsync()
+                }
+            }
+        }
+    }
+    fun stopScene() {
+        scenePath = null
+        scenePlayer?.runCatching { stop(); release() }
+        scenePlayer = null
+    }
+
     fun setMode(mode: String) = post("/mode/$mode")
     fun look() = post("/look") { failed(it, "mirar") }
     fun setLive(on: Boolean) = post(if (on) "/live/on" else "/live/off")
@@ -759,6 +807,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        stopScene()
         voiceClient?.shutdown()
         speech.shutdown()
         super.onCleared()

@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MemoriesTest {
-    private val beta = Memories.MOCK.first { it.title == "Planeación de la beta" }
+    private val beta = SampleMemories.LIST.first { it.title == "Planeación de la beta" }
 
     @Test fun theLineOnScreenIsTheLastOneAlreadySaid() {
         assertNull(Memories.lineAt(beta, 0.5f))
@@ -22,7 +22,7 @@ class MemoriesTest {
     }
 
     @Test fun metaCountsOnlyWhatWasSaid() {
-        val sprint = Memories.MOCK.first { it.title == "Pizarra del sprint" }
+        val sprint = SampleMemories.LIST.first { it.title == "Pizarra del sprint" }
         assertEquals(3, Memories.spoken(sprint))
         assertEquals("11:30 · Pasillo · 9 min · 3 frases", Memories.meta(sprint))
         assertTrue(sprint.lines.last().camera)
@@ -34,7 +34,7 @@ class MemoriesTest {
     }
 
     @Test fun momentsGroupByDayInOrderWithTheirIndex() {
-        val days = Memories.byDay(Memories.MOCK)
+        val days = Memories.byDay(SampleMemories.LIST)
         assertEquals(listOf("Viernes 31 oct", "Ayer · sábado 1 nov", "Hoy · domingo 2 nov"), days.map { it.first })
         assertEquals(listOf(2, 3, 4, 5), days.last().second.map { it.index })
     }
