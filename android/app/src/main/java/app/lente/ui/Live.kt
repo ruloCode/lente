@@ -88,6 +88,8 @@ fun Live(vm: LenteViewModel, hub: HubState) {
                 Column(Modifier.weight(1f)) {
                     Text(Copy.stateWord(s), style = Type.headline.copy(fontWeight = FontWeight.Medium), color = c.ink)
                     Text(Copy.device(s), style = Type.caption, color = c.muted)
+                    // add-media-archive 4.1: what is being kept besides the text, while it is.
+                    s.media.keepingLabel?.let { Text(it, style = Type.caption, color = c.muted, modifier = Modifier.testTag("live-media")) }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

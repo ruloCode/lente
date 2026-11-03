@@ -141,7 +141,7 @@ fun Intro(vm: LenteViewModel, onDone: () -> Unit) {
                             Pill(app.lente.core.Status()) {}
                         }
                         Spacer(Modifier.height(16.dp))
-                        Body("En Solo grabar el botón dice «Grabando»: Lente guarda tu día como texto y aprende de él, sin sugerencias. Avisa a quienes estén contigo.")
+                        Body("En Solo grabar el botón dice «Grabando»: Lente guarda tu día (el texto, y el audio y las fotos si los activas) y aprende de él, sin sugerencias. Avisa a quienes estén contigo.")
                     }
                 }
             }

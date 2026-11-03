@@ -56,6 +56,12 @@ class HubClient(
         AuthRetry.header(token)?.let { (k, v) -> header(k, v) }
     }
 
+    /** The headers a call carries (cookie or bearer), for a player that streams from the hub (add-media-archive 4.1). */
+    suspend fun authHeaders(): Map<String, String> = buildMap {
+        cookie()?.let { put("Cookie", it) }
+        AuthRetry.header(bearer())?.let { (k, v) -> put(k, v) }
+    }
+
     suspend fun get(path: String): Answer = AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).get().build()) }, signedOut)
 
     suspend fun post(path: String, body: JSONObject? = null): Answer =

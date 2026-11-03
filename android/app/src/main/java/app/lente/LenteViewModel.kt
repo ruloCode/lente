@@ -353,6 +353,29 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleListening() = setListening(!_hub.value.status.listening)
     fun stopSession() = post("/session/stop") { failed(it, "terminar") }
     fun setAssist(mode: String) = post("/assist-mode/$mode")
+    /** «Guardar audio» / «Guardar fotos» (add-media-archive 4.1): off stops keeping at once. */
+    fun setMedia(kind: String, on: Boolean) = post("/media/$kind/${if (on) "on" else "off"}") { failed(it, "cambiar lo que se guarda") }
+    fun setMediaRetention(days: Int) = post("/media/retention/$days") { failed(it, "cambiar cuánto se guarda") }
+
+    private var player: android.media.MediaPlayer? = null
+
+    /** «Escuchar»: the segment's kept audio, streamed from the hub with this phone's sign-in; never stored here. */
+    fun playMedia(path: String) {
+        val c = client ?: return
+        viewModelScope.launch {
+            val headers = c.authHeaders()
+            runCatching {
+                player?.release()
+                player = android.media.MediaPlayer().apply {
+                    setDataSource(getApplication(), Uri.parse(c.base + path), headers)
+                    setOnPreparedListener { it.start() }
+                    setOnCompletionListener { it.release(); if (player === it) player = null }
+                    setOnErrorListener { mp, _, _ -> mp.release(); if (player === mp) player = null; say("No pude reproducir ese audio."); true }
+                    prepareAsync()
+                }
+            }.onFailure { say("No pude reproducir ese audio.") }
+        }
+    }
     fun setMode(mode: String) = post("/mode/$mode")
     fun look() = post("/look") { failed(it, "mirar") }
     fun setLive(on: Boolean) = post(if (on) "/live/on" else "/live/off")

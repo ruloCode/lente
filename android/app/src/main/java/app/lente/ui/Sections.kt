@@ -482,6 +482,16 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
             Hairline(); SwitchRow("Leer en voz alta", voice, vm::setReadAloud, hint = "Respuestas y resúmenes", tag = "set-voice", leading = { RowGlyph(Glyph.Speaker) })
             Hairline(); SwitchRow("Todas las preguntas", s.everyQuestion, vm::everyQuestion, hint = "Solo para pruebas", tag = "set-all", leading = { RowGlyph(Glyph.Sparkle) })
         }
+        // add-media-archive 4.1: what is kept besides the text, only where the hub offers it (its owner, for now).
+        if (s.media.offered) {
+            SectionTitle("Qué se guarda")
+            Group {
+                SwitchRow("Guardar audio", s.media.audio, { vm.setMedia("audio", it) }, hint = "Solo lo que se dice, cifrado", tag = "set-media-audio", leading = { RowGlyph(Glyph.Wave) })
+                Hairline(); SwitchRow("Guardar fotos", s.media.photos, { vm.setMedia("photos", it) }, hint = "Una cuando cambia la escena", tag = "set-media-photos", leading = { RowGlyph(Glyph.Camera) })
+                Hairline(); SetRow(Glyph.Trash, "Borrar después de", value = "${s.media.retentionDays} días") { vm.setMediaRetention(s.media.nextRetention) }
+            }
+            Text("El audio y las fotos se guardan cifrados con tu clave, solo se reproducen desde Lente y se borran solos al pasar esos días, al olvidar un día o al borrar una reunión. Apagarlos deja de guardar en ese momento.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
+        }
         SectionTitle("Apariencia")
         Group { SetRow(Glyph.Contrast, "Tema", value = THEMES.firstOrNull { it.first == theme }?.second ?: "Sistema") { open("theme") } }
         SectionTitle("Conexión")

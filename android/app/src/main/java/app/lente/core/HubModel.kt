@@ -32,6 +32,8 @@ data class Status(
     /** A failing cloud database (`paused`, `unreachable`, `refused`), empty when fine or not configured. */
     val databaseDown: String = "",
     val session: Session? = null,
+    /** The media archive (add-media-archive 4.1): offered only to the hub's owner for now. */
+    val media: MediaState = MediaState(),
 ) {
     val recordOnly get() = assistMode == "record"
     val phoneIsDevice get() = clip && device == "phone"
@@ -176,6 +178,10 @@ object HubJson {
         modelDown = o.optString("modelDown"),
         databaseDown = o.optString("databaseDown"),
         session = o.optJSONObject("session")?.let { Session(it.optLong("startedAt"), it.optLong("listenedMs"), it.optBoolean("running")) },
+        media = o.optJSONObject("media")?.let { m ->
+            val sw = m.optJSONObject("switches")
+            MediaState(m.optBoolean("offered"), sw?.optBoolean("audio", true) ?: true, sw?.optBoolean("photos", true) ?: true, m.optInt("retentionDays", 30), m.optBoolean("keepingAudio"), m.optBoolean("keepingPhotos"))
+        } ?: MediaState(),
     )
 
     fun entry(o: JSONObject) = Entry(
@@ -283,4 +289,28 @@ object HubJson {
     private fun longs(o: JSONObject?): Map<String, Long> = o?.keys()?.asSequence()?.associateWith { o.optLong(it) } ?: emptyMap()
     private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
     private fun JSONArray?.strings(): List<String> = if (this == null) emptyList() else (0 until length()).map { optString(it) }
+}
+
+/**
+ * «Guardar audio» and «Guardar fotos» (add-media-archive 4.1): whether the hub offers them, the
+ * switches, how many days media is kept, and whether it is being kept right now.
+ */
+data class MediaState(
+    val offered: Boolean = false,
+    val audio: Boolean = true,
+    val photos: Boolean = true,
+    val retentionDays: Int = 30,
+    val keepingAudio: Boolean = false,
+    val keepingPhotos: Boolean = false,
+) {
+    /** What Ahora says while media is kept: «Guardando audio · fotos», one of them, or nothing. */
+    val keepingLabel: String? get() = when {
+        keepingAudio && keepingPhotos -> "Guardando audio · fotos"
+        keepingAudio -> "Guardando audio"
+        keepingPhotos -> "Guardando fotos"
+        else -> null
+    }
+
+    /** The next retention when the row is tapped: 7 → 30 → 90 → 7. */
+    val nextRetention: Int get() = when (retentionDays) { 7 -> 30; 30 -> 90; else -> 7 }
 }

@@ -99,7 +99,7 @@ fun Answer(vm: LenteViewModel, line: ChatLine, onRetry: (() -> Unit)? = null) {
             if (line.sources.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (s in line.sources) SourceChip(s) { s.meetingId?.let { vm.go(Screen.Reunion(it, s.turnId)) } }
+                    for (s in line.sources) SourceChip(s, onListen = s.audio?.let { path -> { vm.playMedia(path) } }) { s.meetingId?.let { vm.go(Screen.Reunion(it, s.turnId)) } }
                 }
             }
             // While the answer is still being written, no copy, share or read aloud of half a sentence.
@@ -134,7 +134,7 @@ private fun Thinking(searching: Boolean = false) {
 }
 
 @Composable
-private fun SourceChip(s: AskSource, onClick: () -> Unit) {
+private fun SourceChip(s: AskSource, onListen: (() -> Unit)? = null, onClick: () -> Unit) {
     val c = Lente.c
     val glyph = when (s.kind) { "seen" -> Glyph.Camera; "heard" -> Glyph.Wave; "fact" -> Glyph.Brain; else -> Glyph.Doc }
     Row(
@@ -145,6 +145,15 @@ private fun SourceChip(s: AskSource, onClick: () -> Unit) {
         Icon(glyph, c.ink, size = 16.dp)
         Spacer(Modifier.width(6.dp))
         Text(s.label, style = Type.caption, color = c.ink, maxLines = 1)
+        // «Escuchar» (add-media-archive 4.1): the stretch behind the chip, when its audio was kept.
+        if (onListen != null) {
+            Spacer(Modifier.width(8.dp))
+            Row(Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onListen).semantics { contentDescription = "Escuchar" }.padding(horizontal = 4.dp, vertical = 2.dp).testTag("chat-source-listen"), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Glyph.Play, c.ink, size = 14.dp)
+                Spacer(Modifier.width(2.dp))
+                Text("Escuchar", style = Type.caption, color = c.ink)
+            }
+        }
     }
 }
 

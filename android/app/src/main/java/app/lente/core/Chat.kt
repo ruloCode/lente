@@ -7,7 +7,13 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** Where one of Lente's answers comes from: a meeting turn, something heard or seen, a kept fact. */
-data class AskSource(val kind: String, val label: String, val meetingId: String?, val turnId: String?, val url: String? = null)
+data class AskSource(val kind: String, val label: String, val meetingId: String?, val turnId: String?, val url: String? = null, val audio: String? = null, val frame: String? = null)
+
+/** A source from the hub's JSON, with the media behind it when the hub kept some (add-media-archive 2.3). */
+internal fun sourceOf(it: JSONObject): AskSource {
+    val media = it.optJSONObject("media")
+    return AskSource(it.optString("kind"), it.optString("label"), it.optString("meetingId").ifBlank { null }, it.optString("turnId").ifBlank { null }, it.optString("url").ifBlank { null }, media?.optString("audio")?.ifBlank { null }, media?.optString("frame")?.ifBlank { null })
+}
 
 /**
  * One message of the chat with Lente; `pending` while the hub thinks (`searching` once it said it looks
@@ -35,9 +41,7 @@ object ChatJson {
         val o = JSONObject(text)
         if (!o.optBoolean("ok")) return ChatLine(id, false, o.optString("message").ifBlank { "No pude responder ahora; prueba otra vez." }, found = false)
         val arr = o.optJSONArray("sources") ?: JSONArray()
-        val sources = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map {
-            AskSource(it.optString("kind"), it.optString("label"), it.optString("meetingId").ifBlank { null }, it.optString("turnId").ifBlank { null })
-        }
+        val sources = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map(::sourceOf)
         return ChatLine(id, false, o.optString("answer"), sources, found = o.optBoolean("found"))
     }
 }
@@ -52,7 +56,7 @@ object AskStream {
         return when (event) {
             "delta" -> line.copy(text = line.text + o.optString("text"), pending = false, streaming = true, searching = false)
             "source" -> {
-                val s = AskSource(o.optString("kind"), o.optString("label"), o.optString("meetingId").ifBlank { null }, o.optString("turnId").ifBlank { null })
+                val s = sourceOf(o)
                 if (line.sources.any { it.label == s.label }) line else line.copy(sources = line.sources + s)
             }
             "searching" -> line.copy(searching = true)
