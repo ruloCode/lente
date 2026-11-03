@@ -110,8 +110,11 @@ const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_FRAME_GAP_MS = 600;
 /** Days of the record (what was heard and seen outside meetings) the chat with Lente remembers. */
 const ASK_DAYS = 7;
-/** `fast`: retrieval in the runtime and one streamed answer (add-memory-engine); `tiers` (default) until the eval says otherwise. */
-const RECALL_MODE = process.env.LENTE_RECALL === "fast" ? "fast" : "tiers";
+/**
+ * `fast` (default since add-memory-engine 9.2: its grounding eval answered 90/105 against the tiers' 17/105):
+ * retrieval in the runtime and one streamed answer. `LENTE_RECALL=tiers` rolls back to the two-call path.
+ */
+const RECALL_MODE = process.env.LENTE_RECALL === "tiers" ? "tiers" : "fast";
 /**
  * The encoder for the memory index's vectors (add-memory-engine 8.5): `hub` runs it in this process,
  * `modal` calls the Modal function at LENTE_ENCODER_URL; unset, the index ranks by words only.

@@ -330,3 +330,27 @@ At 365 days the index microbench with 384-dimension vectors (task 2.4) gave 93 m
 | Opus (WASM) | not measured | — | — | one runtime dependency |
 
 Opus is not measured: measuring it means adding a WASM build of libopus, and the handoff asks for the owner's listening check before choosing it. ADPCM is the default until then. Decision 3's rule says Opus ships only if it at least halves storage at acceptable CPU. The design's arithmetic puts Opus at 7–11 MB an hour, which would qualify on size. The ADPCM number is a ceiling, because only speech that passes the silence gate is kept.
+
+### Grounding eval: fast path against the tiers (task 9.1)
+
+`scripts/eval/grounding.ts --encoder-module @huggingface/transformers` (2026-11-03): the recall set (105 answerable questions, 15 out of memory), plus 10 facts asked inside the project they are not in. Each question went through both paths with Muse Spark 1.3 at minimal effort:
+- **fast:** local retrieval with vectors, one streamed answer, the deep path when not confident;
+- **deep:** `askTiers` (plan, lookup, answer).
+
+"Accurate" means found, with a cited source in the meeting that holds the fact. Cost: US$ 1.89 for 260 answers.
+
+| Measure | Fast | Deep (tiers) |
+|---|---|---|
+| Accuracy | **90/105** | 17/105 |
+| — paraphrase / cross-lingual / exact / time | 26/30 · 23/30 · 26/30 · 15/15 | 2/30 · 0/30 · 3/30 · 12/15 |
+| Citation accuracy (answers whose every chip is in the right meeting) | 88/93 | 15/30 |
+| Refusals, out of memory | 15/15 | 15/15 |
+| Refusals, out of project | 10/10 | 10/10 |
+| First text p50 / p90 | 2,591 / 3,574 ms | 8,575 / 10,922 ms |
+| Answer p50 / p90 | 3,010 / 4,296 ms | 8,575 / 10,922 ms |
+| Cost | US$ 0.89 | US$ 0.99 |
+
+How to read the deep path's number:
+- It is low partly because of the set. The tiers find older meetings through day digests, and here each day's digest is a thin stand-in: its meetings' titles and first card fact, with their ids, not a real nightly digest.
+- In production the digests are written by the model and are richer, so this table overstates the gap. It does not reverse it: the deep path also failed every cross-lingual question, which is what the plan call was meant to solve.
+- The fast path's misses were 7 cross-lingual, 4 paraphrase and 4 exact questions. Its refusals were perfect on both kinds of trap question.

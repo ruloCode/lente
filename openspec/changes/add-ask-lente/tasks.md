@@ -8,7 +8,7 @@ Depends on: `add-meeting-library`
 
 - [x] 1.1 `src/ask.ts`: prompt with the memory prefix, structured output (answer, citations or not-in-memory), citation validation against stored meetings, the decline for questions outside the memory; unit tests with a fake model (`pnpm test`)
 - [ ] 1.2 POST route for a typed question; voice trigger for wearer turns starting with "Lente" (no DILO for that turn, off in Solo grabar); unit tests for the trigger (`pnpm test`)
-- [ ] 1.3 Grounding eval over the synthetic eval meetings (answerable and not-in-memory questions); record accuracy, refusals and latency p50/p90 in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [ ] 1.3 (Note, 2026-11-03: `add-memory-engine` 9.2 made the fast path the default; there is no lookup-plan step before the answer any more, and its grounding eval is `scripts/eval/grounding.ts`.) Grounding eval over the synthetic eval meetings (answerable and not-in-memory questions); record accuracy, refusals and latency p50/p90 in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
 ## 2. Phone
 

@@ -70,7 +70,7 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 9. Eval, default and docs
 
-- [ ] 9.1 Grounding eval over the recall set for the fast and deep paths: accuracy, citation accuracy, refusals on out-of-memory and out-of-project questions, first token and total p50/p90; record in `docs/benchmarks.md` [key:MODEL_API_KEY]
-- [ ] 9.2 Flip the default to `LENTE_RECALL=fast` when 9.1 shows accuracy ≥ the tiers'; update `add-ask-lente` and `add-voice-mode` tasks to note the plan step is replaced. Verify: `pnpm typecheck && pnpm test && pnpm smoke`
-- [ ] 9.3 README "Related work": mem0, Letta, Zep/Graphiti, LangMem, Memobase, supermemory, HippoRAG 2, LongMemEval, Omi (ideas cited, nothing copied); README "What was built" row for each day of work
+- [x] 9.1 Grounding eval over the recall set for the fast and deep paths: accuracy, citation accuracy, refusals on out-of-memory and out-of-project questions, first token and total p50/p90; record in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [x] 9.2 Flip the default to `LENTE_RECALL=fast` when 9.1 shows accuracy ≥ the tiers'; update `add-ask-lente` and `add-voice-mode` tasks to note the plan step is replaced. Verify: `pnpm typecheck && pnpm test && pnpm smoke`
+- [x] 9.3 README "Related work": mem0, Letta, Zep/Graphiti, LangMem, Memobase, supermemory, HippoRAG 2, LongMemEval, Omi (ideas cited, nothing copied); README "What was built" row for each day of work
 - [ ] 9.4 The owner asks ten real questions about their own week by text and by voice and judges speed and answers [human]

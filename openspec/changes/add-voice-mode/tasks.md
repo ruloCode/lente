@@ -2,6 +2,8 @@
 
 Depends on: `add-accounts`, `add-task-owners`, `add-record-sheet`
 
+Note (2026-11-03): with `add-memory-engine` 9.2 the fast path is the default. A voice memory question gets its lines before the first step, and `ask_memory` returns lines instead of running the plan and answer calls.
+
 ## 1. The voice agent
 
 - [x] 1.1 Verify function calling and web search over the Responses API with real calls on synthetic text; record the shapes and the price in `docs/kb/meta-api.md` [key:MODEL_API_KEY]

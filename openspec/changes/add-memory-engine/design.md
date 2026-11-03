@@ -372,7 +372,7 @@ The benchmark numbers these projects publish are their own claims and are not qu
 ## Migration Plan
 
 1. Ship group 1, the bench and the two fixes, alone. It changes no stored data.
-2. Build the index and the recall path behind `LENTE_RECALL=fast`, with tiers as the default, until the eval shows it is at least as accurate. Then flip the default.
+2. Build the index and the recall path behind `LENTE_RECALL=fast`, with tiers as the default, until the eval shows it is at least as accurate. Then flip the default. (Flipped in 9.2: 90/105 against 17/105 on the recall set; see `docs/benchmarks.md` for why the tiers' number is low there.)
 3. Add the `memory_snapshots` migration. Runtimes without a snapshot build one from their records on open, which is measured for 30 and 365 days.
 4. The card fields in the notes call are additive. Older meetings get cards from a catch-up in the nightly run, oldest first, capped like digests at 31 days per run.
 5. Roll back by setting `LENTE_RECALL=tiers`. Snapshots can be dropped and rebuilt.
