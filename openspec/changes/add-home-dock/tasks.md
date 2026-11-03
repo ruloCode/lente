@@ -13,21 +13,32 @@ Each group adds the day's row to "What was built during the hackathon" in `READM
 
 ## 1. The dock and the full-screen chat
 
-- [ ] 1.1 Inicio's dock with only the field (full placeholder, no icons) and the record button; the scope chip, the starters, Dictar and Hablar con Lente leave Inicio; an answer no longer replaces the greeting or the projects; verify with a Compose test that the dock has exactly two controls (`./gradlew :app:testDebugUnitTest`)
-- [ ] 1.2 The chat sheet: full height, handle and close, the conversation (voice sessions included), the starters while empty, "Nueva conversación"; the composer with dictate/send, Hablar con Lente and the scope chip; opened from the field with the keyboard up; closed by ✕, swipe down and back; a pure `ChatComposer.button(text)` (dictate or send) with a unit test
+Note (2026-11-02, at the owner's request, ahead of Phase 3): the dock with two buttons, the chat sheet (✕, swipe down and back close it; the scope chip, starters, Dictar/send and Hablar con Lente inside), share on answers, the round button opening the recording options (mode with Teleprompter as Pronto, capture with the live camera, start), the live view with Transcripción and Resumen tabs, and the flat card look (Tabs, PlainIcon) are built. Verified: `./gradlew :app:testDebugUnitTest` (89 tests, 0 failures, including `ChatSheet.button`, `ChatSheet.shared` and `sessionSummaries`), `pnpm android:e2e` passed in 107.2 s on the owner's Samsung with the one-tap record step, and light-mode screenshots of Inicio and the chat against the production hub. Still open: Compose tests, dark-mode screenshots, the e2e chat step.
+
+- [ ] 1.1 Inicio's dock with only two buttons: the ask bar (a button, full label, no icons) and the record button; the scope chip, the starters, Dictar and Hablar con Lente leave Inicio; an answer no longer replaces the greeting or the projects; verify with a Compose test that the dock has exactly two controls (`./gradlew :app:testDebugUnitTest`)
+- [ ] 1.2 The chat sheet: full height, handle and close, the conversation (voice sessions included), the starters while empty, "Nueva conversación"; the composer with dictate/send, Hablar con Lente and the scope chip; opened from the ask bar; closed by ✕, swipe down and back; a pure `ChatComposer.button(text)` (dictate or send) with a unit test
 - [ ] 1.3 Answer actions: copy, read aloud and share (Android share intent); source chips open what they cite; unit test for the shared text (answer plus its sources' titles)
 - [ ] 1.4 `scripts/android-e2e.ts`: ask through the field and find the answer in the sheet, then close it and find Inicio unchanged; `pnpm android:e2e` passes on the phone [phone]
 - [ ] 1.5 Screenshots in light and dark: Inicio, the empty chat, a chat with an answer, after closing by swipe [phone]
 
+- [ ] 1.6 The chat's history: `askLines`, `threadTitle`, `isThreadId` with tests (`pnpm test`); `GET /chat/threads`; the phone's thread id, `ChatHistory` with tests (`./gradlew :app:testDebugUnitTest`), the clock in the header and the list; verify against a stubbed hub that two questions in one thread come back as one conversation, and on the phone after the hub is deployed [phone]
+  - 2026-11-02: built; `node --test test/chat-store.test.ts` 4 pass; a throwaway run against a stubbed local hub kept two questions with a `threadId` as one `text` thread titled by the first and did not keep one without it; on the owner's phone against production the history says the hub needs an update (Modal runs `feat/web-desktop`).
+
+- [ ] 1.7 Recuerdos in place of Hoy, on sample moments: `Memories` with tests; the preview and details, the fixed wheel with the card carousel, Revivir with the third-relive summary, no dock on the tab; screenshots in light and dark [phone]
+  - 2026-11-02: built; 98 unit tests pass (5 in `MemoriesTest`); on the owner's phone, light mode: turning moved the chosen moment, tapping a card chose it, a relive played with its clock and lines, and the third relive offered the summary. Dark mode not checked.
+
+- [ ] 1.8 Conexiones: `jobList` and `GET /agent/jobs` with a test (`pnpm test`); `Connections` (catalog, setup lines, jobs, connected) with tests; the screen, the three-step connect sheet, agent and job sheets, the menu entry with the waiting count; on the phone, connect Claude Code with a real token and see «Conectado» [phone] [human]
+  - 2026-11-03: built; 104 app unit tests and the hub's tests pass; a throwaway run against a stubbed hub created a job and `GET /agent/jobs` listed it as `pending`; on the owner's phone the screen and the first two steps of the sheet render (no token made on the production account). Production runs `feat/web-desktop`, so its jobs list says the hub needs an update.
+
 ## 2. Record at the first tap and the live screen
 
-- [ ] 2.1 Pure `RecordChoice.defaults(status)` (clip if connected, else phone; microphone only; project `null`; no title) with unit tests for clip, phone and none
-- [ ] 2.2 Tap records with the defaults and opens the live screen; long press opens the "Grabar" sheet; the voice agent's request still opens the sheet; while listening the button shows the live colour and opens the live screen; the red "Transcripción en vivo" bar leaves Inicio; Compose test for tap and long press
+- [ ] 2.1 Pure `RecordChoice.Mode`, `modeNow` and `assistToSet` (Teleprompter not ready) with unit tests
+- [ ] 2.2 The round button opens the options (mode, capture, start, title, project); starting sets the mode, records, turns live reads on with the camera, and opens the live screen; the voice agent's request opens the same sheet; while listening the button shows the live colour and opens the live screen; the red "Transcripción en vivo" bar leaves Inicio; Compose test for tap and long press
 - [ ] 2.3 Hub check: `POST /meetings/project` on the meeting in progress assigns it and the automatic assignment skips it at the end; a unit test in `test/` (`pnpm test`); if it does not, fix it there with the test
 - [ ] 2.4 Live screen: one stop control (second tap ends), a "…" menu with pause or resume and the project (sheet with the active projects and "Que Lente decida"), tabs Transcripción and Resumen (the session's `summary` entries, newest first); the help buttons fit their labels; Compose tests for the menu and the tabs
-- [ ] 2.5 `scripts/android-e2e.ts`: the record step becomes one tap that opens the live screen with the hub listening, and pause goes through the menu; `pnpm android:e2e` passes on the phone [phone]
+- [ ] 2.5 `scripts/android-e2e.ts`: the record step opens the options and «Empezar a grabar» opens the live screen with the hub listening, and pause goes through the menu; `pnpm android:e2e` passes on the phone [phone]
 - [ ] 2.6 Screenshots in light and dark: the live screen in each tab, the open menu, Inicio with the red record button [phone]
-- [ ] 2.7 The owner records a real meeting with one tap, moves it to a project from the menu, and stops it; the meeting shows in that project [human]
+- [ ] 2.7 The owner records a real meeting in each mode from the options, moves one to a project from the menu, and stops it; the meeting shows in that project [human]
 
 ## 3. The device pill and Conectar
 
@@ -48,7 +59,7 @@ Each group adds the day's row to "What was built during the hackathon" in `READM
 - [ ] 5.1 Pure `Activity.items(actions, facts, meetings)` (actions to approve, memories to review, notes ready, agent jobs done or failed, newest first) and `Activity.waiting` for the dot; unit tests
 - [ ] 5.2 The Actividad screen (back, items that open Acciones, Memoria or the meeting, the empty line) and the dot on its button; Compose test for the empty state and for an item opening Acciones
 - [ ] 5.3 Screenshots in light and dark: Actividad empty and with the seeded meeting's action and fact, and the dot on Inicio [phone]
-- [ ] 5.4 One line in the first-run introduction about the long press on the record button; verify on the phone by replaying the introduction from Ajustes [phone]
+- [ ] 5.4 One line in the first-run introduction about the round button's options; verify on the phone by replaying the introduction from Ajustes [phone]
 
 ## Workflow follow-up
 
