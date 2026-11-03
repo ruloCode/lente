@@ -31,4 +31,17 @@ class Prefs(context: Context) {
     var collapsedSession: Long
         get() = sp.getLong("collapsedSession", 0)
         set(v) = sp.edit().putLong("collapsedSession", v).apply()
+
+    /** add-notifications, for a hub without the feed: the read mark and the settings kept on the phone. */
+    var notifyReadAt: Long
+        get() = sp.getLong("notifyReadAt", 0)
+        set(v) = sp.edit().putLong("notifyReadAt", v).apply()
+    var notifyPrefs: String?
+        get() = sp.getString("notifyPrefs", null)
+        set(v) = sp.edit().putString("notifyPrefs", v).apply()
+
+    /** Feed items this phone already alerted for, so nothing alerts twice; null until the first check seeds it. */
+    var notifyAlerted: Set<String>?
+        get() = if (sp.contains("notifyAlerted")) sp.getStringSet("notifyAlerted", emptySet())!!.toSet() else null
+        set(v) = sp.edit().putStringSet("notifyAlerted", v?.toSet()).apply()
 }

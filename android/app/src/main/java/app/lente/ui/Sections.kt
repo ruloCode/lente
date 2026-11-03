@@ -482,6 +482,13 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
             Hairline(); SwitchRow("Leer en voz alta", voice, vm::setReadAloud, hint = "Respuestas y resúmenes", tag = "set-voice", leading = { RowGlyph(Glyph.Speaker) })
             Hairline(); SwitchRow("Todas las preguntas", s.everyQuestion, vm::everyQuestion, hint = "Solo para pruebas", tag = "set-all", leading = { RowGlyph(Glyph.Sparkle) })
         }
+        SectionTitle("Notificaciones")
+        Group {
+            val feed by vm.feed.collectAsState()
+            LaunchedEffect(Unit) { if (vm.feed.value == null) vm.loadFeed() }
+            val p = feed?.prefs
+            SetRow(Glyph.Bell, "Avisos", value = when { p == null -> null; !p.phone -> "Apagados"; p.quietOn -> "Con horas de silencio"; else -> "Encendidos" }) { open("notifications") }
+        }
         SectionTitle("Apariencia")
         Group { SetRow(Glyph.Contrast, "Tema", value = THEMES.firstOrNull { it.first == theme }?.second ?: "Sistema") { open("theme") } }
         SectionTitle("Conexión")
@@ -530,7 +537,7 @@ private fun SettingsSheet(title: String, onDismiss: () -> Unit, content: @Compos
         onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.bg, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
     ) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = Lente.gutter).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().imePadding().padding(horizontal = Lente.gutter).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp))
             content()
         }
@@ -590,6 +597,7 @@ private fun AjustesSheet(vm: LenteViewModel, hub: HubState, what: String, close:
             Button("Cancelar", close, Modifier.fillMaxWidth(), tone = Tone.Plain)
         }
         what == "new-device" -> NewDeviceSheet(vm, close)
+        what == "notifications" -> NotificationsSheet(vm, close)
         what.startsWith("device:") -> {
             val devices by vm.devices.collectAsState()
             val d = devices.firstOrNull { it.id == what.removePrefix("device:") } ?: return close()
@@ -601,6 +609,75 @@ private fun AjustesSheet(vm: LenteViewModel, hub: HubState, what: String, close:
                 if (!d.revoked) Button("Revocar acceso", { vm.revokeDevice(d.id); close() }, Modifier.fillMaxWidth().testTag("revoke-${d.id}"), tone = Tone.Live)
             }
         }
+    }
+}
+
+/**
+ * Notificaciones (add-notifications): alerts on the phone, which kinds, quiet hours, meetings, the lock
+ * screen and the clip's buzz. Saved on the hub so they follow the account, or on the phone for an old hub.
+ */
+@Composable
+private fun NotificationsSheet(vm: LenteViewModel, close: () -> Unit) {
+    val c = Lente.c
+    val context = LocalContext.current
+    val feed by vm.feed.collectAsState()
+    val p = feed?.prefs ?: app.lente.core.NotificationPrefs()
+    val save = { next: app.lente.core.NotificationPrefs -> vm.saveNotifyPrefs(next) }
+    var allowed by remember { mutableStateOf(app.lente.platform.Alerts.allowed(context)) }
+    val asking by vm.askNotifyPermission.collectAsState()
+    // After the permission dialog closes, read the answer again.
+    LaunchedEffect(asking) { if (!asking) allowed = app.lente.platform.Alerts.allowed(context) }
+    SettingsSheet("Notificaciones", close) {
+        if (!allowed && p.phone) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Android no deja que Lente te avise todavía.", style = Type.callout, color = c.ink)
+                Button("Permitir notificaciones", { vm.askNotifyPermission.value = true }, Modifier.fillMaxWidth().testTag("notify-allow"))
+            }
+        }
+        Group {
+            SwitchRow("Avisos en el teléfono", p.phone, { save(p.copy(phone = it)) }, hint = "También con la app cerrada, con unos minutos de retraso", tag = "notify-phone", leading = { RowGlyph(Glyph.Bell) })
+        }
+        SheetLabel2("Qué te avisa")
+        Group {
+            val glyphs = mapOf("recordings" to Glyph.Doc, "approvals" to Glyph.Tasks, "memories" to Glyph.Brain, "agents" to Glyph.Terminal)
+            val hints = mapOf("recordings" to "Notas listas o que fallaron", "approvals" to "Correos, tareas y recordatorios por aprobar", "memories" to "Recuerdos por revisar", "agents" to "Trabajos por aprobar, hechos o fallidos")
+            app.lente.core.Notifications.GROUPS.forEachIndexed { i, g ->
+                if (i > 0) Hairline()
+                SwitchRow(app.lente.core.Notifications.GROUP_LABELS[g] ?: g, p.group(g), { on -> save(p.copy(groups = p.groups + (g to on))) }, hint = hints[g], tag = "notify-$g", leading = { RowGlyph(glyphs[g] ?: Glyph.Bell) })
+            }
+        }
+        SheetLabel2("Cuándo")
+        Group {
+            SwitchRow("Horas de silencio", p.quietOn, { save(p.copy(quietOn = it)) }, hint = if (p.quietOn) "De ${app.lente.core.Notifications.clock(p.quietFrom)} a ${app.lente.core.Notifications.clock(p.quietTo)}" else "Sin avisos de noche", tag = "notify-quiet", leading = { RowGlyph(Glyph.Clock) })
+            if (p.quietOn) {
+                Hairline(); TimeStepper("Desde", p.quietFrom) { save(p.copy(quietFrom = it)) }
+                Hairline(); TimeStepper("Hasta", p.quietTo) { save(p.copy(quietTo = it)) }
+            }
+            Hairline(); SwitchRow("En reuniones, solo lo urgente", p.meetingsUrgentOnly, { save(p.copy(meetingsUrgentOnly = it)) }, hint = "Aprobaciones y trabajos que fallaron", tag = "notify-meetings", leading = { RowGlyph(Glyph.Wave) })
+        }
+        SheetLabel2("Privacidad y clip")
+        Group {
+            SwitchRow("Ocultar el contenido", p.hideContent, { save(p.copy(hideContent = it)) }, hint = "En la pantalla bloqueada solo dice «Algo nuevo»", tag = "notify-hide", leading = { RowGlyph(Glyph.Eye) })
+            Hairline(); SwitchRow("Vibrar el clip para lo urgente", p.clipBuzz, { save(p.copy(clipBuzz = it)) }, hint = "Una señal en tus lentes, fuera de las horas de silencio", tag = "notify-clip", leading = { RowGlyph(Glyph.Device) })
+        }
+        if (feed?.fromHub == false) Text("Tu hub todavía no guarda estos ajustes: quedan en este teléfono, y el clip no vibrará hasta que lo actualices.", style = Type.caption, color = c.muted, modifier = Modifier.padding(horizontal = 4.dp))
+    }
+}
+
+@Composable
+private fun SheetLabel2(text: String) = Text(text, style = Type.caption, color = Lente.c.muted, modifier = Modifier.padding(start = 4.dp, top = 4.dp))
+
+/** A time of day with − and + in half hours, for quiet hours. */
+@Composable
+private fun TimeStepper(label: String, minutes: Int, onChange: (Int) -> Unit) {
+    val c = Lente.c
+    val day = 24 * 60
+    Row(Modifier.fillMaxWidth().padding(horizontal = Lente.gutter, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.width(34.dp))
+        Text(label, style = Type.body, color = c.ink, modifier = Modifier.weight(1f))
+        PlainIcon(Glyph.Back, "Media hora antes", Modifier.size(40.dp)) { onChange((minutes - 30 + day) % day) }
+        Text(app.lente.core.Notifications.clock(minutes), style = Type.headline.copy(fontFeatureSettings = "tnum"), color = c.ink, modifier = Modifier.padding(horizontal = 6.dp))
+        PlainIcon(Glyph.ChevronRight, "Media hora después", Modifier.size(40.dp)) { onChange((minutes + 30) % day) }
     }
 }
 

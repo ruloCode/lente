@@ -97,6 +97,11 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             DevicePill(hub) { if (hub.status.listening && hub.status.clip) vm.openLive() else vm.go(Screen.Dispositivos) }
             Spacer(Modifier.weight(1f))
+            // The bell: the hub's unread count, or the phone's own for a hub without the feed (add-notifications).
+            val localRead by vm.localReadAt.collectAsState()
+            val facts by vm.facts.collectAsState()
+            val unread = hub.notifyUnread ?: remember(hub.meetings, hub.actions, facts, localRead) { vm.localFeed(hub).unread }
+            BellButton(unread) { vm.go(Screen.Actividad) }
             PlainIcon(Glyph.Gear, "Ajustes") { vm.go(Screen.Ajustes) }
             PlainIcon(Glyph.Menu, "Abrir menú", Modifier.testTag("menu"), onMenu)
         }

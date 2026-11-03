@@ -132,6 +132,8 @@ sealed interface HubEvent {
     data class SpendEvent(val spend: Spend) : HubEvent
     data class Meetings(val items: List<MeetingSummary>, val language: Language) : HubEvent
     data class ActionsEvent(val actions: Actions) : HubEvent
+    /** The activity feed changed (add-notifications): how many items are unread and when the newest happened. */
+    data class NotificationsEvent(val unread: Int, val latestAt: Long) : HubEvent
     /** A turn, cue, live read or summary as it happens. */
     data class Day(val entry: Entry) : HubEvent
     data class Other(val kind: String) : HubEvent
@@ -147,6 +149,7 @@ object HubJson {
             "speaker" -> HubEvent.Speaker(o.opt("turnId")?.toString() ?: "", o.optString("speaker"))
             "stages" -> HubEvent.Stages(o.optString("id"), longs(o.optJSONObject("stages")))
             "level" -> HubEvent.Level(o.optInt("rms"))
+            "notifications" -> HubEvent.NotificationsEvent(o.optInt("unread"), o.optLong("latestAt"))
             "recorded" -> HubEvent.Recorded(o.optLong("ms"))
             "spend" -> HubEvent.SpendEvent(spend(o))
             "meetings" -> HubEvent.Meetings(o.optJSONArray("items").objects().map(::meeting), language(o.optJSONObject("language")))
