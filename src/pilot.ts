@@ -126,6 +126,10 @@ const EMBED_TICK_MS = 5_000;
 const RECALL_FLUSH_MS = 5_000;
 /** How often a running episode is checked for a closed 10-minute window, and the notes call's cap when it also writes the card. */
 const CARD_TICK_MS = 15_000;
+/** A window card call that has not answered by then is abandoned; the window stays due and is retried. */
+const CARD_CALL_TIMEOUT_MS = 90_000;
+const CARD_RETRY_MS = 2 * 60_000;
+const CARD_WINDOW_TRIES = 3;
 /** The index's changed months are written behind this often, and at eviction. */
 const SNAPSHOT_EVERY_MS = 10 * 60_000;
 /** Media objects expired per nightly run at most, oldest first. */
@@ -732,7 +736,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
    * Responses API so their first token is timed; structured calls (`extra` with a JSON schema) use
    * Chat Completions and wait for the whole answer.
    */
-  async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue"; onDelta?: (delta: string) => void; allowIncomplete?: boolean }): Promise<SparkReply> {
+  async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue"; onDelta?: (delta: string) => void; allowIncomplete?: boolean; timeoutMs?: number }): Promise<SparkReply> {
     let lastError: unknown;
     // Once text reached the phone, another model would repeat it: no fallback after the first delta.
     let streamed = false;
@@ -746,7 +750,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         const maxTokens = opts.maxTokens ?? 400;
         // The last resort has nobody to fall back to, so it gets no first-token deadline.
         const firstTokenTimeoutMs = job && i < targets.length - 1 ? CUE_FIRST_TOKEN_TIMEOUT_MS : undefined;
-        const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs, ...(onDelta ? { onDelta } : {}), ...(opts.allowIncomplete ? { allowIncomplete: true } : {}) }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
+        const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs, ...(onDelta ? { onDelta } : {}), ...(opts.allowIncomplete ? { allowIncomplete: true } : {}) }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) })), ttftMs: undefined };
         health.ok("model");
         if (job) routePolicy.succeeded(job, target.id);
         else sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
@@ -1089,12 +1093,23 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   }
 
   let windowCarding = false;
+  /** Failed tries per window (by its start): retried after a pause, given up as an empty card after a few. */
+  const windowFailures = new Map<number, { tries: number; at: number }>();
   /** A window card every 10 minutes of a long episode while it runs (6.3); skipped when nothing was said or the spend cap holds. */
   async function cardWindow(): Promise<void> {
     const m = current;
     if (!recall || !key || !m || windowCarding || spendCapped()) return;
     const due = dueWindow(m, cardedUntil(m), Date.now(), () => false);
     if (!due) return;
+    const failed = windowFailures.get(due.from);
+    if (failed && failed.tries >= CARD_WINDOW_TRIES) {
+      // Given up: an empty card lets the next windows go on; the closing card still covers the episode's notes.
+      keepCard(m, { from: due.from, to: due.to, window: true, people: [], facts: [], keysEs: [], keysEn: [] }, 0);
+      windowFailures.delete(due.from);
+      meetings.save(m);
+      return;
+    }
+    if (failed && Date.now() - failed.at < CARD_RETRY_MS) return;
     windowCarding = true;
     const started = Date.now();
     try {
@@ -1106,15 +1121,17 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
           { role: "system", content: `You write the memory card for ten minutes of a recording from its transcript. Lines look like \`t3 YOU: text\`; YOU wears the glasses.\n${cardPrompt(shown)}\nInclude only what was actually said; if there is nothing worth keeping, return empty lists.` },
           { role: "user", content: turns.map((t) => `${t.id} ${t.wearer ? "YOU" : (t.speaker ?? "?")}: ${t.text}`).join("\n") },
         ],
-        { label: "card", extra: { response_format: { type: "json_schema", json_schema: { name: "memory_card", strict: true, schema: windowCardSchema(turnIds, shown.map((f) => f.id)) } } }, maxTokens: 2000 },
+        { label: "card", extra: { response_format: { type: "json_schema", json_schema: { name: "memory_card", strict: true, schema: windowCardSchema(turnIds, shown.map((f) => f.id)) } } }, maxTokens: 2000, timeoutMs: CARD_CALL_TIMEOUT_MS },
       );
       const out = validateCard(JSON.parse(text), { episodeId: m.id, turnIds, turnAt: new Map(turns.map((t) => [t.id, t.at])), shown, from: due.from, to: due.to, window: true, firstN: factCount(m), dayStart: (d) => localDayStart(d, TIME_ZONE) });
       keepCard(m, out.card, out.dropped);
       meetings.save(m);
       console.log(`[cards] window card ${Math.round((Date.now() - due.to) / 1000)} s after its window closed, in ${Date.now() - started} ms`);
     } catch (error) {
-      // The window stays due; the next tick retries it.
-      console.error(`[cards] window card failed: ${(error as Error).message.slice(0, 200)}`);
+      // The window stays due and is tried again after a pause, a few times at most.
+      const tries = (windowFailures.get(due.from)?.tries ?? 0) + 1;
+      windowFailures.set(due.from, { tries, at: Date.now() });
+      console.error(`[cards] window card failed (try ${tries} of ${CARD_WINDOW_TRIES}): ${(error as Error).message.slice(0, 200)}`);
     } finally {
       windowCarding = false;
     }

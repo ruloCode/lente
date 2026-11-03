@@ -107,13 +107,16 @@ export interface Completion {
  * One chat completion without streaming. Used where the whole answer is needed at once (a
  * structured briefing) and by the cache benchmark, because streamed replies carry no `usage`.
  */
-export async function completeChat(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number; extra?: Record<string, unknown> } = {}): Promise<Completion> {
+export async function completeChat(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number; extra?: Record<string, unknown>; timeoutMs?: number } = {}): Promise<Completion> {
   if (!target.apiKey) throw new Error(`${target.keyEnv} is not set`);
   const started = performance.now();
+  // A call that never answers would hold whatever waits on it (a window card, a meeting's notes): give it a deadline.
+  const signal = opts.timeoutMs === undefined ? undefined : AbortSignal.timeout(opts.timeoutMs);
   const res = await fetch(`${target.baseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${target.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: target.model, messages, max_tokens: tokenBudget(target, opts.maxTokens ?? 400), ...target.extra, ...opts.extra }),
+    ...(signal ? { signal } : {}),
   });
   if (!res.ok) throw httpError(target, res.status, await res.text().catch(() => ""));
   const json = (await res.json()) as {
