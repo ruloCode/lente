@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
-import { AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
+import { type DevicePreference, mayTakeOver, AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
 import { ask, askSchema } from "./ask.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
@@ -538,7 +538,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   let latestPartial = "";
 
   /** The status as sent: the session view is taken at send time so every phone shows the same elapsed time. */
-  const statusEvent = () => ({ ...status, modelDown: modelDown(), databaseDown: databaseDown(), session: sessionClock.view(Date.now()) });
+  /** The device the wearer chose to record with; see mayTakeOver. */
+  let devicePreference: DevicePreference = "any";
+  const statusEvent = () => ({ ...status, devicePreference, modelDown: modelDown(), databaseDown: databaseDown(), session: sessionClock.view(Date.now()) });
 
   /** What the phone read out loud lately; a turn that repeats it is Lente hearing itself. */
   const narration = new NarrationGuard();
@@ -1419,6 +1421,11 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   /** The one device the hub listens to: the clip over TCP, or the phone or desktop over a WebSocket. */
   function serveDevice(socket: Duplex, remote: string | undefined): void {
+    // The wearer chose the phone: a clip that reconnects while the phone listens waits, instead of taking over.
+    if (!mayTakeOver(devicePreference, webDevices.has(socket), device ? webDevices.has(device) : undefined)) {
+      socket.destroy();
+      return;
+    }
     const previous = device;
     device = socket;
     // A phone that is replaced is told why, so its page says the clip took over instead of "connection lost".
@@ -1755,6 +1762,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     "/cues/addressed": () => setEveryQuestion(false),
     "/assist-mode/assist": () => setAssistMode("assist"),
     "/assist-mode/record": () => setAssistMode("record"),
+    // The recording sheet's «Con qué» (add-home-dock): the phone keeps the clip from taking over, «any» lets it.
+    "/device/prefer/phone": () => { devicePreference = "phone"; broadcast(statusEvent()); },
+    "/device/prefer/any": () => { devicePreference = "any"; broadcast(statusEvent()); },
   };
 
   every(() => {

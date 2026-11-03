@@ -324,3 +324,14 @@ export function toCue(text: string, max = 90): string {
   const space = cut.lastIndexOf(" ");
   return (space > max * 0.6 ? cut.slice(0, space) : cut) + "…";
 }
+
+/**
+ * Which device the wearer chose to record with (add-home-dock): `any` lets the newest device listen, so a
+ * clip that reconnects takes over; `phone` keeps the phone listening and makes a returning clip wait.
+ */
+export type DevicePreference = "any" | "phone";
+
+/** Whether a device that just connected may take over from the one listening. Pure. */
+export function mayTakeOver(prefer: DevicePreference, incomingIsPhone: boolean, currentIsPhone: boolean | undefined): boolean {
+  return !(prefer === "phone" && !incomingIsPhone && currentIsPhone === true);
+}

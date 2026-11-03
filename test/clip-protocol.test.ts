@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HEADER, loadFixtures, renderFixturesHeader } from "../scripts/gen-fixtures-header.ts";
 import { AsrSession } from "../src/asr-session.ts";
-import {
+import { mayTakeOver,
   AudioConditioner,
   AudioTimeline,
   BYTES_PER_MS,
@@ -294,4 +294,12 @@ test("the hub answers a discovery query with its clip port and ignores anything 
   assert.equal(discoveryReply(Buffer.from(`${DISCOVERY_QUERY}\n`), 7072)?.toString(), "lente-hub 7072");
   assert.equal(discoveryReply(Buffer.from("lente-hub"), 7070), null);
   assert.equal(discoveryReply(Buffer.from([0xff, 0x00, 0x13]), 7070), null);
+});
+
+test("mayTakeOver: with the phone chosen, a returning clip waits; otherwise the newest device listens (add-home-dock)", () => {
+  assert.equal(mayTakeOver("phone", false, true), false);
+  assert.equal(mayTakeOver("phone", true, true), true);
+  assert.equal(mayTakeOver("phone", false, false), true);
+  assert.equal(mayTakeOver("phone", false, undefined), true);
+  assert.equal(mayTakeOver("any", false, true), true);
 });
