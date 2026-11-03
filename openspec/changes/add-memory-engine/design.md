@@ -71,7 +71,7 @@ The plan call is the slowest step and the least reliable one. The probe measured
 1. Developer message: the rules. Static, the same for every user and every question.
 2. Developer message: the memory prefix.
    - Whole memory: the profile, people cards, the last 7 day digests and the week digests.
-   - In a project: that project's brief, its people cards and its last 7 days of cards.
+   - In a project: that project's brief, its notes and its kept facts. (People cards were planned here too, but a person card is written from all of a person's meetings and could carry another project's facts, so it stays in the whole memory's prefix only. Changed in 7.3.)
    - It changes only after consolidation, so it caches per user.
 3. Developer message: "RECUPERADO", the retrieved lines with their ids (≤ 6,000 tokens for text, ≤ 2,500 for voice).
 4. The last 8 messages of the conversation.

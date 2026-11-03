@@ -144,6 +144,8 @@ test("6.5: briefs and people cards join the index and a project's prefix", async
   await rt.ready;
   assert.equal(rt.index.get("brief:p-atlas")?.projectId, "p-atlas");
   const prefix = await rt.prefix("p-atlas");
-  assert.deepEqual(prefix.slice(0, 2).map((u) => u.id), ["brief:p-atlas", "person:probe-ana"]);
+  assert.equal(prefix[0]!.id, "brief:p-atlas");
+  assert.ok(!prefix.some((u) => u.id.startsWith("person:")), "a person card can carry other projects: not inside one");
+  assert.ok((await rt.prefix(undefined)).some((u) => u.id === "person:probe-ana"), "but it is in the whole memory's prefix");
   assert.ok(!(await rt.prefix("p-orion")).some((u) => u.id === "brief:p-atlas"), "another project's brief stays out");
 });

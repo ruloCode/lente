@@ -333,9 +333,10 @@ export class RecallRuntime {
   /** The memory prefix: digests for the whole memory (accounts), else the newest meetings' notes and the kept facts; in a project only its own. */
   async prefix(projectId: string | undefined): Promise<MemoryUnit[]> {
     const memory = this.records.memoryDigests ? await this.records.memoryDigests() : { briefs: [], people: [] };
-    // People cards for the people of this scope (all of them for the whole memory), newest first.
+    // People cards only for the whole memory: a card is written from all of a person's meetings, so inside
+    // a project it could carry another project's facts (decision 10: scope holds in the data).
     const inProject = new Set(this.records.meetings().filter((m) => projectId === undefined || this.projects.get(m.id) === projectId).flatMap((m) => [...m.turns.map((t) => t.speaker ?? ""), ...(m.cards ?? []).flatMap((c) => c.people.map((p) => p.name))]).filter(isName).map((n) => personKey(n)));
-    const people = memory.people.filter((p) => inProject.has(p.periodStart)).sort((a, b) => b.createdAt - a.createdAt).slice(0, PREFIX_PEOPLE).map(digestUnit);
+    const people = memory.people.filter((p) => projectId === undefined && inProject.has(p.periodStart)).sort((a, b) => b.createdAt - a.createdAt).slice(0, PREFIX_PEOPLE).map(digestUnit);
     const brief = projectId ? memory.briefs.filter((b) => b.periodStart === projectId).map(digestUnit) : [];
     const inScope = (m: Meeting) => projectId === undefined || this.projects.get(m.id) === projectId;
     const notes = this.records.meetings().filter((m) => inScope(m) && m.notes && notesText(m)).sort((a, b) => b.startedAt - a.startedAt).slice(0, PREFIX_MEETINGS);
