@@ -362,6 +362,7 @@ How to read the deep path's number:
 | Run (2026-11-03) | Audio the hub received | Window cards | Window close → card | Failed card calls | Cost per recorded hour (cards / all model calls / with transcription) |
 |---|---|---|---|---|---|
 | 120 min, before the card timeout (`1bc37b0`) | **21.9 min**: the clip emulator stopped sending at minute 22 | 2 | 11–12 s | 0 | US$ 0.014 / 0.018 / 0.049 (over 120 min with 22 min of speech: not a real hourly rate) |
+| **120 min, with the timeout** | **96.6 min**: Lente paused itself at minute 96.6 (below) | **10** (2 episodes; the first ended at its 60-minute limit) | 10–23 s, p50 13 s | 0 | US$ 0.082 / 0.093 / **0.267** per hour of audio received (US$ 0.43 for the run) |
 | 32 min, with the timeout | 30.9 min (1,855 s billed by transcription) | 3 | 9 s, 11 s, 222 s | 1 (retried: the 222 s card) | US$ 0.091 / 0.096 / 0.270 |
 
 What the first run showed:
@@ -371,4 +372,10 @@ What the first run showed:
 - **The bench now keeps the emulator's link lines and reports `clipExit` and `recordedAudioMin`.**
 - **The 32-minute rerun passed minute 22 without a drop.**
 
-The 2-hour measurement is being run again. 6.6 stays open until it has two hours of audio.
+The 2-hour rerun (bold row) measures 6.6. It also found a problem in the idle pause (`add-idle-pause`), which production has too:
+- **At minute 96.6 the hub paused itself: «1203 s without the wearer speaking».** Speech never stopped.
+- **The wearer label kept getting lost.** It was found nine times («speaker A is the wearer») and was lost again 10–25 s later each time («not identified»). Every transcription session the silence gate reopens after a pause starts its speaker labels again.
+- **Once a wearer has been seen, the idle watch counts only the wearer's turns.** So a wearer who is not re-identified for 20 minutes pauses Solo grabar while people are still talking.
+- **What the clip does:** it stops sending, and the phone shows the pause («En pausa»).
+
+In the bench the "wearer" is one of two synthetic voices. On the glasses the wearer's voice is the loudest, which should be re-identified more often, but nothing guarantees it.

@@ -49,7 +49,7 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 - [x] 6.3 Window cards every 10 minutes of speech in long episodes, skipped under idle pause or the silence gate; card ids `c<episode>:<n>`. Tests with a fake clock (`pnpm test`)
 - [x] 6.4 Validity: supersession closes `validTo`; "now" questions filter to valid facts; kept facts never superseded. Tests for the launch-date scenario in the spec (`pnpm test`)
 - [x] 6.5 Briefs and people cards: new digest scopes `brief` and `person`, debounced brief rewrite (30 min) and nightly people cards; in the usage meter and under the spend cap. Tests with a fake model and fake clock (`pnpm test`)
-- [ ] 6.6 One 2-hour synthetic Solo grabar run through `scripts/fake-clip.ts`: cards per window, cost per recorded hour and time from window close to card; record in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [x] 6.6 One 2-hour synthetic Solo grabar run through `scripts/fake-clip.ts`: cards per window, cost per recorded hour and time from window close to card; record in `docs/benchmarks.md` [key:MODEL_API_KEY]. Measured 2026-11-03: 10 window cards, 13 s p50 from window close to card, US$ 0.27 per hour of audio with transcription; the run stopped hearing audio at minute 96.6 when the idle pause fired (see `docs/benchmarks.md`)
 
 ## 7. Persistence
 
