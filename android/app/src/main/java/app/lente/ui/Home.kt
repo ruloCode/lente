@@ -1,5 +1,6 @@
 package app.lente.ui
 
+import androidx.compose.ui.draw.alpha
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -75,7 +76,7 @@ private enum class HomeTab(val title: String) { Inicio("Inicio"), Tareas("Tareas
  * and the round button, which records and opens the live transcript and summary.
  */
 @Composable
-fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String) -> Unit) {
+fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String, phone: Boolean) -> Unit) {
     val c = Lente.c
     val s = hub.status
     var tab by rememberSaveable { mutableStateOf(HomeTab.Inicio) }
@@ -87,10 +88,10 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
     val asked by vm.recordRequest.collectAsState()
     val close = { sheet = false; vm.recordRequest.value = null }
     if (chatOpen) ChatSheet(vm, hub.status.clip, talk) { chatOpen = false }
-    if (sheet || asked != null) RecordSheet(vm, hub, initialProject = asked?.projectId ?: vm.chatProject.value, initialCamera = asked?.camera ?: false, onDismiss = close) { mode, project, camera, title ->
+    if (sheet || asked != null) RecordSheet(vm, hub, initialProject = asked?.projectId ?: vm.chatProject.value, initialCamera = asked?.camera ?: false, onDismiss = close) { mode, project, camera, title, device ->
         close(); tab = HomeTab.Inicio
         RecordChoice.assistToSet(mode, s.recordOnly)?.let(vm::setAssist)
-        record(project, camera, title)
+        record(project, camera, title, device == RecordChoice.Device.Phone)
     }
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -170,69 +171,142 @@ private fun androidx.compose.foundation.lazy.LazyListScope.projectsOnHome(vm: Le
 }
 
 /**
- * The recording options (add-record-sheet, add-home-dock), opened by the round button: what Lente does
- * (Asistir, Solo grabar, or the teleprompter marked Pronto), what it captures (the microphone, or with
- * the camera's live reads), then the start button; the title and the project below it are optional.
- * The device is the clip when it is connected, the phone otherwise.
+ * The recording options (add-record-sheet, add-home-dock), opened by the round button. Four decisions,
+ * each one glance: what Lente does (Asistir, Recuerdo, Solo grabar, and the Teleprompter marked Pronto) as
+ * tiles; with what (the clip or the phone) as two cards; whether the camera records (always in a Recuerdo);
+ * and the start button with a line that says what will happen. Title and project wait under «Más opciones».
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: String?, initialCamera: Boolean, onDismiss: () -> Unit, onRecord: (mode: RecordChoice.Mode, project: String?, camera: Boolean, title: String) -> Unit) {
+private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: String?, initialCamera: Boolean, onDismiss: () -> Unit, onRecord: (mode: RecordChoice.Mode, project: String?, camera: Boolean, title: String, device: RecordChoice.Device) -> Unit) {
     val c = Lente.c
     val s = hub.status
     val projects by vm.projects.collectAsState()
+    // The clip counts as available only when it is the device that is connected, not the phone.
+    val clipOn = s.clipIsDevice
     var mode by rememberSaveable { mutableStateOf(RecordChoice.modeNow(s.recordOnly)) }
+    var device by rememberSaveable { mutableStateOf(RecordChoice.deviceNow(clipOn)) }
+    var cameraChosen by rememberSaveable(initialCamera) { mutableStateOf(initialCamera) }
     var project by rememberSaveable(initialProject) { mutableStateOf(initialProject) }
-    var camera by rememberSaveable(initialCamera) { mutableStateOf(initialCamera) }
     var title by rememberSaveable { mutableStateOf("") }
-    // Opens fully, so the start button is in view without dragging.
+    var more by rememberSaveable { mutableStateOf(initialProject != null) }
+    val camera = RecordChoice.usesCamera(mode, cameraChosen)
     val state = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.bg, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = Lente.gutter).padding(bottom = 24.dp).testTag("record-sheet"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().imePadding().padding(horizontal = Lente.gutter).padding(bottom = 20.dp).testTag("record-sheet"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Grabar", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (s.clip && s.clipIsDevice) Glyph.Device else Glyph.Phone, c.muted, size = 16.dp)
-                Spacer(Modifier.width(6.dp))
-                Text(RecordChoice.deviceLine(s.clip, s.clip && !s.clipIsDevice), style = Type.caption, color = c.muted, modifier = Modifier.testTag("record-device"))
+            SheetLabel("Qué hace Lente")
+            // Four tiles in two rows: the chosen one outlined in ink with an ink glyph tile.
+            RecordChoice.Mode.entries.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEach { m -> ModeTile(m, selected = mode == m, Modifier.weight(1f)) { if (m.ready) mode = m } }
+                }
             }
-            SheetLabel("Modo")
-            SheetCard {
-                RecordChoice.Mode.entries.forEachIndexed { i, m ->
-                    if (i > 0) Hairline()
-                    OptionRow(modeGlyph(m), m.label, m.hint, selected = mode == m, soon = !m.ready, tag = "mode-${m.key}") { mode = m }
+            SheetLabel("Con qué")
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RecordChoice.Device.entries.forEach { d ->
+                    val available = d == RecordChoice.Device.Phone || clipOn
+                    DeviceTile(
+                        d, RecordChoice.deviceHint(d, clipOn), selected = device == d, available = available, modifier = Modifier.weight(1f),
+                        onClick = { if (available) device = d else { onDismiss(); vm.go(Screen.Dispositivos) } },
+                    )
                 }
             }
             SheetLabel("Captura")
             SheetCard {
-                OptionRow(Glyph.Mic, RecordChoice.captureLabel(false), RecordChoice.captureHint(false), selected = !camera, tag = "capture-mic") { camera = false }
-                Hairline()
-                OptionRow(Glyph.Camera, RecordChoice.captureLabel(true), RecordChoice.captureHint(true), selected = camera, tag = "capture-cam") { camera = true }
+                Row(Modifier.fillMaxWidth().clickable(enabled = !mode.camera) { cameraChosen = !cameraChosen }.padding(horizontal = Lente.gutter, vertical = 12.dp).testTag("capture-cam"), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Glyph.Camera, c.ink, size = 20.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Cámara", style = Type.body, color = c.ink)
+                        Text(if (mode.camera) "Un recuerdo siempre la usa" else if (camera) "Lente describe lo que ve mientras graba" else "Solo el micrófono", style = Type.caption, color = c.muted)
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = camera, onCheckedChange = { cameraChosen = it }, enabled = !mode.camera,
+                        colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = c.ink, checkedThumbColor = c.bg, checkedBorderColor = c.ink, uncheckedTrackColor = c.track, uncheckedThumbColor = c.thumb, uncheckedBorderColor = c.line, disabledCheckedTrackColor = c.ink.copy(alpha = 0.5f), disabledCheckedThumbColor = c.bg),
+                    )
+                }
             }
             Spacer(Modifier.height(4.dp))
-            // The button before the optional fields, so it stays in reach however many projects there are.
+            // What will happen, in one line, right above the button that does it.
+            androidx.compose.animation.AnimatedContent(RecordChoice.summary(mode, device, cameraChosen), label = "record-summary") { line ->
+                Text(line, style = Type.callout, color = c.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().testTag("record-summary"))
+            }
             Row(
-                Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp)).background(c.accentFill).clickable { onRecord(mode, project, camera, title) }.testTag("record-start"),
+                Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(14.dp)).background(c.accentFill).clickable { onRecord(mode, project, camera, title, device) }.testTag("record-start"),
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
             ) {
                 Dot(c.onAccent, 10.dp)
                 Spacer(Modifier.width(10.dp))
                 Text("Empezar a grabar", style = Type.headline, color = c.onAccent)
             }
-            SheetLabel("Título (opcional)")
-            Field(title, { title = it }, "Reunión con…", tag = "record-title")
-            SheetLabel("Proyecto")
+            // Title and project, folded: most recordings need neither.
             SheetCard {
-                val options = listOf<Pair<String?, String>>(null to RecordChoice.AUTO_PROJECT) + projects.filter { it.active }.map { it.id to it.name }
-                options.forEachIndexed { i, (id, name) ->
-                    if (i > 0) Hairline()
-                    ListRow(name, onClick = { project = id }, chevron = false, trailing = { if (project == id) Icon(Glyph.Check, c.ink, size = 20.dp) })
+                ListRow(
+                    "Más opciones", hint = listOfNotNull(title.trim().ifEmpty { null }, RecordChoice.scopeLabel(project, projects).takeIf { project != null }).joinToString(" · ").ifEmpty { "Título y proyecto" },
+                    leading = { Icon(Glyph.Doc, c.ink, size = 20.dp) }, chevron = false, onClick = { more = !more },
+                    trailing = { Icon(if (more) Glyph.ChevronDown else Glyph.ChevronRight, c.muted, size = 16.dp) },
+                )
+            }
+            if (more) {
+                Field(title, { title = it }, "Título (opcional)", tag = "record-title")
+                SheetCard {
+                    val options = listOf<Pair<String?, String>>(null to RecordChoice.AUTO_PROJECT) + projects.filter { it.active }.map { it.id to it.name }
+                    options.forEachIndexed { i, (id, name) ->
+                        if (i > 0) Hairline()
+                        ListRow(name, onClick = { project = id }, chevron = false, trailing = { if (project == id) Icon(Glyph.Check, c.ink, size = 20.dp) })
+                    }
                 }
             }
         }
     }
 }
 
-private fun modeGlyph(m: RecordChoice.Mode): Glyph = when (m) { RecordChoice.Mode.Assist -> Glyph.Sparkle; RecordChoice.Mode.Record -> Glyph.Wave; RecordChoice.Mode.Teleprompter -> Glyph.Doc }
+/** A mode as a tile: its glyph in a small tile (ink when chosen), the name and one line; Pronto when not built. */
+@Composable
+private fun ModeTile(m: RecordChoice.Mode, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val c = Lente.c
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier.height(118.dp).clip(shape).background(c.surface).border(if (selected) 2.dp else 0.dp, if (selected) c.ink else androidx.compose.ui.graphics.Color.Transparent, shape)
+            .clickable(enabled = m.ready, onClick = onClick).padding(14.dp).alpha(if (m.ready) 1f else 0.55f).testTag("mode-${m.key}")
+            .semantics { this.selected = selected },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (selected) c.ink else c.raised), contentAlignment = Alignment.Center) {
+                Icon(modeGlyph(m), if (selected) c.bg else c.ink, size = 18.dp)
+            }
+            Spacer(Modifier.weight(1f))
+            if (!m.ready) Text("Pronto", style = Type.caption, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(c.raised).padding(horizontal = 6.dp, vertical = 1.dp))
+        }
+        Spacer(Modifier.weight(1f))
+        Text(m.label, style = Type.body.copy(fontWeight = FontWeight.SemiBold), color = c.ink)
+        Text(m.hint, style = Type.caption, color = c.muted, maxLines = 2)
+    }
+}
+
+/** A device as a card: glyph, name and its state; the clip without connection leads to Dispositivos. */
+@Composable
+private fun DeviceTile(d: RecordChoice.Device, hint: String, selected: Boolean, available: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val c = Lente.c
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier.clip(shape).background(c.surface).border(if (selected) 2.dp else 0.dp, if (selected) c.ink else androidx.compose.ui.graphics.Color.Transparent, shape)
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 12.dp).testTag("device-${d.key}").semantics { this.selected = selected },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (selected) c.ink else c.raised), contentAlignment = Alignment.Center) {
+            Icon(if (d == RecordChoice.Device.Clip) Glyph.Device else Glyph.Phone, if (selected) c.bg else if (available) c.ink else c.muted, size = 18.dp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(d.label, style = Type.body.copy(fontWeight = FontWeight.SemiBold), color = if (available) c.ink else c.muted)
+            Text(if (available) hint else "Sin conectar · Conectar", style = Type.caption, color = c.muted, maxLines = 2)
+        }
+    }
+}
+
+private fun modeGlyph(m: RecordChoice.Mode): Glyph = when (m) { RecordChoice.Mode.Assist -> Glyph.Sparkle; RecordChoice.Mode.Memory -> Glyph.Camera; RecordChoice.Mode.Record -> Glyph.Wave; RecordChoice.Mode.Teleprompter -> Glyph.Doc }
 
 @Composable
 private fun SheetLabel(text: String) = Text(text, style = Type.caption, color = Lente.c.muted, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
@@ -241,28 +315,6 @@ private fun SheetLabel(text: String) = Text(text, style = Type.caption, color = 
 private fun SheetCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) =
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Lente.c.surface), content = content)
 
-/** One choice in a sheet: glyph, label and hint, and a check when chosen; a planned one is greyed with Pronto. */
-@Composable
-private fun OptionRow(glyph: Glyph, label: String, hint: String, selected: Boolean, soon: Boolean = false, tag: String, onClick: () -> Unit) {
-    val c = Lente.c
-    Row(
-        Modifier.fillMaxWidth().clickable(enabled = !soon, onClick = onClick).padding(horizontal = Lente.gutter, vertical = 12.dp).testTag(tag)
-            .semantics { this.selected = selected },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(glyph, if (soon) c.muted else c.ink, size = 20.dp)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(label, style = Type.body, color = if (soon) c.muted else c.ink)
-            Text(hint, style = Type.caption, color = c.muted)
-        }
-        when {
-            soon -> Text("Pronto", style = Type.caption, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(c.raised).padding(horizontal = 8.dp, vertical = 2.dp))
-            selected -> Box(Modifier.size(22.dp).clip(CircleShape).background(c.ink), contentAlignment = Alignment.Center) { Icon(Glyph.Check, c.bg, size = 14.dp) }
-            else -> Box(Modifier.size(22.dp).clip(CircleShape).border(1.5.dp, c.line, CircleShape))
-        }
-    }
-}
 
 /**
  * The device in the top-left corner: which one listens, and while it listens the pill turns red with

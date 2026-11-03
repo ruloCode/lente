@@ -570,9 +570,14 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun record(project: String?, camera: Boolean, title: String, usePhone: Boolean) = viewModelScope.launch {
         val c = client ?: return@launch say("No hay hub conectado: revisa Ajustes.")
-        if (usePhone) {
+        // The device the wearer chose (add-home-dock): with the phone, a connected clip waits instead of taking over.
+        c.post(if (usePhone) "/device/prefer/phone" else "/device/prefer/any", null)
+        if (usePhone && !_hub.value.status.phoneIsDevice) {
             startPhone(camera)
-            if (withTimeoutOrNull(PHONE_READY_MS) { _hub.first { it.status.clip } } == null) return@launch say("El teléfono no pudo empezar a grabar. Revisa los permisos.")
+            if (withTimeoutOrNull(PHONE_READY_MS) { _hub.first { it.status.phoneIsDevice } } == null) return@launch say("El teléfono no pudo empezar a grabar. Revisa los permisos.")
+        } else if (!usePhone) {
+            // The clip's own camera follows the choice: on for a memory or «con cámara», off otherwise to save battery.
+            c.post(if (camera) "/mode/camera" else "/mode/mic", null)
         }
         val body = JSONObject().put("title", title.trim())
         project?.let { body.put("project", it) }

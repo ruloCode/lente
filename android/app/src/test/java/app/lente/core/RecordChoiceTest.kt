@@ -22,7 +22,9 @@ class RecordChoiceTest {
     }
 
     @Test fun modesOpenOnTheHubsAndOnlyChangeItWhenNeeded() {
-        assertEquals(listOf("Asistir", "Solo grabar", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
+        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
+        assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Memory, recordOnly = false))
+        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Memory, recordOnly = true))
         assertEquals(false, RecordChoice.Mode.Teleprompter.ready)
         assertEquals(RecordChoice.Mode.Record, RecordChoice.modeNow(recordOnly = true))
         assertEquals(RecordChoice.Mode.Assist, RecordChoice.modeNow(recordOnly = false))
@@ -30,5 +32,15 @@ class RecordChoiceTest {
         assertEquals("assist", RecordChoice.assistToSet(RecordChoice.Mode.Assist, recordOnly = true))
         assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Assist, recordOnly = false))
         assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Teleprompter, recordOnly = true))
+    }
+
+    @Test fun aMemoryAlwaysRecordsTheCameraAndTheSheetSaysWhatItWillDo() {
+        assertEquals(true, RecordChoice.usesCamera(RecordChoice.Mode.Memory, chosen = false))
+        assertEquals(false, RecordChoice.usesCamera(RecordChoice.Mode.Assist, chosen = false))
+        assertEquals("Recuerdo · Celular · micrófono y cámara", RecordChoice.summary(RecordChoice.Mode.Memory, RecordChoice.Device.Phone, camera = false))
+        assertEquals("Asistir · Clip · solo micrófono", RecordChoice.summary(RecordChoice.Mode.Assist, RecordChoice.Device.Clip, camera = false))
+        assertEquals(RecordChoice.Device.Clip, RecordChoice.deviceNow(clipConnected = true))
+        assertEquals(RecordChoice.Device.Phone, RecordChoice.deviceNow(clipConnected = false))
+        assertEquals("Sin conectar", RecordChoice.deviceHint(RecordChoice.Device.Clip, clipConnected = false))
     }
 }

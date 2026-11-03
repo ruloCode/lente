@@ -156,10 +156,10 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } }, talk = {
                     // Hablar con Lente hears the phone when the clip is not connected, so it asks for the microphone first.
                     askMicrophone { ok -> if (ok) vm.openVoice() else vm.say("Lente necesita el micrófono para hablar contigo.") }
-                }, record = { project, camera, title ->
-                    // The phone records whenever the clip is absent; it needs the microphone (and the camera) first.
-                    if (!RecordChoice.usePhone(hub.status.clip, hub.status.clip && !hub.status.clipIsDevice)) vm.record(project, camera, title, usePhone = false)
-                    else askMicrophone { ok -> if (ok) vm.record(project, camera, title, usePhone = !hub.status.clip) else vm.say("Lente necesita el micrófono para grabar con el teléfono.") }
+                }, record = { project, camera, title, phone ->
+                    // The device comes from the sheet's «Con qué»; the phone needs the microphone (and the camera) first.
+                    if (!phone) vm.record(project, camera, title, usePhone = false)
+                    else askMicrophone { ok -> if (ok) vm.record(project, camera, title, usePhone = true) else vm.say("Lente necesita el micrófono para grabar con el teléfono.") }
                 })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
