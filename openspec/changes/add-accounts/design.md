@@ -171,7 +171,7 @@ The measured size per hour of listening (task 6.3) says when the first will happ
 - model names
 - usage numbers
 
-**Photos.** Never stored, as today. Only their descriptions are kept, encrypted.
+**Photos.** Never stored, as today. Only their descriptions are kept, encrypted. (Superseded by `add-media-archive` when it lands: keyframes and speech audio are kept sealed and expiring; see `docs/kb/decisions.md`, 2026-11-03.)
 
 **Leak.** The plain columns tell how much a user speaks and when. That is stated in the README.
 
@@ -194,7 +194,7 @@ Postgres cannot search what it cannot read, so version 1 does not search words i
 
 **Rejected.**
 - Decrypting a user's whole history for each question: it does not scale past a few months.
-- Embeddings: they leak meaning, need a model Lente does not use, and land on the "basic RAG" list.
+- Embeddings: they leak meaning, need a model Lente does not use, and land on the "basic RAG" list. (Superseded on 2026-11-03 by `add-memory-engine`: sealed vectors searched only in the runtime; see `docs/kb/decisions.md`.)
 - The blind index in version 1: it is the most intricate piece of this change and would arrive before any measurement shows it is needed.
 
 ### 8. The whole memory in tiers

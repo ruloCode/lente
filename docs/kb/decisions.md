@@ -139,3 +139,25 @@ Talking with Lente is a separate session (`/voice`), not the meeting pipeline.
 - **Jobs.** A job is an `agent_actions` row with tool `run_agent`, so "nothing runs without approval" is the same code path as the closing agent's proposals. Approving only queues the job: the hub never runs a process. The bridge runs it on the user's computer, in a folder from a local allow list, with the most restrictive flags each CLI offers that still let it edit. Its token sees only the queue of approved jobs, never transcripts.
 - **The chat.** A command in the chat is recognized by a new `intent` field in the same structured Muse Spark call, not a second call. A pure check on the sentence (an imperative or a named agent) must agree, so a question can never become a job.
 - **Copied from nowhere.** Omi's hosted MCP server with per-user keys, read-only defaults and a CLI with `--json` and exit codes was the product reference; no code was used from it.
+
+### 2026-11-03 · Vectors in the memory index (add-memory-engine)
+
+The owner decided that the memory index ranks by meaning as well as by words. This supersedes "Memory as files and long context, not RAG" (2026-10-28) and the embeddings line under "Rejected" in `add-accounts` decision 7. Wearers ask in Spanish, in their own words, about meetings held in English. Lexical search and bilingual keys catch names and numbers but miss paraphrases. The model call that translated terms (the lookup plan) took 1.5–6.2 s per question in the 2026-11-03 probe.
+
+- **How the old objections are met.**
+  - "They leak meaning": vectors are content, sealed in per-user snapshots, searched only in the wearer's runtime, never stored or logged in plain text.
+  - "A model Lente does not use": the Meta Model API has no embedding model (`GET /v1/models`, 2026-11-03). A bake-off (`add-memory-engine` 8.4) picks between a Meta open-weights encoder on Modal (preferred within the limits) and a small multilingual encoder in the hub. The winner, its numbers and, for the hub encoder, the runtime dependency and the rejected zero-dependency alternative are added here.
+  - "Basic RAG": the vectors are one list in a hybrid ranking inside a wearable's consolidated memory (segments, cards, briefs, validity windows). It lands after the hackathon submission.
+
+### 2026-11-03 · Lente keeps the day as audio, keyframes and text (add-media-archive)
+
+The owner decided that Lente keeps speech audio and scene-change keyframes next to the text, so a remembered moment can be heard and seen again. This supersedes "Solo grabar keeps text only" (2026-10-28) and "Photos. Never stored" in `add-accounts` decision 6, once `add-media-archive` lands. Until then every screen and doc keeps saying text only, because that is what runs.
+
+- **What stays.**
+  - Speech only, never silence.
+  - Frames only on a scene change.
+  - Sealed per chunk with the wearer's data key.
+  - Expiring (30 days by default).
+  - Never shared, never sent back to a model.
+- **Defaults.** On by default for the owner. For any other account, only after it accepts a terms version that describes media (`add-consent`). Consent is a legal duty toward the people recorded, not a product promise, so it is not dropped with the old promise.
+- **Hardware.** The clip sends JPEG frames, not video. "Video" means a keyframe timeline.
