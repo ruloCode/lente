@@ -3,7 +3,7 @@
 // The hub's data starts from a synthetic, made-up meeting (no real meeting data) so the memory
 // sections have something to show. Passes when, on the device:
 //   - the app connects and shows the clip the clip emulator stands in for,
-//   - a tap on the listening pill starts listening on the hub,
+//   - the listening pill opens Grabar and «Empezar a grabar» starts listening on the hub,
 //   - the DILO line appears and the hub records the app's acknowledgement (the `phone` stage),
 //   - Reuniones opens the seeded meeting, Acciones approves its action, Memoria keeps its fact,
 //   - with the clip gone, "Usar el teléfono" in Dispositivos makes the phone the device: audio reaches the hub and
@@ -103,6 +103,17 @@ async function waitFor(what: string, match: (n: Node) => boolean): Promise<Node>
 const byId = (id: string) => (n: Node) => n.id === id;
 const tap = (n: Node) => adb("shell", "input", "tap", String(n.x), String(n.y));
 async function tapId(id: string): Promise<void> { tap(await waitFor(`"${id}"`, byId(id))); }
+/** uiautomator lists only what is on screen, so swipe up until the row shows, then tap it. */
+const SCROLL_TRIES = 6;
+async function scrollToTapId(id: string): Promise<void> {
+  for (let i = 0; i < SCROLL_TRIES; i++) {
+    const hit = screen().find(byId(id));
+    if (hit) { tap(hit); return; }
+    adb("shell", "input", "swipe", "540", "1800", "540", "900", "300");
+    await sleep(400);
+  }
+  await tapId(id);
+}
 async function open(section: string): Promise<void> {
   const back = screen().find(byId("back"));
   if (back) { tap(back); await sleep(400); }
@@ -236,8 +247,11 @@ step("the clip emulator connects");
 let clip = startClip();
 await waitFor("the clip connected", (n) => n.id === "device" && n.text === "Clip conectado");
 
-step("a tap on the pill starts listening");
+step("the pill opens Grabar and «Empezar a grabar» starts listening");
+// The pill opens the record sheet (add-record-sheet 1.2), whose button starts the session. The sheet is its
+// own window, outside Shell's testTagsAsResourceId, so its button is found by its text.
 await tapId("pill");
+tap(await waitFor("«Empezar a grabar»", (n) => n.text === "Empezar a grabar"));
 await hubSaw("listening start", (e) => e.kind === "status" && e.listening === true);
 
 step("the DILO line appears and the app acknowledges it");
@@ -289,11 +303,12 @@ clip.kill();
 await hubSaw("the clip leaving", (e) => e.kind === "status" && e.clip === false);
 // Inicio leaves "Usar el teléfono" to Dispositivos, which the device pill opens (add-projects 2.2).
 await open("Dispositivos");
-await tapId("phone-toggle");
+await scrollToTapId("phone-toggle");
 mark = seen.length;
 await hubSaw("the phone as the device", (e) => e.kind === "status" && e.clip === true && e.device === "phone", mark);
 const before = seen.filter((e) => e.kind === "recorded").at(-1)?.ms ?? 0;
 await hubSaw("audio from the phone", (e) => e.kind === "recorded" && e.ms > before + 1000, mark);
+await open("Ahora"); // the device line is on Inicio, not in Dispositivos
 await waitFor("the phone shown as the device", (n) => n.id === "device" && n.text === "Teléfono conectado");
 
 step("Mirar takes a photo with the phone's camera");
