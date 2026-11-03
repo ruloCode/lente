@@ -69,3 +69,15 @@ test("the /device upgrade over plain HTTP gets 426 on a cloud hub, and other pat
 test("the /device upgrade in open mode is accepted as before", () => {
   assert.equal(decideUpgrade(up({ plainHttp: true }), "/device", "open"), 200);
 });
+
+test("the desktop web app (add-web-desktop): its shell, modules and session answer are open in every mode, over TLS on a cloud hub", () => {
+  for (const mode of ["open", "pairing", "accounts"] as const) {
+    for (const path of ["/app", "/app/", "/app/main.js", "/app/reuniones/m1", "/app/session"]) {
+      assert.equal(decideWeb(web("GET", path), mode), "app", `${mode} ${path}`);
+      assert.equal(decideWeb(web("GET", path, { identified: true }), mode), "app", `${mode} ${path} identified`);
+    }
+    assert.notEqual(decideWeb(web("POST", "/app/session"), mode), "app", "only GET");
+    assert.notEqual(decideWeb(web("GET", "/apple"), mode), "app", "a prefix is not the app");
+  }
+  assert.equal(decideWeb(web("GET", "/app", { plainHttp: true }), "accounts"), "redirect-https");
+});
