@@ -144,4 +144,11 @@ class SpeakerAfterResumeTest {
         assertEquals(HubState.MAX_LIVE_READS, many.liveReads.size)
         assertEquals("lectura 30", many.liveReads.first().text)
     }
+
+    @Test fun sessionSummariesAreThisSessionsNewestFirst() {
+        val entries = listOf(Entry("summary", 500, "antes"), Entry("turn", 1_500, "hola"), Entry("summary", 2_000, "primero"), Entry("summary", 3_000, "segundo"))
+        val s = HubState(status = Status(listening = true, session = Session(1_000, 0, true)), entries = entries)
+        assertEquals(listOf("segundo", "primero"), s.sessionSummaries.map { it.text })
+        assertTrue(HubState(entries = entries).sessionSummaries.isEmpty())
+    }
 }

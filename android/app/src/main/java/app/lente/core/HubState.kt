@@ -40,6 +40,8 @@ data class HubState(
     val liveSince: Long = 0,
 ) {
     /** Turns of this listening session, for En vivo. */
+    /** The summaries the hub wrote during this session, newest first (the live view's Resumen tab). */
+    val sessionSummaries: List<Entry> get() = entries.filter { it.kind == "summary" && it.at >= (status.session?.startedAt ?: Long.MAX_VALUE) }.sortedByDescending { it.at }
     val sessionTurns: List<Entry> get() = entries.filter { it.kind == "turn" && it.at >= (status.session?.startedAt ?: 0) }
     val turnCount: Int get() = entries.count { it.kind == "turn" }
 

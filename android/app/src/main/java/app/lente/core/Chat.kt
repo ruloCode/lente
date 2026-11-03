@@ -17,8 +17,9 @@ object ChatJson {
     const val HISTORY = 8
 
     /** `POST /ask`: the question and the conversation before it, oldest first, without the pending answer. */
-    fun request(question: String, before: List<ChatLine>): JSONObject = JSONObject()
+    fun request(question: String, before: List<ChatLine>, threadId: String? = null): JSONObject = JSONObject()
         .put("question", question)
+        .apply { threadId?.let { put("threadId", it) } }
         .put("history", JSONArray().apply {
             for (l in before.filterNot { it.pending }.takeLast(HISTORY)) put(JSONObject().put("role", if (l.fromWearer) "user" else "lente").put("text", l.text))
         })
@@ -32,6 +33,58 @@ object ChatJson {
             AskSource(it.optString("kind"), it.optString("label"), it.optString("meetingId").ifBlank { null }, it.optString("turnId").ifBlank { null })
         }
         return ChatLine(id, false, o.optString("answer"), sources, found = o.optBoolean("found"))
+    }
+}
+
+/** One conversation in the chat's history (add-home-dock): typed or by voice, titled by its first question. */
+data class ChatThreadView(val id: String, val voice: Boolean, val at: Long, val title: String, val lines: List<ChatLine>)
+
+/** `GET /chat/threads` and the history's words. Pure. */
+object ChatHistory {
+    private val ES = Locale.forLanguageTag("es")
+
+    /** The hub's threads, newest first; each line gets an id from `firstId` up, so it can join the open chat. */
+    fun threads(text: String, firstId: Long = 1_000_000): List<ChatThreadView> {
+        val arr = JSONObject(text).optJSONArray("threads") ?: JSONArray()
+        var id = firstId
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.mapNotNull { t ->
+            val threadId = t.optString("threadId").ifBlank { return@mapNotNull null }
+            val ls = t.optJSONArray("lines") ?: JSONArray()
+            val lines = (0 until ls.length()).mapNotNull { ls.optJSONObject(it) }.map { l ->
+                val src = l.optJSONArray("sources") ?: JSONArray()
+                val sources = (0 until src.length()).mapNotNull { src.optJSONObject(it) }.map {
+                    AskSource(it.optString("kind"), it.optString("label"), it.optString("meetingId").ifBlank { null }, it.optString("turnId").ifBlank { null }, it.optString("url").ifBlank { null })
+                }
+                ChatLine(id++, l.optString("role") == "user", l.optString("text"), sources)
+            }
+            ChatThreadView(threadId, t.optString("via") == "voice", t.optLong("at"), t.optString("title").ifBlank { lines.firstOrNull()?.text.orEmpty() }, lines)
+        }
+    }
+
+    /** When a conversation was: «Hoy · 21:40», «Ayer · 09:10», or «3 nov · 10:00». */
+    fun whenLabel(at: Long, now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val then = java.time.Instant.ofEpochMilli(at).atZone(zone)
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val time = DateTimeFormatter.ofPattern("HH:mm", ES).format(then)
+        return when (then.toLocalDate()) {
+            today -> "Hoy · $time"
+            today.minusDays(1) -> "Ayer · $time"
+            else -> DateTimeFormatter.ofPattern("d MMM", ES).format(then).replace(".", "") + " · $time"
+        }
+    }
+}
+
+/** The chat's composer and answers (add-home-dock). */
+object ChatSheet {
+    enum class Button { Talk, Send }
+
+    /** The composer's round button: Hablar con Lente while the field is empty, send once there is text. */
+    fun button(text: String): Button = if (text.isBlank()) Button.Talk else Button.Send
+
+    /** What sharing an answer hands to another app: the answer, then where it comes from. */
+    fun shared(line: ChatLine): String {
+        val from = line.sources.map { it.label }.filter { it.isNotBlank() }.distinct()
+        return if (from.isEmpty()) line.text else line.text + "\n\nFuentes: " + from.joinToString(" · ")
     }
 }
 
