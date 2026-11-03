@@ -24,6 +24,7 @@ Depends on: `add-accounts`, `add-task-owners`, `add-record-sheet`
 - [ ] 3.3 On the phone: a screenshot in each state (escuchando, pensando, hablando) with test speech from the Mac's `say` [phone]
   - 2026-11-02, emulator instead (no phone on adb, only a TV): AVD `lente35` with this branch's APK, and this branch's hub on a scratch folder with the real Meta key and no Supabase.
     - The emulator's microphone gave only zeros (macOS does not grant it the host microphone), so the `say` question was streamed as a clip (`scripts/fake-clip.ts`, `PILOT_MIC_GAIN=1`). That covers the clip path: «Escuchando con el clip», meeting listening paused.
+  - 2026-11-02, night, the owner's Samsung with the `integrate/2026-11` build against a stub hub: a tap on «Hablar con Lente» opened the voice screen in «Te escucho», «Escuchando con el teléfono», Manos libres. Speech aloud was not allowed at night, and the stub only turns loud audio into words, so «pensando» and «hablando» are still to capture with `say` near the phone. Not ticked.
     - Screenshots in order: Te escucho, Pensando…, Hablando (with «Agrega que llame a Ana el viernes.», the reply, and the chip «Tarea agregada: Llamar a Ana»), En pausa, then Inicio's chat with the session.
     - `tasks.json` had «Llamar a Ana», `me`, «viernes». `GET /chat/voice` returned the thread.
     - With the clip gain at 10, the same audio was heard as «Agrega que ya me ama el viernes», and Lente asked to repeat instead of guessing.
