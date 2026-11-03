@@ -28,6 +28,12 @@ const HUB_VARIABLES = [
   "SUPABASE_PUBLISHABLE_KEY",
   "LENTE_PUBLIC_URL",
   "LENTE_TIME_ZONE",
+  // The memory engine and the media archive (add-memory-engine, add-media-archive): the recall path's
+  // rollback, and media for the hub's owner once the bucket exists (LENTE_MEDIA=off stops it for everyone).
+  "LENTE_RECALL",
+  "LENTE_OWNER_USER_ID",
+  "LENTE_MEDIA_STORAGE",
+  "LENTE_MEDIA",
 ];
 
 const values = Object.fromEntries(HUB_VARIABLES.filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
