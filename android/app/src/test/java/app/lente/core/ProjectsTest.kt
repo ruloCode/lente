@@ -50,4 +50,28 @@ class ProjectsTest {
         assertEquals("Ver proyectos", Projects.seeAll(2))
         assertNull(Projects.seeAll(0))
     }
+
+    private fun meeting(id: String, at: Long, summary: String, decisions: List<String> = emptyList(), questions: List<String> = emptyList()) =
+        MeetingSummary(id, "M $id", "", false, at, at + 1, "done", 3, Notes(summary, decisions.map { Evidence(it, emptyList()) }, emptyList(), questions.map { Evidence(it, emptyList()) }, emptyList()), 0, 0)
+
+    @Test fun briefComesFromTheProjectsOwnMeetingsNewestFirst() {
+        val p = Projects.Summary("p1", "Lanzamiento", true, now, 3, 1, 2, null)
+        val detail = Projects.Detail(p, listOf(Projects.MeetingRef("a", "A", now - 2 * day), Projects.MeetingRef("b", "B", now - day)), emptyList())
+        val meetings = listOf(
+            meeting("a", now - 2 * day, "Antes:  se habló\n de precios.", decisions = listOf("Precio en 40 mil", "Beta el viernes"), questions = listOf("¿Quién avisa a soporte?")),
+            meeting("b", now - day, "", decisions = listOf("Beta el viernes", "QA el jueves")),
+            meeting("x", now, "De otro proyecto", decisions = listOf("Nada que ver")),
+        )
+        val brief = Projects.brief(detail, meetings)
+        assertEquals("Antes: se habló de precios.", brief.about)
+        assertEquals(listOf("Beta el viernes", "QA el jueves", "Precio en 40 mil"), brief.decisions)
+        assertEquals(listOf("¿Quién avisa a soporte?"), brief.questions)
+        assertNull(Projects.brief(detail.copy(meetings = emptyList()), meetings).about)
+    }
+
+    @Test fun monogramTakesTwoLetters() {
+        assertEquals("AC", Projects.monogram("Asistente de chat industrial"))
+        assertEquals("TE", Projects.monogram("Teker"))
+        assertEquals("PD", Projects.monogram("Pilotos con dron"))
+    }
 }

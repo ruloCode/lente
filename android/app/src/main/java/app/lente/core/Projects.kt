@@ -29,6 +29,36 @@ object Projects {
     data class TaskRef(val id: String, val title: String, val due: String?, val meetingId: String)
     data class Detail(val project: Summary, val meetings: List<MeetingRef>, val tasks: List<TaskRef>)
 
+    /** A project in brief, from its own meetings' notes: what it is about (the newest summary), recent decisions and open questions. */
+    data class Brief(val about: String?, val decisions: List<String>, val questions: List<String>)
+
+    /** Decisions and open questions a project's page shows. */
+    const val BRIEF_DECISIONS = 3
+    const val BRIEF_QUESTIONS = 2
+
+    /**
+     * The brief of a project (add-home-dock) from the meetings the phone already holds: the newest of its
+     * meetings with a summary says what it is about; decisions and open questions come newest first, once each.
+     */
+    fun brief(detail: Detail, meetings: List<MeetingSummary>): Brief {
+        val ids = detail.meetings.mapTo(HashSet()) { it.id }
+        val own = meetings.filter { it.id in ids && it.notes != null }.sortedByDescending { it.startedAt }
+        val about = own.firstNotNullOfOrNull { m -> m.notes?.summary?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() } }
+        val decisions = own.flatMap { m -> m.notes!!.decisions.map { it.text.trim() } }.filter { it.isNotEmpty() }.distinct().take(BRIEF_DECISIONS)
+        val questions = own.flatMap { m -> m.notes!!.openQuestions.map { it.text.trim() } }.filter { it.isNotEmpty() }.distinct().take(BRIEF_QUESTIONS)
+        return Brief(about, decisions, questions)
+    }
+
+    /** Small words a monogram skips, so «Asistente de chat» reads AC. */
+    private val CONNECTORS = setOf("de", "del", "la", "las", "el", "los", "y", "e", "con", "en", "para", "por", "a", "al", "o")
+
+    /** Two letters for a project's monogram: the first letters of its first two words (connectors skipped), or its first two letters. */
+    fun monogram(name: String): String {
+        val words = name.split(Regex("\\s+")).filter { w -> w.any { it.isLetterOrDigit() } && w.lowercase() !in CONNECTORS }
+        val letters = if (words.size >= 2) words.take(2).map { w -> w.first { it.isLetterOrDigit() } } else name.filter { it.isLetterOrDigit() }.take(2).toList()
+        return letters.joinToString("").uppercase()
+    }
+
     /** How many projects Inicio shows before "Ver los N proyectos". */
     const val ON_HOME = 3
 
