@@ -7,6 +7,7 @@
 // starts and writes behind.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import type { NotificationSettings } from "./notifications.ts";
 import { dirname } from "node:path";
 import type { TraceStep, Proposal } from "./agent-loop.ts";
 import type { Task, TaskPatch } from "./agent-tools.ts";
@@ -86,11 +87,14 @@ export interface Profile {
   /** «Guardar audio» and «Guardar fotos» (add-media-archive). */
   readonly media: { audio: boolean; photos: boolean };
   readonly mediaRetentionDays: 7 | 30 | 90;
+  /** The activity feed's read mark and the wearer's notification settings (add-notifications). */
+  readonly notifications: NotificationSettings;
   setNames(input: string): string[];
   setEveryQuestion(on: boolean): void;
   setAssistMode(mode: AssistMode): void;
   setMedia(kind: "audio" | "photos", on: boolean): void;
   setMediaRetention(days: 7 | 30 | 90): void;
+  setNotifications(settings: NotificationSettings): void;
 }
 
 /** The glossary and language profile: read by transcription, so kept in memory. */

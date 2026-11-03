@@ -6,6 +6,7 @@
 // profile, the glossary) is held in memory, loaded when the store opens and written behind.
 
 import { type ChatLine, type ChatThread, type Chats, groupThreads, plainRefs } from "./chat-store.ts";
+import { DEFAULT_SETTINGS, type NotificationSettings, parseSettings } from "./notifications.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { Proposal, TraceStep } from "./agent-loop.ts";
 import { type Task, type TaskPatch, applyPatch } from "./agent-tools.ts";
@@ -588,6 +589,8 @@ export class SupabaseProfile implements Profile {
   assistMode: AssistMode = "assist";
   media = { audio: true, photos: true };
   mediaRetentionDays: MediaRetention = 30;
+  /** Sealed with the names in `display_name_enc`: no schema change (add-notifications). */
+  notifications: NotificationSettings = DEFAULT_SETTINGS;
   private readonly db: Db;
   private readonly s: Sealer;
   private readonly writes = new WriteBehind();
@@ -603,18 +606,19 @@ export class SupabaseProfile implements Profile {
     if (row) {
       profile.assistMode = row.assist_mode === "record" ? "record" : "assist";
       if (row.display_name_enc != null) {
-        const saved = sealer.openJson<{ names: string[]; everyQuestion: boolean; media?: { audio?: boolean; photos?: boolean }; mediaRetentionDays?: number }>("accounts", "display_name_enc", sealer.userId, row.display_name_enc);
+        const saved = sealer.openJson<{ names: string[]; everyQuestion: boolean; media?: { audio?: boolean; photos?: boolean }; mediaRetentionDays?: number; notifications?: unknown }>("accounts", "display_name_enc", sealer.userId, row.display_name_enc);
         profile.names = saved.names;
         profile.everyQuestion = saved.everyQuestion;
         profile.media = { audio: saved.media?.audio !== false, photos: saved.media?.photos !== false };
         profile.mediaRetentionDays = MEDIA_RETENTIONS.includes(saved.mediaRetentionDays as MediaRetention) ? (saved.mediaRetentionDays as MediaRetention) : 30;
+        profile.notifications = parseSettings(saved.notifications);
       }
     }
     return profile;
   }
 
   private save(): void {
-    const values = { display_name_enc: this.s.json("accounts", "display_name_enc", this.s.userId, { names: this.names, everyQuestion: this.everyQuestion, media: this.media, mediaRetentionDays: this.mediaRetentionDays }), assist_mode: this.assistMode };
+    const values = { display_name_enc: this.s.json("accounts", "display_name_enc", this.s.userId, { names: this.names, everyQuestion: this.everyQuestion, media: this.media, mediaRetentionDays: this.mediaRetentionDays, notifications: this.notifications }), assist_mode: this.assistMode };
     this.writes.push(() => this.db.update(this.db.query("accounts"), values));
   }
 
@@ -641,6 +645,11 @@ export class SupabaseProfile implements Profile {
 
   setAssistMode(mode: AssistMode): void {
     this.assistMode = mode;
+    this.save();
+  }
+
+  setNotifications(settings: NotificationSettings): void {
+    this.notifications = settings;
     this.save();
   }
 

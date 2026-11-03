@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseNames } from "./addressing.ts";
+import { DEFAULT_SETTINGS, type NotificationSettings, parseSettings } from "./notifications.ts";
 
 /** Asistir: cues on. Solo grabar: record the day as text and learn from it, no real-time cues. */
 export type AssistMode = "assist" | "record";
@@ -21,14 +22,17 @@ export class ProfileStore {
   media = { audio: true, photos: true };
   /** Days media is kept (add-media-archive 3.1): 7, 30 (default) or 90. */
   mediaRetentionDays: MediaRetention = 30;
+  /** The activity feed's read mark and the notification settings (add-notifications). */
+  notifications: NotificationSettings = DEFAULT_SETTINGS;
 
   constructor(file: string) {
     this.file = file;
     if (!existsSync(file)) return;
     try {
-      const saved = JSON.parse(readFileSync(file, "utf8")) as { names?: unknown; everyQuestion?: unknown; assistMode?: unknown; media?: { audio?: unknown; photos?: unknown }; mediaRetentionDays?: unknown };
+      const saved = JSON.parse(readFileSync(file, "utf8")) as { names?: unknown; everyQuestion?: unknown; assistMode?: unknown; media?: { audio?: unknown; photos?: unknown }; mediaRetentionDays?: unknown; notifications?: unknown };
       this.media = { audio: saved.media?.audio !== false, photos: saved.media?.photos !== false };
       this.mediaRetentionDays = MEDIA_RETENTIONS.includes(saved.mediaRetentionDays as MediaRetention) ? (saved.mediaRetentionDays as MediaRetention) : 30;
+      this.notifications = parseSettings(saved.notifications);
       this.everyQuestion = saved.everyQuestion === true;
       this.assistMode = saved.assistMode === "record" ? "record" : "assist";
       if (Array.isArray(saved.names)) this.names = parseNames(saved.names.filter((n) => typeof n === "string").join(","));
@@ -63,8 +67,13 @@ export class ProfileStore {
     this.save();
   }
 
+  setNotifications(settings: NotificationSettings): void {
+    this.notifications = settings;
+    this.save();
+  }
+
   private save(): void {
     mkdirSync(dirname(this.file), { recursive: true });
-    writeFileSync(this.file, JSON.stringify({ names: this.names, everyQuestion: this.everyQuestion, assistMode: this.assistMode, media: this.media, mediaRetentionDays: this.mediaRetentionDays }, null, 2) + "\n");
+    writeFileSync(this.file, JSON.stringify({ names: this.names, everyQuestion: this.everyQuestion, assistMode: this.assistMode, media: this.media, mediaRetentionDays: this.mediaRetentionDays, notifications: this.notifications }, null, 2) + "\n");
   }
 }

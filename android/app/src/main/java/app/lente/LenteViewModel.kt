@@ -70,6 +70,8 @@ sealed interface Screen {
     data object Proyectos : Screen
     /** The agents connected to Lente and their jobs (add-home-dock). */
     data object Conexiones : Screen
+    /** Everything that happened and what waits for the wearer (add-notifications). */
+    data object Actividad : Screen
     data class Proyecto(val id: String) : Screen
     data class Pronto(val what: String) : Screen
 }
@@ -189,6 +191,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         val after = before.reduce(event, System.currentTimeMillis())
         _hub.value = after
         if (event is HubEvent.Meetings) loadFacts()
+        // Something that the activity feed shows changed: look for what to alert (add-notifications).
+        if (event is HubEvent.Meetings || event is HubEvent.ActionsEvent || event is HubEvent.NotificationsEvent) checkFeedSoon()
         // A new listening session opens En vivo, unless the wearer collapsed it for that session.
         val since = after.status.session?.startedAt
         if (event is HubEvent.StatusEvent && since != null && since != before.status.session?.startedAt && before.statusAt != 0L && after.status.session?.running == true && prefs.collapsedSession != since) liveOpen.value = true
@@ -213,6 +217,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             Screen.Proyectos, Screen.Ahora -> loadProjects()
             Screen.Memoria -> loadFacts()
             Screen.Conexiones -> { loadAccount(); loadJobs() }
+            Screen.Actividad -> loadFeed()
             else -> {}
         }
     }
@@ -438,6 +443,61 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun forgetClipToken() { newClipToken.value = null }
+
+    // --- The activity feed (add-notifications) ---------------------------------------------------
+
+    /** The feed Actividad shows: the hub's, or derived on the phone for a hub without it (`fromHub` false). */
+    val feed = MutableStateFlow<app.lente.core.Feed?>(null)
+    /** The read mark kept on the phone for an old hub, as a flow so the bell follows it. */
+    val localReadAt = MutableStateFlow(prefs.notifyReadAt)
+    private var feedCheck: kotlinx.coroutines.Job? = null
+
+    private fun localPrefs(): app.lente.core.NotificationPrefs =
+        prefs.notifyPrefs?.let { runCatching { app.lente.core.Notifications.parsePrefs(JSONObject(it)) }.getOrNull() } ?: app.lente.core.NotificationPrefs()
+
+    /** The feed derived from what the phone holds, for a hub that does not serve one yet. */
+    fun localFeed(state: HubState = _hub.value): app.lente.core.Feed = app.lente.core.Feed(
+        app.lente.core.Notifications.local(state.meetings, state.actions.pending, facts.value, System.currentTimeMillis()),
+        localReadAt.value, localPrefs(), fromHub = false,
+    )
+
+    /** Loads the feed (the hub's, or the phone's when the hub has none) and, with `alert`, posts what is new. */
+    fun loadFeed(alert: Boolean = false) {
+        val c = client ?: return
+        viewModelScope.launch {
+            val a = c.get("/notifications")
+            val parsed = if (a.ok) runCatching { app.lente.core.Notifications.parse(a.text) }.getOrNull() else null
+            val result = parsed ?: localFeed()
+            feed.value = result
+            if (alert) app.lente.platform.Alerts.deliver(getApplication(), prefs, result, inMeeting = _hub.value.status.meeting != null)
+        }
+    }
+
+    /** Ajustes asks MainActivity for the notifications permission through this flag. */
+    val askNotifyPermission = MutableStateFlow(false)
+
+    /** A short wait so a burst of events makes one check. */
+    private fun checkFeedSoon() {
+        feedCheck?.cancel()
+        feedCheck = viewModelScope.launch { kotlinx.coroutines.delay(FEED_CHECK_MS); loadFeed(alert = true) }
+    }
+
+    /** Opening Actividad reads everything up to now, on the hub (and so on every device) or on the phone. */
+    fun markFeedRead() {
+        val now = System.currentTimeMillis()
+        val f = feed.value
+        if (f?.fromHub == true) post("/notifications/read", JSONObject().put("at", now)) else { prefs.notifyReadAt = now; localReadAt.value = now }
+        feed.value = f?.copy(readAt = now)
+    }
+
+    /** Saves the notification settings where the feed lives, and starts or stops the background check to match. */
+    fun saveNotifyPrefs(p: app.lente.core.NotificationPrefs) {
+        val f = feed.value
+        val json = app.lente.core.Notifications.prefsJson(p)
+        if (f?.fromHub == true) post("/notifications/prefs", JSONObject().put("prefs", json)) else prefs.notifyPrefs = json.toString()
+        feed.value = (f ?: localFeed()).copy(prefs = p)
+        if (p.phone) app.lente.platform.ActivityJob.schedule(getApplication()) else app.lente.platform.ActivityJob.cancel(getApplication())
+    }
 
     /** Agent jobs for Conexiones: null while loading; `jobsNote` says why the list is empty when it failed. */
     val jobs = MutableStateFlow<List<app.lente.core.JobItem>?>(null)
@@ -707,6 +767,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     companion object {
+        /** How long the feed waits after an event before it checks, so a burst makes one check. */
+        private const val FEED_CHECK_MS = 1_500L
         const val VIBRATE_MS = 120L
         const val TOAST_MS = 4_000L
         const val SEARCH_DEBOUNCE_MS = 250L

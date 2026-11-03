@@ -105,6 +105,7 @@ fun title(s: Screen) = when (s) {
     Screen.Memoria -> "Memoria"
     Screen.Proyectos -> "Proyectos"
     Screen.Conexiones -> "Conexiones"
+    Screen.Actividad -> "Actividad"
     is Screen.Proyecto -> "Proyecto"
     Screen.Dispositivos -> "Dispositivos"
     Screen.Ajustes -> "Ajustes"
@@ -176,6 +177,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                             Screen.Memoria -> Memoria(vm, hub)
                             Screen.Proyectos -> ProyectosScreen(vm)
                             Screen.Conexiones -> Conexiones(vm)
+                            Screen.Actividad -> Actividad(vm)
                             is Screen.Proyecto -> ProyectoScreen(vm)
                             Screen.Dispositivos -> Dispositivos(vm, hub, usePhone)
                             Screen.Ajustes -> Ajustes(vm, hub, replayIntro)

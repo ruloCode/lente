@@ -26,6 +26,9 @@ data class HubState(
     val actions: Actions = Actions(),
     val recordedMs: Long = 0,
     val spend: Spend = Spend(),
+    /** The hub's unread count of the activity feed, and when its newest item happened; null on a hub without the feed. */
+    val notifyUnread: Int? = null,
+    val notifyLatestAt: Long = 0,
     val level: Int = 0,
     /** Speaker labels that arrived before their turn. */
     val pendingSpeakers: Map<String, String> = emptyMap(),
@@ -93,6 +96,7 @@ data class HubState(
         is HubEvent.SpendEvent -> copy(spend = event.spend)
         is HubEvent.Meetings -> copy(meetings = event.items, language = event.language)
         is HubEvent.ActionsEvent -> copy(actions = event.actions)
+        is HubEvent.NotificationsEvent -> copy(notifyUnread = event.unread, notifyLatestAt = event.latestAt)
         is HubEvent.Day -> day(event.entry)
         is HubEvent.Other -> this
     }
