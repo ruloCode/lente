@@ -260,3 +260,20 @@ The next levers are outside this group:
 - the fast lane (`add-fast-reply-lane`, Muse Spark Open on Baseten);
 - a smaller «RECUPERADO» budget for short questions;
 - a voice-style preload that keeps the prefix cached (group 5).
+
+### Voice memory questions in one step (task 5.4)
+
+`pnpm bench:voice 2 --days 30 --memory` (before) and the same with `--fast` (after), 2026-11-03. The hub runs on 30 synthetic days (43 meetings, two PROBE- projects). Three memory questions and one task request, as the control, are spoken with `say -v Paulina` and streamed at real time to `/voice`. Times run from the end of the question's audio. Real Muse Voice Transcribe (`ENDPOINTING`) and Muse Spark 1.3 (minimal).
+
+| Memory question | Before: first answer sentence (2 runs) | After (fast recall, 2 runs) | Tool calls after |
+|---|---|---|---|
+| «¿Qué se decidió sobre la beta?» | 9.2 s, 7.7 s | 5.3 s, 3.3 s | `ask_memory` in run 1, none in run 2 |
+| «¿Qué dijo Ana sobre el presupuesto de marketing?» | 13.2 s, 10.3 s | 2.6 s, — (the transcription returned no turn) | none |
+| «¿A quién entrevistamos para diseño?» | 11.0 s, 9.7 s | 3.1 s, 3.1 s | none |
+| **p50 of the memory questions** | **10.0 s** (n = 6) | **3.1 s** (n = 5) | |
+
+- Before, every memory question took two voice steps around `ask_memory`, and `ask_memory` was a full answer call over 30 days. After, 4 of 5 were answered in the first step from the lines attached while the wearer spoke, with no tool.
+- The control «Agrega que llame a Ana el viernes» got no memory lines and added its task: 5.0 s before, 6.8–8.9 s after. The preloaded prefix makes the session's first message longer; with two runs that difference is within noise, and it is the cost to watch.
+- **Target missed: first spoken answer sentence ≤ 1.5 s p50.** Measured: 3.1 s. As on the chat path, the time is Spark's own first token on the first step (2.5–3.3 s here), not retrieval.
+- **Partials in `ENDPOINTING` mode:** a third run (one round, `--fast`) counted 5–6 partial transcripts per question before `speechComplete`. Speculative recall runs on them as decision 9 says.
+- Spend: US$ 0.037 before, US$ 0.030 after, US$ 0.012 for the partials run (tokens, searches and transcription).

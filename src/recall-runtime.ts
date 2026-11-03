@@ -12,7 +12,7 @@ import type { Fact } from "./fact-store.ts";
 import type { Meeting } from "./meetings.ts";
 import { MemoryIndex, type MemoryUnit } from "./memory-index.ts";
 import { localDay } from "./nightly.ts";
-import { RECALL_MAX_TOKENS, RECALL_TEXT_CHARS, type RecallEvent, type RecallResult, RecallStream, dayUnits, digestUnit, factUnit, meetingUnits, memoryPrefix, notesText, parseQuestion, recallMessages, retrieve, sourceOf } from "./recall.ts";
+import { RECALL_MAX_TOKENS, RECALL_TEXT_CHARS, RECALL_VOICE_CHARS, VOICE_LINES, looksLikeCommand, voiceAttachment, type RecallEvent, type RecallResult, RecallStream, dayUnits, digestUnit, factUnit, meetingUnits, memoryPrefix, notesText, parseQuestion, recallMessages, retrieve, sourceOf } from "./recall.ts";
 
 /** Days of what was heard and seen that the index loads when the runtime opens: the hot window (decision 3). */
 export const HOT_DAYS = 92;
@@ -202,4 +202,28 @@ export async function answerRecall(input: {
   const result = parser.finish(done.finishReason === "length");
   result.events.forEach(input.emit);
   return { path: "fast", result, retrievalMs: retrieved.ms, lines: retrieved.lines.length };
+}
+
+/**
+ * Memory lines for a voice turn (decision 9): retrieval on what the wearer said, with an optional time
+ * phrase and person (the `ask_memory` filters). `attach` is false for commands and when retrieval is
+ * not confident, so a task request never gets memory lines.
+ */
+export async function voiceRecall(input: {
+  runtime: RecallRuntime;
+  text: string;
+  when?: string;
+  person?: string;
+  projectId?: string;
+  projects: readonly { id: string; name: string }[];
+  now: number;
+  timeZone: string;
+}): Promise<{ attach: boolean; lines: MemoryUnit[]; text: string; citable: Map<string, AskSource>; ms: number }> {
+  await input.runtime.flush();
+  const question = [input.text, input.when, input.person].filter(Boolean).join(" ");
+  const parsed = parseQuestion(question, { now: input.now, timeZone: input.timeZone, people: [...input.runtime.people], projects: input.projects });
+  const r = retrieve(input.runtime.index, parsed, { ...(input.projectId ? { projectId: input.projectId } : {}), now: input.now, budget: RECALL_VOICE_CHARS });
+  const lines = r.lines.slice(0, VOICE_LINES);
+  const att = voiceAttachment(lines, input.timeZone);
+  return { attach: r.confident && !looksLikeCommand(input.text) && lines.length > 0, lines, ...att, ms: r.ms };
 }

@@ -385,3 +385,24 @@ export class RecallStream {
     return { kind: "answer", answer, sources: [...this.chips], found: true, ...(cut ? { cut } : {}), events };
   }
 }
+
+// --- Voice (decision 9) --------------------------------------------------------------------------
+
+/** Memory lines attached to one voice turn at most. */
+export const VOICE_LINES = 6;
+
+/** An utterance that asks for something to be done, not remembered: no memory lines are attached. */
+const COMMAND_START = /^(?:(?:oye|lente|por favor|porfa)[, ]+)*(?:agrega|agregar|anade|anota|apunta|crea|pon|ponme|recuerdame|marca|completa|borra|elimina|cambia|reasigna|asigna|abre|graba|empieza|inicia|para|deten|busca en internet|busca en la web|haz que|dile a|manda|envia|add|create|remind|mark|delete|open|record|start|stop|search the web)\b/;
+
+export function looksLikeCommand(text: string): boolean {
+  return COMMAND_START.test(fold(text).replace(/[¿¡]/g, "").trim());
+}
+
+/** The developer item for a voice turn: the best lines with their ids, and what each id points to. */
+export function voiceAttachment(lines: readonly MemoryUnit[], timeZone: string): { text: string; citable: Map<string, AskSource> } {
+  const shown = lines.slice(0, VOICE_LINES);
+  return {
+    text: `MEMORIA PARA ESTE TURNO (si responde a lo que dijo, contesta en tu primer paso desde aquí y cita cada línea así: [[id]]; si no, ignórala):\n${shown.map((u) => unitLine(u, timeZone)).join("\n")}`,
+    citable: new Map(shown.map((u) => [u.id, sourceOf(u, timeZone)])),
+  };
+}

@@ -29,6 +29,11 @@ export type VoiceAnswer = { ok: true; answer: string; found: boolean; sources: A
 /** What the tools need from the wearer's runtime. */
 export interface VoiceBackend {
   ask(question: string, projectId: string | undefined): Promise<VoiceAnswer>;
+  /**
+   * Fast recall (add-memory-engine 5.3): the memory lines for a question, with optional time and person
+   * filters, for the voice model to answer from. Without it, `ask_memory` returns a nested answer.
+   */
+  lines?(question: string, projectId: string | undefined, filters: { when?: string; person?: string }): Promise<{ lines: string[]; citable: Map<string, AskSource> }>;
   projects(): Promise<VoiceProject[]>;
   tasks(): Promise<VoiceTask[]>;
   addTask(task: { title: string; who: TaskOwner; otherName?: string; due?: string; projectId?: string; source: "manual" | "agent" }): Promise<Task>;
@@ -120,12 +125,19 @@ export class VoiceTools {
         const question = str(args.question);
         if (!question) return { result: { error: "question is empty" }, label: "Buscando en tu memoria" };
         const project = await this.projectOf(args.project);
+        const label = project ? `Buscando en ${project.name}` : "Buscando en tu memoria";
+        if (this.backend.lines) {
+          // Lines, not an answer: the model answers from them in its next step, citing [[id]].
+          const found = await this.backend.lines(question, project?.id, { when: str(args.when, 80) || undefined, person: str(args.person, 80) || undefined });
+          const citable = new Map([...found.citable].map(([id, s]) => [id, memorySources([s])[0]!] as const));
+          return { result: found.lines.length ? { lines: found.lines, how: "Responde solo desde estas líneas y cita cada una así: [[id]]. Si no responden la pregunta, dilo." } : { lines: [], how: "La memoria no tiene nada sobre esto; dilo." }, label, citable };
+        }
         const out = await this.backend.ask(question, project?.id);
         if (!out.ok) return { result: { error: out.message }, label: "Buscando en tu memoria" };
         const sources = memorySources(out.sources);
         return {
           result: { found: out.found, answer: out.answer, sources: sources.map((s) => s.label) },
-          label: project ? `Buscando en ${project.name}` : "Buscando en tu memoria",
+          label,
           sources,
         };
       },

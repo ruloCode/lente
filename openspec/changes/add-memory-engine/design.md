@@ -293,6 +293,11 @@ Each question is labelled with the segment ids that answer it.
 
 **Speaking order.** The first spoken sentence is the answer, not a commentary, when the lines were already attached.
 
+**Measured in 5.4** (`docs/benchmarks.md`):
+- In `ENDPOINTING` mode the transcription sends 5–6 partials per spoken question before `speechComplete`, so speculative recall runs on partials as planned.
+- A request to have something done («Agrega…», «Recuérdame…») gets no lines, by a pure check on its first words (`looksLikeCommand`), even when it names a person.
+- Memory questions went from about 10 s to 3.1 s p50 to the first answer sentence, mostly answered in the first step. Spark's own first token is what is left of the 1.5 s target.
+
 ### 10. Scope is a filter, and the fixes ship first
 
 - **In a project**, every source is filtered:

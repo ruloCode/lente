@@ -36,10 +36,10 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 5. Voice in one step
 
-- [ ] 5.1 Session preload: the voice session's first developer message holds the memory prefix (project prefix when opened inside a project). Test with the voice stub that the prefix is sent once and stays first (`pnpm test`)
-- [ ] 5.2 Speculative recall: retrieval on ASR partials (debounced 150 ms) and on `speechComplete`; lines above `RECALL_MIN_SCORE` attached as one developer item before the turn; markers stripped from speech and shown as chips. Tests with scripted partials (`pnpm test`)
-- [ ] 5.3 `ask_memory` returns lines (with optional time and person filters) instead of a nested answer. Tests with the stub that answers tool calls (`pnpm test`)
-- [ ] 5.4 `pnpm bench:voice 2` on 30 synthetic days: end of speech → first answer sentence for memory questions, before and after; record in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [x] 5.1 Session preload: the voice session's first developer message holds the memory prefix (project prefix when opened inside a project). Test with the voice stub that the prefix is sent once and stays first (`pnpm test`)
+- [x] 5.2 Speculative recall: retrieval on ASR partials (debounced 150 ms) and on `speechComplete`; lines above `RECALL_MIN_SCORE` attached as one developer item before the turn; markers stripped from speech and shown as chips. Tests with scripted partials (`pnpm test`)
+- [x] 5.3 `ask_memory` returns lines (with optional time and person filters) instead of a nested answer. Tests with the stub that answers tool calls (`pnpm test`)
+- [x] 5.4 `pnpm bench:voice 2` on 30 synthetic days: end of speech → first answer sentence for memory questions, before and after; record in `docs/benchmarks.md` [key:MODEL_API_KEY]
 - [ ] 5.5 By voice through the clip with test speech from the Mac's `say`: a memory question answered with chips on the phone [hw] [phone]
 
 ## 6. Consolidation while recording

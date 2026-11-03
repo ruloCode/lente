@@ -24,8 +24,8 @@ export function toWireInput(items: VoiceItem[]): Record<string, unknown>[] {
   return items.map((i) => {
     switch (i.type) {
       case "message":
-        return i.role === "user"
-          ? { role: "user", content: i.text }
+        return i.role === "user" || i.role === "developer"
+          ? { role: i.role, content: i.text }
           : { type: "message", role: "assistant", content: [{ type: "output_text", text: i.text }], ...(i.phase ? { phase: i.phase } : {}) };
       case "function_call":
         return { type: "function_call", call_id: i.callId, name: i.name, arguments: i.arguments };

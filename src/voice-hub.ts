@@ -7,9 +7,10 @@ import { randomUUID } from "node:crypto";
 import { AsrSession, DEFAULT_LANGUAGE_BIAS } from "./asr-session.ts";
 import type { ChatLine, Chats } from "./chat-store.ts";
 import type { ChatTarget } from "./providers.ts";
-import { VOICE_FUNCTIONS, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
+import { type AttachedMemory, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
 import { type VoiceLine, VoiceSession, parsePhoneMessage } from "./voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "./voice-tools.ts";
+import { SpeculativeRecall } from "./voice-recall.ts";
 import { responsesVoiceModel } from "./voice-wire.ts";
 import type { VoiceSocket } from "./ws-voice.ts";
 
@@ -31,6 +32,11 @@ export interface VoiceHubDeps {
    * the clip's microphone on and sends its audio to `listener`; the returned function restores both.
    */
   clip(): { take(listener: (pcm: Buffer) => void): () => void } | undefined;
+  /**
+   * Fast recall (add-memory-engine 5.1, 5.2): the memory prefix the session opens with, and the lines
+   * for what the wearer said (undefined when none should be attached). Absent on the tiers path.
+   */
+  recall?: { prefix(): Promise<string>; attach(text: string): Promise<AttachedMemory | undefined> };
   /** Each turn's tokens and searches, and audio seconds sent, for today's spend. */
   onUsage(turn: VoiceUsage | undefined, audioSeconds: number): void;
   log(line: string): void;
@@ -47,11 +53,22 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   };
 
   let instructions: Promise<string> | undefined;
+  // One developer message for the whole session, with the memory prefix preloaded when fast recall is on
+  // (5.1): it is the cached prefix, so questions about who and what is current need no lookup.
   const instructionsOnce = () =>
-    (instructions ??= tools.projectRefs().then(
-      (projects) => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, projects }),
-      () => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone }),
-    ));
+    (instructions ??= Promise.all([
+      tools.projectRefs().then(
+        (projects) => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, projects }),
+        () => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone }),
+      ),
+      deps.recall?.prefix().catch(() => "") ?? Promise.resolve(""),
+    ]).then(([rules, prefix]) => withMemoryPrefix(rules, prefix)));
+  void instructionsOnce();
+
+  // Speculative recall (5.2): retrieval on the partial transcript while the wearer speaks, and on the
+  // final words; it takes milliseconds and calls no model.
+  const speculative = deps.recall ? new SpeculativeRecall((text) => deps.recall!.attach(text)) : undefined;
+  const attachFor = (utterance: string): Promise<AttachedMemory | undefined> => speculative?.final(utterance) ?? Promise.resolve(undefined);
 
   const session = new VoiceSession({
     send: (e) => ws.send(e),
@@ -61,11 +78,12 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     now: Date.now,
     log: deps.log,
     runTurn: async (utterance, history, signal, emit) => {
-      const model = responsesVoiceModel(deps.target, { instructions: await instructionsOnce(), functions: VOICE_FUNCTIONS, webSearch: true });
-      const result = await runVoiceTurn({ model, tools: tools.handlers(), history, utterance, signal, emit });
+      const [rules, attached] = await Promise.all([instructionsOnce(), attachFor(utterance)]);
+      const model = responsesVoiceModel(deps.target, { instructions: rules, functions: VOICE_FUNCTIONS, webSearch: true });
+      const result = await runVoiceTurn({ model, tools: tools.handlers(), history, utterance, signal, emit, ...(attached ? { attached } : {}) });
       turns++;
       deps.onUsage(result.usage, 0);
-      deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›`);
+      deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · ${attached ? `${attached.citable.size} memory lines attached · ` : ""} first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›`);
       return result;
     },
   });
@@ -74,7 +92,10 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     deps.key,
     {
       onTurn: (turn) => session.heardTurn(turn.text),
-      onPartial: (text) => session.heardPartial(text),
+      onPartial: (text) => {
+        session.heardPartial(text);
+        speculative?.partial(text);
+      },
       onSpeaker: () => {},
       onStatus: (s) => {
         if (/error|closed/.test(s)) deps.log(`[voice] transcription: ${s.slice(0, 120)}`);

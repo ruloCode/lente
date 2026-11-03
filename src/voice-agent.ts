@@ -18,7 +18,8 @@ export const MODEL_ERROR_REPLY = "No pude responder ahora; prueba otra vez.";
 
 /** What the model sees and says: messages, and the function calls with their results. */
 export type VoiceItem =
-  | { type: "message"; role: "user" | "assistant"; text: string; phase?: "commentary" }
+  /** `developer`: memory lines attached to the wearer's turn (add-memory-engine 5.2), never kept in the session history. */
+  | { type: "message"; role: "user" | "assistant" | "developer"; text: string; phase?: "commentary" }
   | { type: "function_call"; callId: string; name: string; arguments: string }
   | { type: "function_call_output"; callId: string; output: string };
 
@@ -72,6 +73,8 @@ export interface ToolOutcome {
   /** The chip under the reply ("Tarea agregada", "Buscando en tus reuniones"). */
   label: string;
   sources?: VoiceSource[];
+  /** Memory lines the model may cite as [[id]]: each becomes a chip only when the answer cites it. */
+  citable?: ReadonlyMap<string, VoiceSource>;
 }
 
 export type VoiceToolHandler = (args: Record<string, unknown>) => Promise<ToolOutcome> | ToolOutcome;
@@ -102,6 +105,8 @@ export interface VoiceTurnResult {
 /** Text as it should be spoken: no markdown marks, bullets, headings or links' URLs. */
 export function speakable(text: string): string {
   return text
+    // Citation markers ([[id]]) are for the chips, never read aloud.
+    .replace(/\s*\[\[[^\]]*\]\]/g, "")
     .replace(/\[([^\]]+)\]\((?:https?:\/\/)?[^)]+\)/g, "$1")
     .replace(/https?:\/\/\S+/g, "")
     .replace(/[*_`#>]+/g, "")
@@ -198,14 +203,22 @@ export function voiceInstructions(ctx: VoiceContext): string {
   ].filter(Boolean).join("\n");
 }
 
+/**
+ * The session's one developer message with the wearer's memory prefix preloaded (add-memory-engine 5.1):
+ * it stays first and unchanged for the whole session, so it is the cached prefix of every step.
+ */
+export function withMemoryPrefix(instructions: string, prefix: string): string {
+  return prefix.trim() ? `${instructions}\n\nMEMORIA (resumen de lo que la persona vivió; responde desde aquí lo que puedas y cita así: [[id]]):\n${prefix.trim()}` : instructions;
+}
+
 const OWNER = { type: "string", enum: ["me", "lente", "other"], description: "me: la persona; lente: algo que Lente puede hacer; other: lo hace otra persona" };
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 
 export const VOICE_FUNCTIONS: FunctionSpec[] = [
   {
     name: "ask_memory",
-    description: "Pregunta a la memoria de la persona (reuniones, lo que oyó y vio, recuerdos, resúmenes por día y semana). Devuelve la respuesta con sus fuentes.",
-    parameters: obj({ question: { type: "string", description: "La pregunta, completa y en español" }, project: { type: "string", description: "Id de proyecto (p1…) para buscar solo ahí" } }, ["question"]),
+    description: "Busca en la memoria de la persona (reuniones, lo que oyó y vio, recuerdos, resúmenes por día y semana). Devuelve líneas con ids o una respuesta con sus fuentes; responde desde ellas.",
+    parameters: obj({ question: { type: "string", description: "La pregunta, completa y en español" }, project: { type: "string", description: "Id de proyecto (p1…) para buscar solo ahí" }, when: { type: "string", description: "Cuándo, como lo dijo la persona («ayer», «el martes»), si lo dijo" }, person: { type: "string", description: "De quién o con quién, si lo dijo" } }, ["question"]),
   },
   { name: "list_projects", description: "Los proyectos activos de la persona, con sus tareas abiertas.", parameters: obj({}) },
   {
@@ -235,8 +248,23 @@ export const VOICE_FUNCTIONS: FunctionSpec[] = [
 
 // --- The loop -----------------------------------------------------------------------------------
 
+/** Memory lines attached before the wearer's turn (add-memory-engine 5.2): the developer item and what its ids point to. */
+export interface AttachedMemory {
+  text: string;
+  citable: ReadonlyMap<string, VoiceSource>;
+}
+
+/** The ids cited as [[id]] (comma or space separated) in a text, in order, once each. */
+export function citedIds(text: string): string[] {
+  const ids: string[] = [];
+  for (const m of text.matchAll(/\[\[([^\]]*)\]\]/g)) for (const id of m[1]!.split(/[,\s]+/).filter(Boolean)) if (!ids.includes(id)) ids.push(id);
+  return ids;
+}
+
 export interface VoiceTurnOptions {
   model: VoiceModel;
+  /** Memory lines for this turn, retrieved while the wearer spoke; the model can answer from them in its first step. */
+  attached?: AttachedMemory;
   tools: Record<string, VoiceToolHandler>;
   /** Earlier messages of the session, oldest first. */
   history: VoiceItem[];
@@ -263,7 +291,8 @@ export function trimHistory(history: VoiceItem[]): VoiceItem[] {
 export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnResult> {
   const now = opts.now ?? (() => performance.now());
   const started = now();
-  const input: VoiceItem[] = [...trimHistory(opts.history), { type: "message", role: "user", text: opts.utterance }];
+  const input: VoiceItem[] = [...trimHistory(opts.history), ...(opts.attached ? [{ type: "message" as const, role: "developer" as const, text: opts.attached.text }] : []), { type: "message", role: "user", text: opts.utterance }];
+  const citable = new Map(opts.attached?.citable ?? []);
   const usage = emptyUsage();
   const sources: VoiceSource[] = [];
   const tools: string[] = [];
@@ -273,7 +302,9 @@ export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnRes
   let firstTextMs: number | undefined;
   let firstSentenceMs: number | undefined;
   const cancelled = () => opts.signal.aborted;
-  const result = (stopped: VoiceStop, steps: number, error?: string): VoiceTurnResult => ({ stopped, text: finalText.trim(), sources, tools, steps, usage, firstTextMs, firstSentenceMs, ...(error ? { error } : {}) });
+  // The chat keeps the answer without its citation markers; the chips carry them.
+  const kept = () => finalText.replace(/\s*\[\[[^\]]*\]\]/g, "").replace(/[ \t]+([.,;:!?])/g, "$1").trim();
+  const result = (stopped: VoiceStop, steps: number, error?: string): VoiceTurnResult => ({ stopped, text: kept(), sources, tools, steps, usage, firstTextMs, firstSentenceMs, ...(error ? { error } : {}) });
 
   const say = (text: string, commentary: boolean) => {
     if (cancelled()) return;
@@ -328,6 +359,12 @@ export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnRes
       opts.emit({ kind: "sources", sources: reply.sources });
     }
     if (reply.calls.length === 0) {
+      // The memory lines the answer cited become chips; ids it was never shown are dropped.
+      const cited = citedIds(finalText).map((id) => citable.get(id)).filter((x): x is VoiceSource => Boolean(x)).filter((x, i, all) => all.findIndex((o) => o.label === x.label) === i);
+      if (cited.length) {
+        sources.push(...cited);
+        opts.emit({ kind: "sources", sources: cited });
+      }
       if (truncated) {
         say(LONG_REPLY_NOTE, true);
       }
@@ -348,6 +385,7 @@ export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnRes
       }
       if (cancelled()) return result("cancelled", step);
       tools.push(call.name);
+      for (const [id, source] of outcome.citable ?? []) citable.set(id, source);
       opts.emit({ kind: "tool", name: call.name, label: outcome.label });
       if (outcome.sources?.length) {
         sources.push(...outcome.sources);

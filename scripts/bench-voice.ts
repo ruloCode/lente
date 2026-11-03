@@ -9,7 +9,10 @@
 // and prices the turn from the usage it reports, its web searches and its audio.
 // The phone's own text-to-speech start is measured on the phone, not here.
 //
-// Usage: node --env-file=.env scripts/bench-voice.ts [rounds=2] [--stub]
+// Usage: node --env-file=.env scripts/bench-voice.ts [rounds=2] [--stub] [--days 30 --memory] [--fast]
+//   --days N   seed N days of the synthetic bilingual memory (scripts/eval/memory-set.ts) instead of one meeting
+//   --memory   ask memory questions (and one task request, which must get no memory lines)
+//   --fast     run the hub with LENTE_RECALL=fast (add-memory-engine 5.4: before and after)
 // Prints counts and timings only; the audio and the results stay in results/ (git-ignored).
 
 import { execFileSync, spawn } from "node:child_process";
@@ -20,6 +23,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startStubMeta } from "./stub-meta.ts";
 import { MeetingStore } from "../src/meeting-store.ts";
+import { FactStore } from "../src/fact-store.ts";
+import { FileProjects } from "../src/project-store.ts";
+import { memorySet } from "./eval/memory-set.ts";
 import { formatMs, percentile } from "../src/stats.ts";
 import { TOKEN_USD_PER_M, TRANSCRIBE_USD_PER_HOUR, WEB_SEARCH_USD_PER_K } from "../src/usage-meter.ts";
 import { readPcm16Wav } from "../src/wav.ts";
@@ -37,9 +43,19 @@ const QUESTIONS: { kind: string; text: string }[] = [
   { kind: "web_search", text: "Busca en internet cuál es la capital de Australia." },
 ];
 
+const MEMORY_QUESTIONS: { kind: string; text: string }[] = [
+  { kind: "beta", text: "¿Qué se decidió sobre la beta?" },
+  { kind: "budget", text: "¿Qué dijo Ana sobre el presupuesto de marketing?" },
+  { kind: "design", text: "¿A quién entrevistamos para diseño?" },
+  { kind: "add_task", text: "Agrega que llame a Ana el viernes." },
+];
+
 const args = process.argv.slice(2);
 const useStub = args.includes("--stub");
-const rounds = Number(args.find((a) => /^\d+$/.test(a)) ?? 2);
+const fastRecall = args.includes("--fast");
+const memoryDays = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 0;
+if (args.includes("--memory")) QUESTIONS.splice(0, QUESTIONS.length, ...MEMORY_QUESTIONS);
+const rounds = Number(args.find((a, i) => /^\d+$/.test(a) && args[i - 1] !== "--days") ?? 2);
 if (!useStub && !process.env.MODEL_API_KEY) {
   console.error("MODEL_API_KEY is not set: run with node --env-file=.env, or pass --stub");
   process.exit(1);
@@ -61,10 +77,20 @@ function speech(i: number, text: string): Buffer {
 
 const freePort = (): Promise<number> => new Promise((r) => { const s = createServer().listen(0, () => { const { port } = s.address() as AddressInfo; s.close(() => r(port)); }); });
 
-// A scratch hub with one synthetic meeting, so memory questions have something to find.
+// A scratch hub with one synthetic meeting, or N days of the synthetic memory moved so its "now" is now.
 const dir = mkdtempSync(join(tmpdir(), "lente-bench-voice-"));
 const day = Date.now() - 86_400_000;
-new MeetingStore(join(dir, "meetings")).save({
+if (memoryDays) {
+  const set = memorySet({ days: memoryDays });
+  const shift = Date.now() - set.now;
+  const store = new MeetingStore(join(dir, "meetings"));
+  for (const m of set.meetings) store.save({ ...m, startedAt: m.startedAt + shift, ...(m.endedAt ? { endedAt: m.endedAt + shift } : {}), turns: m.turns.map((t) => ({ ...t, at: t.at + shift })) });
+  const projects = new FileProjects(join(dir, "projects.json"));
+  const ids = new Map(["p-atlas", "p-orion"].map((p) => [p, projects.create(p === "p-atlas" ? "PROBE-Atlas" : "PROBE-Orion", Date.now() - 60 * 86_400_000).id]));
+  for (const [m, p] of set.assignments) projects.assign(m, ids.get(p)!);
+  const facts = new FactStore(join(dir, "facts.json"));
+  for (const f of set.keptFacts) facts.keep(facts.propose(f.meetingId, [{ text: f.text, evidence: f.evidence }], f.createdAt + shift)[0]!.id);
+} else new MeetingStore(join(dir, "meetings")).save({
   id: "m20261101100000",
   title: "PROBE Planeación de la beta",
   startedAt: day,
@@ -86,6 +112,7 @@ const env: Record<string, string | undefined> = {
   PILOT_WEB_PORT: String(port),
   PILOT_DEVICE_PORT: String(await freePort()),
   PILOT_DATA_DIR: dir,
+  ...(fastRecall ? { LENTE_RECALL: "fast" } : {}),
   MODEL_API_KEY: useStub ? "stub" : process.env.MODEL_API_KEY,
   ...(stub ? { META_BASE_URL: `http://127.0.0.1:${stub.port}/v1`, META_REALTIME_URL: `ws://127.0.0.1:${stub.port}/v1/asr/realtime` } : {}),
 };
@@ -103,6 +130,8 @@ interface Row {
   usd: number;
   stopped?: string;
   heardChars?: number;
+  /** Partial transcripts the hub relayed before the turn completed (ENDPOINTING mode). */
+  partials: number;
 }
 const rows: Row[] = [];
 const clips = QUESTIONS.map((q, i) => speech(i, q.text));
@@ -167,9 +196,10 @@ for (let round = 0; round < rounds; round++) {
       usd,
       stopped: done?.stopped,
       heardChars: heard?.e.text?.length,
+      partials: mine.filter((x) => x.e.type === "partial" && (!heard || x.at <= heard.at)).length,
     };
     rows.push(row);
-    console.log(`round ${round + 1} · ${q.kind.padEnd(10)} heard ${formatMs(row.heardMs)} · first text ${formatMs(row.firstTextMs)} · first answer ${formatMs(row.firstAnswerMs)} · done ${formatMs(row.doneMs)} · tools ${row.tools.join(",") || "none"} · US$ ${usd.toFixed(5)} · ${row.stopped ?? "no answer"}`);
+    console.log(`round ${round + 1} · ${q.kind.padEnd(10)} heard ${formatMs(row.heardMs)} · first text ${formatMs(row.firstTextMs)} · first answer ${formatMs(row.firstAnswerMs)} · done ${formatMs(row.doneMs)} · tools ${row.tools.join(",") || "none"} · ${row.partials} partials · US$ ${usd.toFixed(5)} · ${row.stopped ?? "no answer"}`);
     // Tell the hub the phone has spoken it all, as the phone does, and leave a pause.
     const sent = ofTurn.filter((x) => x.e.type === "reply").length;
     if (turn) ws.send(JSON.stringify({ type: "spoken", turn, count: sent }));
@@ -192,6 +222,8 @@ const stat = (key: keyof Row, list = answered) => {
 const summary = {
   at: new Date().toISOString(),
   model: "muse-spark-1.3 (minimal) · muse-voice-transcribe-1.0 ENDPOINTING",
+  recall: fastRecall ? "fast" : "tiers",
+  memoryDays,
   stub: useStub,
   voice: VOICE,
   turns: rows.length,

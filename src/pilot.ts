@@ -34,7 +34,7 @@ import { PILOT_PAGE } from "./pilot-page.ts";
 import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
 import { VOICE_WS_PATH, type VoiceSocket, acceptVoice } from "./ws-voice.ts";
 import { serveVoiceSession } from "./voice-hub.ts";
-import type { VoiceBackend } from "./voice-tools.ts";
+import { type VoiceBackend, memorySources } from "./voice-tools.ts";
 import { askLines, type Chats, FileChats, HISTORY_THREADS, isThreadId, RECENT_THREADS, threadTitle } from "./chat-store.ts";
 import { DeviceAuth, SESSION_COOKIE } from "./device-auth.ts";
 import { HealthTracker } from "./health.ts";
@@ -55,8 +55,8 @@ import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
 import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
 import { askTiers, entriesInSpans, scopeTierInput } from "./ask-tiers.ts";
-import { type FastAnswer, RecallRuntime, answerRecall } from "./recall-runtime.ts";
-import type { RecallEvent } from "./recall.ts";
+import { type FastAnswer, RecallRuntime, answerRecall, voiceRecall } from "./recall-runtime.ts";
+import { type RecallEvent, memoryPrefix as recallPrefix } from "./recall.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
 import { AUTH_COOKIE, FileSessionStore, PkceFlows, WebSessions, authCookie, authorizeUrl, clearCookie, exchangeCode, sessionCookie } from "./web-session.ts";
@@ -1897,7 +1897,23 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       return ok;
     },
     openRecordSheet: openSheet,
+    // Fast recall (add-memory-engine 5.3): ask_memory returns lines the voice model answers from.
+    ...(recall ? { lines: async (question: string, projectId: string | undefined, filters: { when?: string; person?: string }) => {
+      const found = await voiceRecall({ runtime: recall, text: question, ...filters, ...(projectId ? { projectId } : {}), projects: (await projects.list()).map((p) => ({ id: p.id, name: p.name })), now: Date.now(), timeZone: TIME_ZONE });
+      return { lines: found.lines.length ? found.text.split("\n").slice(1) : [], citable: found.citable };
+    } } : {}),
   });
+
+  /** Voice with fast recall (add-memory-engine 5.1, 5.2): the preloaded prefix and the lines for a turn. */
+  const voiceRecallDeps = recall
+    ? {
+        prefix: async () => recallPrefix(await recall.prefix(undefined), TIME_ZONE).text,
+        attach: async (text: string) => {
+          const found = await voiceRecall({ runtime: recall, text, projects: (await projects.list()).map((p) => ({ id: p.id, name: p.name })), now: Date.now(), timeZone: TIME_ZONE });
+          return found.attach ? { text: found.text, citable: new Map([...found.citable].map(([id, s]) => [id, memorySources([s])[0]!])) } : undefined;
+        },
+      }
+    : undefined;
 
   /** A phone on `/voice`: one session at a time per wearer; a new one replaces the old. */
   function serveVoice(ws: VoiceSocket): void {
@@ -1911,6 +1927,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       key,
       target,
       backend: voiceBackend,
+      ...(voiceRecallDeps ? { recall: voiceRecallDeps } : {}),
       narration,
       chats,
       names: () => profile.names,
