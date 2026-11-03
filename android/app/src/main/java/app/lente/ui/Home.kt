@@ -132,6 +132,9 @@ private fun Inicio(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
     val capture by Capture.state.collectAsState()
     val list = rememberLazyListState()
     val projects by vm.projects.collectAsState()
+    var dismissed by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    val clock = ticker()
+    val processing = remember(hub.meetings, dismissed, clock / 30_000) { app.lente.core.Processing.cards(hub.meetings, clock, dismissed) }
     // A finished meeting may have opened or moved a project.
     LaunchedEffect(hub.meetings.size, vm.hubAddress) { vm.loadProjects() }
     LazyColumn(Modifier.fillMaxSize().testTag("ahora"), state = list, contentPadding = PaddingValues(start = Lente.gutter, end = Lente.gutter, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -141,6 +144,10 @@ private fun Inicio(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
         val card = hub.card
         if (card != null && !s.recordOnly) item("cue") { DiloCard(card) }
         item("hello") { Welcome(s.names.firstOrNull()) }
+        // A recording that just ended: its notes being written, then ready (add-home-dock), above the projects.
+        items(processing, key = { "processing-${it.meetingId}" }) { card ->
+            ProcessingRow(card, onOpen = { vm.go(Screen.Reunion(card.meetingId)) }, onDismiss = { dismissed = dismissed + card.meetingId })
+        }
         projectsOnHome(vm, projects.filter { it.active })
     }
 }
@@ -517,5 +524,52 @@ private fun ChatHistoryList(vm: LenteViewModel, modifier: Modifier, onOpen: () -
                 }
             }
         }
+    }
+}
+
+/**
+ * One recording that just ended, as a card above the projects: a spinner and a moving bar while Lente writes
+ * its notes and files it in a project; a tick when they are ready (tap to open); a word when it failed or was
+ * too short. Finished cards can be dismissed.
+ */
+@Composable
+private fun ProcessingRow(card: app.lente.core.ProcessingCard, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val c = Lente.c
+    val working = card.stage == app.lente.core.ProcessingStage.Processing
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).clickable(enabled = !working, onClick = onOpen).testTag("processing-${card.meetingId}")) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                when (card.stage) {
+                    app.lente.core.ProcessingStage.Processing -> androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), color = c.ink, trackColor = c.raised, strokeWidth = 2.5.dp)
+                    app.lente.core.ProcessingStage.Ready -> Box(Modifier.size(28.dp).clip(CircleShape).background(c.ink), contentAlignment = Alignment.Center) { Icon(Glyph.Check, c.bg, size = 16.dp) }
+                    app.lente.core.ProcessingStage.Failed -> Icon(Glyph.Close, c.live, size = 22.dp)
+                    app.lente.core.ProcessingStage.TooShort -> Icon(Glyph.Clock, c.muted, size = 22.dp)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    when (card.stage) {
+                        app.lente.core.ProcessingStage.Processing -> "Procesando tu grabación"
+                        app.lente.core.ProcessingStage.Ready -> "Lista: ${card.title}"
+                        app.lente.core.ProcessingStage.Failed -> "No pude escribir las notas"
+                        app.lente.core.ProcessingStage.TooShort -> "Muy corta para notas"
+                    },
+                    style = Type.body.copy(fontWeight = FontWeight.SemiBold), color = c.ink, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                Text(
+                    when (card.stage) {
+                        app.lente.core.ProcessingStage.Processing -> "Lente escribe las notas y la ordena en tu proyecto"
+                        app.lente.core.ProcessingStage.Ready -> "Notas, tareas y decisiones listas"
+                        app.lente.core.ProcessingStage.Failed -> "${card.title} · la transcripción quedó guardada"
+                        app.lente.core.ProcessingStage.TooShort -> "${card.title} · se guardó el texto"
+                    },
+                    style = Type.caption, color = c.muted, maxLines = 2,
+                )
+            }
+            if (!working) PlainIcon(Glyph.Close, "Quitar", Modifier.size(40.dp), onDismiss)
+        }
+        // While it works, a thin moving bar along the card's foot says it has not stalled.
+        if (working) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = c.ink, trackColor = c.raised)
     }
 }
