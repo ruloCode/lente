@@ -106,3 +106,13 @@ test("assist mode survives a restart and defaults to Asistir", () => {
   writeFileSync(file, JSON.stringify({ assistMode: "loud" }));
   assert.equal(new ProfileStore(file).assistMode, "assist", "an unknown mode falls back to Asistir");
 });
+
+test("the profile keeps the notification settings across a restart (add-notifications 1.2)", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "lente-profile-")), "profile.json");
+  const first = new ProfileStore(file);
+  assert.equal(first.notifications.readAt, 0);
+  first.setNotifications({ readAt: 42, prefs: { ...first.notifications.prefs, clipBuzz: true } });
+  const again = new ProfileStore(file);
+  assert.equal(again.notifications.readAt, 42);
+  assert.equal(again.notifications.prefs.clipBuzz, true);
+});

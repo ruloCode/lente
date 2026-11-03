@@ -142,11 +142,15 @@ test("profile and glossary live in memory, are written behind, and reload sealed
   const s = await openUserStores(fake.rest, ALICE, dek, NOW);
   s.profile.setNames(`${PROBES[9]}, Raúl`);
   s.profile.setAssistMode("record");
+  s.profile.setNotifications({ readAt: NOW, prefs: { ...s.profile.notifications.prefs, hideContent: true } });
   s.language.set([{ term: PROBES[10]!, meaning: "lista de pendientes", sightings: [] }]);
   await s.flush();
   const reopened = await openUserStores(fake.rest, ALICE, dek, NOW);
   assert.deepEqual(reopened.profile.names, s.profile.names);
   assert.equal(reopened.profile.assistMode, "record");
+  // add-notifications 1.2: the read mark and settings ride in the same sealed blob.
+  assert.equal(reopened.profile.notifications.readAt, NOW);
+  assert.equal(reopened.profile.notifications.prefs.hideContent, true);
   assert.equal(reopened.language.glossary[0]!.term, PROBES[10]);
   assert.equal(fake.tables.get("accounts")![0]!.assist_mode, "record");
   assertNoPlaintext(fake.dump());

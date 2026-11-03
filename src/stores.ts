@@ -7,6 +7,7 @@
 // starts and writes behind.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import type { NotificationSettings } from "./notifications.ts";
 import { dirname } from "node:path";
 import type { TraceStep, Proposal } from "./agent-loop.ts";
 import type { Task, TaskPatch } from "./agent-tools.ts";
@@ -83,9 +84,12 @@ export interface Profile {
   readonly names: string[];
   readonly everyQuestion: boolean;
   readonly assistMode: AssistMode;
+  /** The activity feed's read mark and the wearer's notification settings (add-notifications). */
+  readonly notifications: NotificationSettings;
   setNames(input: string): string[];
   setEveryQuestion(on: boolean): void;
   setAssistMode(mode: AssistMode): void;
+  setNotifications(settings: NotificationSettings): void;
 }
 
 /** The glossary and language profile: read by transcription, so kept in memory. */

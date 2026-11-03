@@ -76,6 +76,7 @@ import { MCP_MAX_BODY_BYTES, serveMcp, unauthorizedResponse } from "./mcp.ts";
 import { jobList, AGENT_NAMES, TOOL_RUN_AGENT, type JobAgent, claim as claimJob, expireLost, finish as finishJob, jobArgs, outcomeOf, parseResult, proposedAnswer, queued as queuedJob, queuedJobs } from "./agent-jobs.ts";
 import { NOT_FOUND } from "./ask.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
+import { type NotificationItem, buildFeed, minuteOfDay, parsePrefs, shouldBuzz, unreadCount } from "./notifications.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
 import { type RecordedSnapshot, RecordedToday } from "./recorded-time.ts";
 import { LoudnessRing, WearerTracker, isEnrollment } from "./wearer.ts";
@@ -853,7 +854,29 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     };
   }
 
-  const broadcastActions = (): void => broadcast(actionsEvent());
+  const broadcastActions = (): void => {
+    broadcast(actionsEvent());
+    pushNotifications();
+  };
+
+  // --- The activity feed (add-notifications) ---------------------------------------------------
+  /** The feed from what the hub keeps; nothing stored but the read mark and the settings. */
+  const notificationFeed = (): NotificationItem[] => buildFeed({ meetings: meetings.list(), actions: actions.list(), facts: facts.list() }, Date.now());
+  const notificationsEvent = (feed = notificationFeed()) => ({ kind: "notifications", unread: unreadCount(feed, profile.notifications.readAt), latestAt: feed[0]?.at ?? 0 });
+  /** Item ids the clip already signalled for; seeded with the feed at start, so a restart never buzzes. */
+  let buzzed: Set<string> | undefined;
+  function pushNotifications(): void {
+    const feed = notificationFeed();
+    broadcast(notificationsEvent(feed));
+    const seen = (buzzed ??= new Set(feed.map((i) => i.id)));
+    const minute = minuteOfDay(Date.now(), TIME_ZONE);
+    for (const item of feed) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      // The clip's cue signal, once per new urgent item, when the wearer asked for it (design decision 6).
+      if (shouldBuzz(item, profile.notifications.prefs, minute, current !== undefined)) device?.write("B");
+    }
+  }
 
   /** Each meeting's project name, for the tasks on the phone; refreshed when projects change. */
   let taskProjects = new Map<string, string>();
@@ -918,6 +941,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   function broadcastMeetings(): void {
     memoryCache = undefined;
     broadcast(meetingsEvent());
+    pushNotifications();
   }
 
   function syncMeeting(): void {
@@ -1885,7 +1909,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.end(DESKTOP_PAGE);
     } else if (req.method === "GET" && req.url === "/events") {
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), actionsEvent(), recordedEvent(), spendEvent()] });
+      const events = connectEvents({ status: statusEvent(), history: day.entries.slice(-80), partial: latestPartial, listening: status.listening, rest: [meetingsEvent(), actionsEvent(), recordedEvent(), spendEvent(), notificationsEvent()] });
       for (const event of events) res.write(`data: ${JSON.stringify(event)}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
@@ -2097,6 +2121,22 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const job = createJob(body);
       res.writeHead(job.ok ? 201 : job.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(job.ok ? { id: job.id, ...job.args } : { error: job.error }));
+    } else if (req.method === "GET" && req.url === "/notifications") {
+      // add-notifications: the feed, its read mark, the unread count and the settings.
+      const feed = notificationFeed();
+      const { readAt, prefs } = profile.notifications;
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ items: feed, readAt, unread: unreadCount(feed, readAt), prefs }));
+    } else if (req.method === "POST" && req.url === "/notifications/read") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { at?: unknown };
+      const at = typeof body.at === "number" && body.at > 0 ? Math.min(body.at, Date.now()) : Date.now();
+      profile.setNotifications({ ...profile.notifications, readAt: Math.max(profile.notifications.readAt, at) });
+      broadcast(notificationsEvent());
+      res.writeHead(204).end();
+    } else if (req.method === "POST" && req.url === "/notifications/prefs") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { prefs?: unknown };
+      const prefs = parsePrefs(body.prefs, profile.notifications.prefs);
+      profile.setNotifications({ ...profile.notifications, prefs });
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ prefs }));
     } else if (req.method === "GET" && req.url === "/agent/jobs") {
       // The jobs Conexiones lists on the phone (add-home-dock): every agent job, newest first, with its stage.
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ jobs: jobList(actions.list()) }));

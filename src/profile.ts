@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseNames } from "./addressing.ts";
+import { DEFAULT_SETTINGS, type NotificationSettings, parseSettings } from "./notifications.ts";
 
 /** Asistir: cues on. Solo grabar: record the day as text and learn from it, no real-time cues. */
 export type AssistMode = "assist" | "record";
@@ -14,12 +15,15 @@ export class ProfileStore {
   /** Testing switch: reply to every question, not only those aimed at the wearer. */
   everyQuestion = false;
   assistMode: AssistMode = "assist";
+  /** The activity feed's read mark and the notification settings (add-notifications). */
+  notifications: NotificationSettings = DEFAULT_SETTINGS;
 
   constructor(file: string) {
     this.file = file;
     if (!existsSync(file)) return;
     try {
-      const saved = JSON.parse(readFileSync(file, "utf8")) as { names?: unknown; everyQuestion?: unknown; assistMode?: unknown };
+      const saved = JSON.parse(readFileSync(file, "utf8")) as { names?: unknown; everyQuestion?: unknown; assistMode?: unknown; notifications?: unknown };
+      this.notifications = parseSettings(saved.notifications);
       this.everyQuestion = saved.everyQuestion === true;
       this.assistMode = saved.assistMode === "record" ? "record" : "assist";
       if (Array.isArray(saved.names)) this.names = parseNames(saved.names.filter((n) => typeof n === "string").join(","));
@@ -44,8 +48,13 @@ export class ProfileStore {
     this.save();
   }
 
+  setNotifications(settings: NotificationSettings): void {
+    this.notifications = settings;
+    this.save();
+  }
+
   private save(): void {
     mkdirSync(dirname(this.file), { recursive: true });
-    writeFileSync(this.file, JSON.stringify({ names: this.names, everyQuestion: this.everyQuestion, assistMode: this.assistMode }, null, 2) + "\n");
+    writeFileSync(this.file, JSON.stringify({ names: this.names, everyQuestion: this.everyQuestion, assistMode: this.assistMode, notifications: this.notifications }, null, 2) + "\n");
   }
 }
