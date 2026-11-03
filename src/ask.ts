@@ -18,6 +18,33 @@ const MAX_ANSWER_CHARS = 700;
 
 export const NOT_FOUND = "No lo encuentro en lo que viste y escuchaste.";
 
+/** Output tokens for an ask call (reasoning plus the JSON); a reply cut at the cap is retried once at double. */
+export const ASK_MAX_TOKENS = 1500;
+
+/** A model reply, with why it stopped when the call reports it. A plain string is a reply with no reason. */
+export interface ModelReply {
+  text: string;
+  finishReason?: string;
+}
+
+/** A reply that stopped at the token cap even after the retry: reported as a failure, never as not found. */
+export class CutOffError extends Error {
+  constructor(label: string, maxTokens: number) {
+    super(`${label}: the reply was cut at ${maxTokens} output tokens twice`);
+    this.name = "CutOffError";
+  }
+}
+
+/** Calls at `cap`; a reply that stopped at the length limit is retried once at twice the cap, then throws. */
+export async function untruncated(label: string, call: (maxTokens: number) => Promise<string | ModelReply>, cap = ASK_MAX_TOKENS): Promise<string> {
+  for (const maxTokens of [cap, cap * 2]) {
+    const reply = await call(maxTokens);
+    if (typeof reply === "string") return reply;
+    if (reply.finishReason !== "length") return reply.text;
+  }
+  throw new CutOffError(label, cap * 2);
+}
+
 export type SourceKind = "meeting" | "heard" | "seen" | "fact";
 
 /** Where an answer comes from, for the chips under it. */
@@ -168,10 +195,10 @@ export function parseAsk(raw: string, sources: Map<string, AskSource>, question?
   return { answer, sources: chips, found: true };
 }
 
-/** One model call per question; a failed call throws. */
+/** One model call per question (two when the first is cut at the length limit); a failed call throws. */
 export async function ask(
   input: { question: unknown; history: unknown; meetings: Meeting[]; day: DayEntry[]; facts: Fact[]; now: number },
-  call: (messages: ChatMessage[]) => Promise<string>,
+  call: (messages: ChatMessage[], maxTokens: number) => Promise<string | ModelReply>,
   clock: () => number = () => performance.now(),
 ): Promise<AskOutcome> {
   const question = typeof input.question === "string" ? oneLine(input.question).slice(0, MAX_QUESTION_CHARS) : "";
@@ -181,6 +208,7 @@ export async function ask(
     : [];
   const memory = buildMemory(input);
   const started = clock();
-  const raw = await call(askMessages(memory.text, history, question, input.now));
+  const messages = askMessages(memory.text, history, question, input.now);
+  const raw = await untruncated("ask", (maxTokens) => call(messages, maxTokens));
   return { ok: true, ...parseAsk(raw, memory.sources, question), ms: Math.round(clock() - started) };
 }

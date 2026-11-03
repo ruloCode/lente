@@ -98,6 +98,8 @@ export interface Completion {
   promptTokens: number | undefined;
   cachedTokens: number | undefined;
   completionTokens: number | undefined;
+  /** Why the model stopped (`stop`, `length`, …); `length` means the reply was cut at the token cap. */
+  finishReason?: string;
 }
 
 /**
@@ -114,7 +116,7 @@ export async function completeChat(target: ChatTarget, messages: ChatMessage[], 
   });
   if (!res.ok) throw httpError(target, res.status, await res.text().catch(() => ""));
   const json = (await res.json()) as {
-    choices?: { message?: { content?: unknown; reasoning_content?: unknown } }[];
+    choices?: { message?: { content?: unknown; reasoning_content?: unknown }; finish_reason?: unknown }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
   };
   const message = json.choices?.[0]?.message;
@@ -125,6 +127,7 @@ export async function completeChat(target: ChatTarget, messages: ChatMessage[], 
     promptTokens: json.usage?.prompt_tokens,
     cachedTokens: json.usage?.prompt_tokens_details?.cached_tokens,
     completionTokens: json.usage?.completion_tokens,
+    ...(typeof json.choices?.[0]?.finish_reason === "string" ? { finishReason: json.choices[0].finish_reason } : {}),
   };
 }
 

@@ -188,3 +188,33 @@ What this says:
 - The first-answer target of 1.5 s is met only by a reply without tools.
 - Moving the first step to the fast lane (Muse Spark Open) is the next thing to measure. Its function calling is not verified.
 - "First text" is when the sentence is ready for the phone's voice. The phone's text-to-speech start is measured on the phone (task 3.3).
+
+## Asking the memory (add-memory-engine) — 2026-11-03
+
+`pnpm bench:ask 2 14` (task 1.1). `scripts/eval/memory-set.ts` builds a synthetic bilingual memory: two projects (PROBE-Atlas in Spanish, PROBE-Orion in English), invented PROBE- people, one meeting per project per weekday (24 turns each), 40 ambient lines and 6 camera descriptions a day, day, week and month digests, a profile and two kept facts. At 14 days that is 19 meetings and 14 day digests. Six questions, two of them inside PROBE-Atlas, one of those about something only PROBE-Orion discussed. Muse Spark 1.3 at minimal effort, structured, not streamed, home Wi-Fi.
+
+"Right" means the answer has the planted fact (18,000 dollars, 20 November, PROBE-Lucía…), or, for the out-of-project question, that it was declined. "Leaks" counts the project questions whose prompt held any PROBE-Orion text.
+
+**Before** (the code at `37a55f1`, loaded with `--src`; one run, n = 6 per path):
+
+| Path | p50 | p90 | Right | Leaks | Prompt tokens per call (avg) | Cached (avg) | Cost |
+|---|---|---|---|---|---|---|---|
+| Production, plan + answer (`askTiers`) | 6,339 ms | 13,323 ms | 6/6 | 2/2 | 3,148 | 0 | US$ 0.063 |
+| Laptop, one call (`ask`) | 3,249 ms | 4,051 ms | 6/6 | 2/2 | 16,499 | 19 | US$ 0.130 |
+
+This reproduces the 2026-11-03 probe within noise (production 6.8 s / 13.6 s, laptop 3.5 s / 5.3 s). The plan call alone took 2.5–7.7 s. Every project question sent the other project's text to the model: the profile and digests in production, the kept facts on the laptop.
+
+**After** tasks 1.2–1.4 (two runs, n = 12 per path):
+
+| Path | p50 | p90 | Right | Leaks | Prompt tokens per call (avg) | Cached (avg) | Cut at length | Cost |
+|---|---|---|---|---|---|---|---|---|
+| Production, plan + answer | 6,866 ms | 10,841 ms | 12/12 | 0/4 | 2,989 | 254 | 0 | US$ 0.121 |
+| Laptop, one call | 2,989 ms | 4,275 ms | 12/12 | 0/4 | 16,493 | 11,106 | 0 | US$ 0.114 |
+
+Prompt cache on the production path (task 1.4): the memory is now the first message of both calls. Before, all 12 calls showed 0 cached tokens. After, on the second run, the answer call was served 1,905 of 1,954 prompt tokens from the cache for «¿Qué se decidió sobre la beta?» and 625 of 739 for the project question. The plan call hit for two questions (1,777 of 1,837). The other calls missed, as the cache section above already found: a hit is a discount, not something the latency budget can count on. On the laptop the 21k-token whole-memory prompt was served from the cache on 6 of 8 calls.
+
+What this says:
+- Latency did not change; it is still two sequential calls. The model's time is the whole cost, and group 3 removes the plan call.
+- The out-of-project question was declined both before and after. Now that holds in the data, not only in the model's obedience.
+- No reply hit the length cap in this run. Before, the laptop's cap was 500 tokens and the 2026-11-03 probe hit it on «¿Qué prometí entregar esta semana?». Now the cap is 1,500, and a cut-off reply is retried once at 3,000 or reported as a failure (task 1.2, unit-tested).
+- Spend: US$ 0.19 before, US$ 0.23 after.

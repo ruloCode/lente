@@ -8,7 +8,7 @@
 //   4. Answer: the same schema as add-ask-lente; cited ids are checked against everything shown.
 // Pure apart from the injected model call and loaders.
 
-import { type AskMessage, type AskOutcome, type AskSource, COMMAND_RULE, NOT_FOUND, askSchema, parseAsk } from "./ask.ts";
+import { type AskMessage, type AskOutcome, type AskSource, COMMAND_RULE, type ModelReply, NOT_FOUND, askSchema, parseAsk, untruncated } from "./ask.ts";
 import type { ChatMessage } from "./chat.ts";
 import type { DayEntry } from "./day-log.ts";
 import { type Digest, digestId } from "./digests.ts";
@@ -65,7 +65,8 @@ export interface TierLoaders {
   days(days: string[]): Promise<DayEntry[]>;
 }
 
-export type TierCall = (messages: ChatMessage[], schema: object, name: string) => Promise<string>;
+/** One structured call at `maxTokens`; a reply that reports `finishReason: "length"` is retried once at double. */
+export type TierCall = (messages: ChatMessage[], schema: object, name: string, maxTokens: number) => Promise<string | ModelReply>;
 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const isoDay = (at: number) => new Date(at).toISOString().slice(0, 10);
@@ -74,6 +75,19 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Lowercase, no accents, for matching terms against turns in memory. */
 export const fold = (s: string): string => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * A question inside a project (task 1.3): only that project's meetings and the kept facts they support.
+ * The profile and the day, week and month digests summarize every project, so none of them is shown.
+ */
+export function scopeTierInput(input: TierInput, inScope: ReadonlySet<string>): TierInput {
+  return { days: [], weeks: [], months: [], recentMeetings: input.recentMeetings.filter((m) => inScope.has(m.id)), keptFacts: input.keptFacts.filter((f) => inScope.has(f.meetingId)) };
+}
+
+/** Day entries inside the time spans of the given meetings: what was heard and seen while in the project. */
+export function entriesInSpans<E extends { at: number }>(entries: readonly E[], meetings: readonly Pick<Meeting, "startedAt" | "endedAt">[], now: number): E[] {
+  return entries.filter((e) => meetings.some((m) => e.at >= m.startedAt && e.at <= (m.endedAt ?? now)));
+}
 
 /** Lines with ids, and what each id points to. */
 class Shown {
@@ -200,7 +214,7 @@ export async function lookUp(plan: LookupPlan, loaders: TierLoaders, budget = LO
 }
 
 const SYSTEM = [
-  "Eres Lente, el agente personal del usuario. Recuerdas solo lo que el usuario vivió con Lente. Abajo va su memoria por capas (perfil, resúmenes por mes, semana y día, reuniones), línea por línea, con un id entre corchetes.",
+  "Eres Lente, el agente personal del usuario. Recuerdas solo lo que el usuario vivió con Lente. Su memoria va arriba por capas (perfil, resúmenes por mes, semana y día, reuniones), línea por línea, con un id entre corchetes.",
   "Responde en español, en una a tres frases, cálido y directo, hablándole de tú.",
   "Usa solo la memoria. Cada afirmación debe salir de una o más líneas: pon sus ids en `sources`. Prefiere citar la línea más concreta (una frase de una reunión antes que un resumen).",
   "Si la memoria no lo dice, responde `found: false` y `answer` vacío. No uses conocimiento general ni inventes nombres, fechas ni cifras.",
@@ -208,10 +222,10 @@ const SYSTEM = [
 ].join("\n");
 
 const PLANNER = [
-  "Decides qué abrir de la memoria del usuario para responder su pregunta. Abajo va su memoria por capas con ids.",
-  "Si lo de abajo ya basta para responder, o la pregunta no es sobre su memoria, `needs_lookup: false`.",
-  "Si no, nombra hasta 5 reuniones (ids `m…` que aparezcan abajo), hasta 7 días (`YYYY-MM-DD` que aparezcan abajo), y si sirve un rango `from`/`to` en `YYYY-MM-DD`; y hasta 8 términos cortos para buscar en lo que se dijo (nombres, temas, palabras clave), en el idioma en que se habrían dicho.",
-  "No nombres ids que no estén abajo.",
+  "Decides qué abrir de la memoria del usuario para responder su pregunta. Su memoria va arriba por capas, con ids.",
+  "Si la memoria ya basta para responder, o la pregunta no es sobre su memoria, `needs_lookup: false`.",
+  "Si no, nombra hasta 5 reuniones (ids `m…` que aparezcan en la memoria), hasta 7 días (`YYYY-MM-DD` que aparezcan en la memoria), y si sirve un rango `from`/`to` en `YYYY-MM-DD`; y hasta 8 términos cortos para buscar en lo que se dijo (nombres, temas, palabras clave), en el idioma en que se habrían dicho.",
+  "No nombres ids que no estén en la memoria.",
 ].join("\n");
 
 const historyMessages = (history: AskMessage[]): ChatMessage[] => history.slice(-HISTORY).map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text.slice(0, 700) }));
@@ -230,11 +244,15 @@ export async function askTiers(
   const context = buildTierContext(input);
   const memory = `Hoy es ${isoDay(input.now)}.\n\nMEMORIA:\n${context.lines.join("\n") || "(vacía)"}`;
 
-  const plan = parsePlan(await call([{ role: "system", content: `${PLANNER}\n\n${memory}` }, ...historyMessages(history), { role: "user", content: question }], planSchema, "lookup_plan"), context, input.now);
+  // The memory goes first in both calls, so the answer call reuses the plan call's cached prefix (task 1.4).
+  const prefix: ChatMessage = { role: "system", content: memory };
+  const turns = [...historyMessages(history), { role: "user" as const, content: question }];
+  const planRaw = await untruncated("lookup_plan", (maxTokens) => call([prefix, { role: "system", content: PLANNER }, ...turns], planSchema, "lookup_plan", maxTokens));
+  const plan = parsePlan(planRaw, context, input.now);
   const found = plan ? await lookUp(plan, loaders) : new Shown(0);
 
   const lookupText = found.lines.length ? `\n\nBUSCADO PARA ESTA PREGUNTA:\n${found.lines.join("\n")}` : "";
-  const raw = await call([{ role: "system", content: `${SYSTEM}\n\n${memory}${lookupText}` }, ...historyMessages(history), { role: "user", content: question }], askSchema, "ask");
+  const raw = await untruncated("ask", (maxTokens) => call([prefix, { role: "system", content: `${SYSTEM}${lookupText}` }, ...turns], askSchema, "ask", maxTokens));
   const sources = new Map([...context.sources, ...found.sources]);
   const answer = parseAsk(raw, sources, question);
   return { ok: true, ...answer, answer: answer.found ? answer.answer : NOT_FOUND, ms: Math.round(clock() - started), ...(plan ? { plan } : {}) };

@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { type DevicePreference, mayTakeOver, AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
-import { ask, askSchema } from "./ask.ts";
+import { CutOffError, ask, askSchema } from "./ask.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
@@ -54,7 +54,7 @@ import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
 import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
-import { askTiers } from "./ask-tiers.ts";
+import { askTiers, entriesInSpans, scopeTierInput } from "./ask-tiers.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
 import { AUTH_COOKIE, FileSessionStore, PkceFlows, WebSessions, authCookie, authorizeUrl, clearCookie, exchangeCode, sessionCookie } from "./web-session.ts";
@@ -614,6 +614,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     /** The model and provider that answered. */
     model: string;
     provider: string;
+    /** `length` when the reply stopped at the token cap (non-streamed calls only). */
+    finishReason?: string;
   }
 
   /**
@@ -640,7 +642,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         usage.addCall(target.model, { input: done.promptTokens, cached: done.cachedTokens, output: done.completionTokens });
         usageChanged = true;
         broadcast(spendEvent());
-        return { text: done.text, askedAt, firstTokenAt: done.ttftMs === undefined ? undefined : askedAt + Math.round(done.ttftMs), model: target.model, provider: target.provider };
+        return { text: done.text, askedAt, firstTokenAt: done.ttftMs === undefined ? undefined : askedAt + Math.round(done.ttftMs), model: target.model, provider: target.provider, ...("finishReason" in done && done.finishReason ? { finishReason: done.finishReason } : {}) };
       } catch (error) {
         lastError = error;
         if (job) routePolicy.failed(job, target.id);
@@ -1092,20 +1094,32 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   }
   if (sealed && key) nightly.start(userId, TIME_ZONE, runDigests);
 
-  /** Ask over the whole history in tiers (accounts); the laptop keeps the 7-day window. */
-  async function askWhole(body: { question?: unknown; history?: unknown }, inScope: (list: Meeting[]) => Meeting[] = (list) => list) {
+  /** The ask calls: structured, with the reason the reply stopped so a cut-off one is retried (task 1.2). */
+  const askStructured = async (messages: ChatMessage[], schema: object, name: string, maxTokens: number) => {
+    const reply = await callSpark(messages, { label: name, maxTokens, extra: { response_format: { type: "json_schema", json_schema: { name, strict: true, schema } } } });
+    return { text: reply.text, ...(reply.finishReason ? { finishReason: reply.finishReason } : {}) };
+  };
+
+  /**
+   * Ask over the whole history in tiers (accounts); the laptop keeps the 7-day window. In a project
+   * (`scoped`) only its meetings, the facts they support and what was heard during them are shown (task 1.3).
+   */
+  async function askWhole(body: { question?: unknown; history?: unknown }, inScope: (list: Meeting[]) => Meeting[] = (list) => list, scoped = false) {
     const digests = sealed!.digests;
-    const [[profileDigest], days, weeks, months] = await Promise.all([digests.latest("profile", 1), digests.latest("day", 14), digests.latest("week", 8), digests.latest("month", 24)]);
+    const [[profileDigest], days, weeks, months] = scoped ? [[], [], [], []] : await Promise.all([digests.latest("profile", 1), digests.latest("day", 14), digests.latest("week", 8), digests.latest("month", 24)]);
     const finished = inScope(finishedMeetings());
+    const scopeIds = new Set(inScope(meetings.list()).map((m) => m.id));
     const byIds = (ids: string[]) => inScope(meetings.list()).filter((m) => ids.includes(m.id));
+    const whole = { profile: profileDigest, days, weeks, months, recentMeetings: finished.slice(-5), keptFacts: keptFacts(facts.list()) };
+    const loadDays = async (list: string[]) => (await Promise.all(list.map((d) => sealed!.sealed.day.entriesBetween(localDayStart(d, TIME_ZONE), localDayStart(d, TIME_ZONE) + 24 * 3600 * 1000)))).flat();
     return askTiers(
-      { profile: profileDigest, days, weeks, months, recentMeetings: finished.slice(-5), keptFacts: keptFacts(facts.list()), question: body.question, history: body.history, now: Date.now() },
+      { ...(scoped ? scopeTierInput(whole, scopeIds) : whole), question: body.question, history: body.history, now: Date.now() },
       {
         meetings: async (ids) => byIds(ids),
         meetingsBetween: async (from, to, limit) => inScope(meetings.list()).filter((m) => m.startedAt >= from && m.startedAt < to).reverse().slice(0, limit),
-        days: async (list) => (await Promise.all(list.map((d) => sealed!.sealed.day.entriesBetween(localDayStart(d, TIME_ZONE), localDayStart(d, TIME_ZONE) + 24 * 3600 * 1000)))).flat(),
+        days: async (list) => (scoped ? entriesInSpans(await loadDays(list), inScope(meetings.list()), Date.now()) : await loadDays(list)),
       },
-      structured,
+      askStructured,
     );
   }
 
@@ -1540,14 +1554,17 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const question = scope && typeof body.question === "string" ? `(Sobre el proyecto «${scope.name}») ${body.question}` : body.question;
     const failed = (error: Error) => {
       console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
+      // A reply cut at the length limit twice is a failure to answer, never "not found" (task 1.2).
+      if (error instanceof CutOffError) return { ok: false as const, reason: "failed", message: "La respuesta salió demasiado larga; prueba con una pregunta más concreta." };
       return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
     };
+    const scopeIds = new Set(inScope(meetings.list()).map((m) => m.id));
     const out = key && sealed
-      ? await askWhole({ question, history: body.history }, inScope).catch(failed)
+      ? await askWhole({ question, history: body.history }, inScope, Boolean(scope)).catch(failed)
       : key
       ? await ask(
-          { question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
-          async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
+          { question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()).filter((f) => !scope || scopeIds.has(f.meetingId)), now: Date.now() },
+          (messages, maxTokens) => askStructured(messages, askSchema, "ask", maxTokens),
         ).catch(failed)
       : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
     if (out.ok && out.command) {

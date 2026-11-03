@@ -14,6 +14,7 @@
     "bench:asr": "node --env-file-if-exists=.env scripts/bench-asr.ts",
     "eval": "node --env-file-if-exists=.env scripts/eval/run.ts",
     "eval:render": "node scripts/eval/render.ts",
+    "bench:ask": "node --env-file-if-exists=.env scripts/bench-ask.ts",
     "bench:cache": "node --env-file-if-exists=.env scripts/bench-cache.ts",
     "bench:help": "node --env-file-if-exists=.env scripts/bench-help.ts",
     "bench:live-view": "node scripts/bench-live-view.ts",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ASK_HISTORY, NOT_FOUND, ask, buildMemory, parseAsk } from "../src/ask.ts";
+import { ASK_HISTORY, ASK_MAX_TOKENS, CutOffError, NOT_FOUND, ask, buildMemory, parseAsk } from "../src/ask.ts";
 import type { ChatMessage } from "../src/chat.ts";
 import type { DayEntry } from "../src/day-log.ts";
 import type { Fact } from "../src/fact-store.ts";
@@ -83,4 +83,20 @@ test("an empty question is refused without a model call", async () => {
   const out = await ask({ question: "  ", history: [], meetings: [], day: [], facts: [], now: T0 }, async () => ((called = true), ""));
   assert.equal(out.ok, false);
   assert.equal(called, false);
+});
+
+test("add-memory-engine 1.2: a reply cut at the length limit is retried at double the cap, never turned into not found", async () => {
+  const caps: number[] = [];
+  const full = '{"found":true,"answer":"Mandar los números de ventas el jueves.","sources":["M1.t2"]}';
+  const out = await ask(
+    { question: "¿Qué prometí entregar esta semana?", history: [], meetings: [MEETING], day: [], facts: [], now: T0 + 60 * MIN },
+    async (_m, maxTokens) => (caps.push(maxTokens), caps.length === 1 ? { text: full.slice(0, 30), finishReason: "length" } : { text: full, finishReason: "stop" }),
+  );
+  assert.deepEqual(caps, [ASK_MAX_TOKENS, 2 * ASK_MAX_TOKENS]);
+  assert.ok(out.ok && out.found);
+  if (out.ok) assert.notEqual(out.answer, NOT_FOUND);
+  await assert.rejects(
+    ask({ question: "¿Qué prometí entregar esta semana?", history: [], meetings: [MEETING], day: [], facts: [], now: T0 }, async () => ({ text: full.slice(0, 30), finishReason: "length" })),
+    CutOffError,
+  );
 });
