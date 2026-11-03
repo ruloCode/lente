@@ -49,13 +49,16 @@ import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
 import { DatabaseHealth, dbFailing } from "./db-health.ts";
 import { SupabaseRest } from "./supabase-rest.ts";
 import { type CachedStores, openCachedStores } from "./cached-stores.ts";
-import { type DigestCall, writeProfile } from "./digests.ts";
+import { type DigestCall, briefsDue, personKey, recurringPeople, writeBrief, writePersonCard, writeProfile } from "./digests.ts";
+import { type DigestStore, FileDigestStore } from "./stores.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
 import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
 import { askTiers, entriesInSpans, scopeTierInput } from "./ask-tiers.ts";
-import { type FastAnswer, RecallRuntime, answerRecall, voiceRecall } from "./recall-runtime.ts";
+import { type MemoryCard, type ShownFact, applySupersession, cardPrompt, cardedUntil, dueWindow, factCount, factsToShow, firstUncarded, validateCard, windowCardSchema, withCardFields } from "./cards.ts";
+import { terms } from "./terms.ts";
+import { type FastAnswer, RecallRuntime, answerRecall, isName, voiceRecall } from "./recall-runtime.ts";
 import { type RecallEvent, memoryPrefix as recallPrefix } from "./recall.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
@@ -105,6 +108,15 @@ const ASK_DAYS = 7;
 /** `fast`: retrieval in the runtime and one streamed answer (add-memory-engine); `tiers` (default) until the eval says otherwise. */
 const RECALL_MODE = process.env.LENTE_RECALL === "fast" ? "fast" : "tiers";
 const RECALL_FLUSH_MS = 5_000;
+/** How often a running episode is checked for a closed 10-minute window, and the notes call's cap when it also writes the card. */
+const CARD_TICK_MS = 15_000;
+const CARD_NOTES_TOKENS = 4_500;
+/** Briefs are checked every 5 minutes (each rewritten at most every 30); how many briefs and people cards are read, and how many meetings feed each. */
+const BRIEF_TICK_MS = 5 * 60_000;
+const MAX_BRIEFS = 100;
+const MAX_PEOPLE_CARDS = 300;
+const BRIEF_MEETINGS = 10;
+const PERSON_MEETINGS = 8;
 const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
 /** Solo grabar's automatic episodes; the eval and the checks shorten them. */
 const EPISODES: EpisodePolicy = {
@@ -967,16 +979,78 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     if (m.status === "extracting") await extractNotes(m);
   }
 
+  // --- Memory cards (add-memory-engine 6.2 to 6.4), with fast recall only -----------------------
+
+  /** The existing facts most like this episode, for the call to say which one a new fact replaces. */
+  function factsToShowFor(m: Meeting): ShownFact[] {
+    const words = new Set(terms(m.turns.map((t) => t.text).join(" ")));
+    return factsToShow(meetings.list().filter((x) => x.id !== m.id), (text) => terms(text).filter((t) => words.has(t)).length);
+  }
+
+  /** A new card on its episode; the facts it supersedes are closed in their own episodes, which are saved. */
+  function keepCard(m: Meeting, card: MemoryCard, dropped: number): void {
+    m.cards = [...(m.cards ?? []), card];
+    for (const other of applySupersession(card, meetings.list().filter((x) => x.id !== m.id))) meetings.save(other);
+    // Lengths and counts only.
+    console.log(`[cards] ${m.id} · ${card.window ? "window" : "episode"} card · ${card.facts.length} facts · ${card.people.length} people · ${card.keysEs.length}+${card.keysEn.length} keys · ${card.facts.filter((f) => f.supersedes).length} supersede · ${dropped} dropped`);
+  }
+
+  let windowCarding = false;
+  /** A window card every 10 minutes of a long episode while it runs (6.3); skipped when nothing was said or the spend cap holds. */
+  async function cardWindow(): Promise<void> {
+    const m = current;
+    if (!recall || !key || !m || windowCarding || spendCapped()) return;
+    const due = dueWindow(m, cardedUntil(m), Date.now(), () => false);
+    if (!due) return;
+    windowCarding = true;
+    const started = Date.now();
+    try {
+      const turns = m.turns.filter((t) => t.at >= due.from && t.at < due.to);
+      const turnIds = turns.map((t) => t.id);
+      const shown = factsToShowFor({ ...m, turns });
+      const text = await askSpark(
+        [
+          { role: "system", content: `You write the memory card for ten minutes of a recording from its transcript. Lines look like \`t3 YOU: text\`; YOU wears the glasses.\n${cardPrompt(shown)}\nInclude only what was actually said; if there is nothing worth keeping, return empty lists.` },
+          { role: "user", content: turns.map((t) => `${t.id} ${t.wearer ? "YOU" : (t.speaker ?? "?")}: ${t.text}`).join("\n") },
+        ],
+        { label: "card", extra: { response_format: { type: "json_schema", json_schema: { name: "memory_card", strict: true, schema: windowCardSchema(turnIds, shown.map((f) => f.id)) } } }, maxTokens: 2000 },
+      );
+      const out = validateCard(JSON.parse(text), { episodeId: m.id, turnIds, turnAt: new Map(turns.map((t) => [t.id, t.at])), shown, from: due.from, to: due.to, window: true, firstN: factCount(m), dayStart: (d) => localDayStart(d, TIME_ZONE) });
+      keepCard(m, out.card, out.dropped);
+      meetings.save(m);
+      console.log(`[cards] window card ${Math.round((Date.now() - due.to) / 1000)} s after its window closed, in ${Date.now() - started} ms`);
+    } catch (error) {
+      // The window stays due; the next tick retries it.
+      console.error(`[cards] window card failed: ${(error as Error).message.slice(0, 200)}`);
+    } finally {
+      windowCarding = false;
+    }
+  }
+  /** The spend cap (add-accounts 6.3) pauses cards; segments keep being indexed. Not built yet: never capped. */
+  const spendCapped = (): boolean => false;
+
   async function extractNotes(m: Meeting): Promise<void> {
     const started = performance.now();
     try {
       const turnIds = m.turns.map((t) => t.id);
-      const text = await askSpark(extractionMessages(m), {
+      // Fast recall (add-memory-engine 6.2): the memory card's fields ride in the same call, never a second one.
+      const shown = recall ? factsToShowFor(m) : [];
+      const fromTurn = recall ? firstUncarded(m) : undefined;
+      const messages = extractionMessages(m);
+      if (recall) messages[0] = { ...messages[0]!, content: `${messages[0]!.content}\n\n${cardPrompt(shown, fromTurn)}` };
+      const schema = recall ? withCardFields(notesSchema(turnIds), turnIds, shown.map((f) => f.id)) : notesSchema(turnIds);
+      const text = await askSpark(messages, {
         label: "notes",
-        extra: { response_format: { type: "json_schema", json_schema: { name: "meeting_notes", strict: true, schema: notesSchema(turnIds) } } },
-        maxTokens: 3000,
+        extra: { response_format: { type: "json_schema", json_schema: { name: "meeting_notes", strict: true, schema } } },
+        maxTokens: recall ? CARD_NOTES_TOKENS : 3000,
       });
-      const { notes, dropped, facts: proposedFacts } = validateNotes(JSON.parse(text), turnIds);
+      const raw = JSON.parse(text);
+      const { notes, dropped, facts: proposedFacts } = validateNotes(raw, turnIds);
+      // A closing card covers what no window card did: all of a short episode, the tail of a long one.
+      if (recall && (fromTurn !== undefined || !(m.cards ?? []).some((c) => c.window))) {
+        const out = validateCard(raw, { episodeId: m.id, turnIds, turnAt: new Map(m.turns.map((t) => [t.id, t.at])), shown, from: cardedUntil(m), to: m.endedAt ?? Date.now(), window: false, firstN: factCount(m), ...(fromTurn ? { fromTurn } : {}), dayStart: (d) => localDayStart(d, TIME_ZONE) });
+        keepCard(m, out.card, out.dropped);
+      }
       m.notes = notes;
       applyTitleAndTopic(m, notes);
       m.droppedItems = dropped;
@@ -1100,6 +1174,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       },
     );
     if (written.length) console.log(`[digests] wrote ${written.length} digest(s)`);
+    if (recall) await runMemoryNightly();
   }
   if (sealed && key) nightly.start(userId, TIME_ZONE, runDigests);
 
@@ -1132,10 +1207,14 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     );
   }
 
+  // Briefs and people cards (add-memory-engine 6.5): the sealed digests, or a file on the laptop.
+  const memoryDigests: DigestStore = sealed?.digests ?? new FileDigestStore(join(dataDir, "digests.json"));
+
   // Fast recall (add-memory-engine 3.4): the memory index in this runtime, behind LENTE_RECALL=fast.
   const recall = RECALL_MODE === "fast"
     ? new RecallRuntime(
         {
+          memoryDigests: async () => ({ briefs: await memoryDigests.latest("brief", MAX_BRIEFS), people: await memoryDigests.latest("person", MAX_PEOPLE_CARDS) }),
           meetings: () => meetings.list(),
           assignments: () => projects.assignments(),
           today: () => day.entries,
@@ -1152,6 +1231,54 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   if (recall) {
     void recall.ready.then(() => console.log(`[recall] index ready · ${recall.index.size} units`), (error: Error) => console.error(`[recall] index build failed: ${error.message.slice(0, 200)}`));
     every(() => void recall.flush().catch((error: Error) => console.error(`[recall] index update failed: ${error.message.slice(0, 200)}`)), RECALL_FLUSH_MS);
+    every(() => void cardWindow(), CARD_TICK_MS);
+    every(() => void writeBriefs(false), BRIEF_TICK_MS);
+    if (key && !sealed) nightly.start(userId, TIME_ZONE, runMemoryNightly);
+  }
+
+  /** Each project whose cards changed gets its brief rewritten, at most every 30 minutes (or now, nightly). */
+  async function writeBriefs(nightlyRun: boolean): Promise<void> {
+    if (!recall || !key || spendCapped()) return;
+    try {
+      const [assigned, list, briefs] = await Promise.all([projects.assignments(), projects.list(), memoryDigests.latest("brief", MAX_BRIEFS)]);
+      const last = new Map(briefs.map((b) => [b.periodStart, b.createdAt]));
+      const newer = (m: Meeting) => m.status === "done" && (m.cards ?? []).length > 0 && assigned.has(m.id) && (m.endedAt ?? m.startedAt) > (last.get(assigned.get(m.id)!) ?? 0);
+      const changed = new Set(meetings.list().filter(newer).map((m) => assigned.get(m.id)!));
+      for (const projectId of nightlyRun ? [...changed] : briefsDue(changed, last, Date.now())) {
+        const project = list.find((p) => p.id === projectId);
+        if (!project) continue;
+        const fresh = meetings.list().filter((m) => assigned.get(m.id) === projectId && newer(m)).slice(-BRIEF_MEETINGS);
+        const digest = await writeBrief({ previous: briefs.find((b) => b.periodStart === projectId), project: { id: project.id, name: project.name }, meetings: fresh }, structured, Date.now());
+        await memoryDigests.put(digest);
+        console.log(`[digests] brief rewritten · ${digest.text.length} chars · ${digest.sources.length} sources · from ${fresh.length} meeting(s)`);
+      }
+    } catch (error) {
+      console.error(`[digests] brief failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  /** People seen in two or more episodes get a card, rewritten when they appeared since the last one. */
+  async function writePeople(): Promise<void> {
+    if (!recall || !key || spendCapped()) return;
+    try {
+      let written = 0;
+      for (const [name, seenIn] of recurringPeople(meetings.list().filter((m) => m.status === "done"), isName)) {
+        const previous = await memoryDigests.get("person", personKey(name));
+        const newest = Math.max(...seenIn.map((m) => m.endedAt ?? m.startedAt));
+        if (previous && previous.createdAt >= newest) continue;
+        await memoryDigests.put(await writePersonCard({ previous, person: name, meetings: seenIn.slice(-PERSON_MEETINGS) }, structured, Date.now()));
+        written++;
+      }
+      if (written) console.log(`[digests] ${written} people card(s) rewritten`);
+    } catch (error) {
+      console.error(`[digests] people cards failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  /** The nightly part of consolidation: every changed brief, then the people cards. */
+  async function runMemoryNightly(): Promise<void> {
+    await writeBriefs(true);
+    await writePeople();
   }
 
   /** The fast path for one question; `deep` when retrieval is not confident or the question is an aggregate. */

@@ -3,6 +3,8 @@
 // In Solo grabar the hub opens and closes episodes on its own (`auto`).
 // Pure logic: the hub keeps the clock, the store and the model call.
 
+import type { MemoryCard } from "./cards.ts";
+
 export const MEETING_SILENCE_MS = 10 * 60_000;
 /** Fewer turns than this and the meeting is kept without notes. */
 export const MIN_TURNS = 3;
@@ -90,6 +92,8 @@ export interface Meeting {
   stats?: AskedAnswered;
   /** Items the model proposed without a valid turn behind them. */
   droppedItems?: number;
+  /** Memory cards (add-memory-engine 6.2, 6.3): window cards while it ran, then the closing one. */
+  cards?: MemoryCard[];
   error?: string;
 }
 

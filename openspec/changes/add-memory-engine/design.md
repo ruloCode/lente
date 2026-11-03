@@ -203,6 +203,13 @@ The plan call is the slowest step and the least reliable one. The probe measured
 - Kept facts, which the wearer confirmed, are never superseded automatically. They win, as in the profile.
 - Ids are validated: evidence must be real turns, and `supersedes` must be a fact that was shown.
 
+**Where cards live** (decided while building 6.2):
+- A card is kept on its episode's meeting record (`meeting.cards`), sealed with it.
+- A fact that supersedes another closes it in its own episode, which is saved too.
+- This replaces the separate `memory_cards` table first planned for task 7.1. A card has no life apart from its episode, and the meeting record is already sealed, synced, exported and deleted with the meeting. "Delete a meeting" then removes its cards with no extra step.
+- Each card fact is one index unit (`c<episode id>:<n>`), carrying the card's keys and people and its validity window.
+- Card fields are written only with `LENTE_RECALL=fast` until the default flips (task 9.2). The tiers path does not read them, and they cost about 1,400 output tokens per notes call (measured in 6.6).
+
 **Why bilingual keys:**
 - The wearer asks in Spanish about meetings held in English. Lexical search cannot match «presupuesto» to "budget".
 - Writing the keys at consolidation moves the cross-lingual work from question time, where today's plan call does it, to write time, where nobody waits.
@@ -220,6 +227,10 @@ The plan call is the slowest step and the least reliable one. The probe measured
 
 **Both:**
 - Use Muse Spark 1.3 structured output, sealed under the `digests` table's scheme as new scopes `brief` and `person`.
+  - A brief is keyed by its project's id; a person card by the person's folded name.
+  - On the laptop they go to `data/digests.json`.
+  - `memory_digests` allows neither scope and keys rows by a date. A name must never be a plain column. So task 7.1's migration adds the scopes and a `subject` column: the project id for a brief, a random id for a person, whose name stays inside the sealed body.
+  - Until that migration is applied, the sealed store refuses these two scopes with a clear error, and the hub logs it.
 - Are counted by the usage meter and held by the spend cap (`add-accounts` 6.3).
 - Make up the memory prefix (decision 1). Many questions ("¿en qué quedamos con Ana?") are answered from the prefix and one retrieved quote.
 

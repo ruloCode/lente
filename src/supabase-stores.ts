@@ -657,6 +657,12 @@ export class SupabaseLanguage implements Language {
 
 // Digests -------------------------------------------------------------------------------------------
 
+/**
+ * Scopes `memory_digests` cannot hold yet: a brief is keyed by project and a person card by a name,
+ * which needs the subject column of add-memory-engine 7.1's migration (a name is never a plain column).
+ */
+const NOT_YET_IN_DB: ReadonlySet<DigestScope> = new Set(["brief", "person"]);
+
 export class SupabaseDigests implements DigestStore {
   private readonly db: Db;
   private readonly s: Sealer;
@@ -672,16 +678,19 @@ export class SupabaseDigests implements DigestStore {
   }
 
   async get(scope: DigestScope, periodStart: string): Promise<Digest | undefined> {
+    if (NOT_YET_IN_DB.has(scope)) return undefined;
     const [row] = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).eq("period_start", periodStart).limit(1));
     return row && this.open(row);
   }
 
   async latest(scope: DigestScope, count: number): Promise<Digest[]> {
+    if (NOT_YET_IN_DB.has(scope)) return [];
     const rows = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).order("period_start", "desc").limit(count));
     return rows.map((r) => this.open(r));
   }
 
   async put(d: Digest): Promise<void> {
+    if (NOT_YET_IN_DB.has(d.scope)) throw new Error(`memory_digests cannot keep a ${d.scope} digest before add-memory-engine 7.1's migration`);
     const [existing] = await this.db.select<{ id: string }>(this.db.query("memory_digests").eq("scope", d.scope).eq("period_start", d.periodStart).limit(1), "id");
     const id = existing?.id ?? randomUUID();
     await this.db.insert("memory_digests", [{ id, scope: d.scope, period_start: d.periodStart, body_enc: this.s.json("memory_digests", "body_enc", id, { text: d.text, sources: d.sources }), source_count: d.sources.length, model: null, created_at: iso(d.createdAt) }], { upsertOn: "id" });

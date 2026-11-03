@@ -9,10 +9,11 @@ import type { DayEntry } from "./day-log.ts";
 import type { Fact } from "./fact-store.ts";
 import type { Meeting } from "./meetings.ts";
 
-export type DigestScope = "profile" | "day" | "week" | "month";
+/** `brief` and `person` (add-memory-engine 6.5): a project's brief, keyed by project id, and a person's card, keyed by the folded name. */
+export type DigestScope = "profile" | "day" | "week" | "month" | "brief" | "person";
 
 /** Size of each tier, in characters (design decision 8). */
-export const DIGEST_BUDGET: Record<DigestScope, number> = { profile: 4000, day: 1500, week: 2000, month: 2000 };
+export const DIGEST_BUDGET: Record<DigestScope, number> = { profile: 4000, day: 1500, week: 2000, month: 2000, brief: 2000, person: 600 };
 /** How much of a day's record goes into its digest call, in characters. */
 export const DAY_INPUT_CHARS = 24_000;
 /** The heading the kept facts go under in the profile. */
@@ -20,7 +21,10 @@ export const KEPT_HEADING = "Confirmado por el usuario:";
 
 export interface Digest {
   scope: DigestScope;
-  /** `YYYY-MM-DD`: the day, the Monday of the week, the 1st of the month; the profile uses the day it was written. */
+  /**
+   * `YYYY-MM-DD`: the day, the Monday of the week, the 1st of the month; the profile uses the day it was
+   * written. A brief uses its project's id and a person card the person's folded name.
+   */
   periodStart: string;
   text: string;
   /** Ids of what it came from: meetings (`m…`), days (`d2026-11-01`), digests (`day:2026-11-01`), kept facts (`fact:<id>`). */
@@ -164,4 +168,69 @@ export async function writeRollup(input: { scope: "week" | "month"; periodStart:
     `${input.scope}_digest`,
   );
   return { scope: input.scope, periodStart: input.periodStart, ...parse(raw, shown, DIGEST_BUDGET[input.scope]), createdAt: now };
+}
+
+// --- Briefs and people cards (add-memory-engine 6.5) ---------------------------------------------
+
+/** A project's brief is rewritten at most this often, and in the nightly run. */
+export const BRIEF_EVERY_MS = 30 * 60_000;
+/** A person gets a card once seen in this many episodes. */
+export const PERSON_MIN_EPISODES = 2;
+
+const cardBlock = (m: Meeting): string =>
+  [meetingBlock(m), ...(m.cards ?? []).flatMap((c) => [...c.facts.filter((f) => f.validTo === undefined).map((f) => `Hecho [${f.id}]: ${f.text}`), c.people.length ? `Personas: ${c.people.map((p) => `${p.name}${p.role ? ` (${p.role})` : ""}`).join(", ")}` : ""])].filter(Boolean).join("\n");
+
+/** A project's brief: what it is, who is in it, its state, open commitments and recent decisions, with sources. */
+export async function writeBrief(input: { previous?: Digest; project: { id: string; name: string }; meetings: Meeting[] }, call: DigestCall, now: number): Promise<Digest> {
+  const shown = new Set(input.meetings.flatMap((m) => [m.id, ...(m.cards ?? []).flatMap((c) => c.facts.map((f) => f.id))]));
+  if (input.previous) shown.add(digestId(input.previous));
+  const material = [input.previous ? `[${digestId(input.previous)}] Resumen anterior:\n${input.previous.text}` : "Resumen anterior: (ninguno)", "Lo nuevo:", ...input.meetings.map(cardBlock)].join("\n\n");
+  const raw = await call(
+    [
+      { role: "system", content: `Mantienes el resumen del proyecto «${input.project.name}» del usuario de Lente: qué es, quién participa, en qué estado está, los compromisos abiertos y las decisiones recientes. Reescríbelo con lo nuevo; un hecho nuevo reemplaza al que cambia. Máximo ${DIGEST_BUDGET.brief} caracteres.\n${RULES}` },
+      { role: "user", content: material },
+    ],
+    digestSchema,
+    "project_brief",
+  );
+  return { scope: "brief", periodStart: input.project.id, ...parse(raw, shown, DIGEST_BUDGET.brief), createdAt: now };
+}
+
+/** A person's card: who they are to the wearer, what they own and the commitments between them, with sources. */
+export async function writePersonCard(input: { previous?: Digest; person: string; meetings: Meeting[] }, call: DigestCall, now: number): Promise<Digest> {
+  const shown = new Set(input.meetings.map((m) => m.id));
+  if (input.previous) shown.add(digestId(input.previous));
+  const material = [input.previous ? `[${digestId(input.previous)}] Ficha anterior:\n${input.previous.text}` : "Ficha anterior: (ninguna)", `Reuniones donde aparece ${input.person}:`, ...input.meetings.map(cardBlock)].join("\n\n");
+  const raw = await call(
+    [
+      { role: "system", content: `Escribe la ficha de ${input.person} para el usuario de Lente: quién es para el usuario, de qué se encarga y los compromisos entre los dos. Máximo ${DIGEST_BUDGET.person} caracteres.\n${RULES}` },
+      { role: "user", content: material },
+    ],
+    digestSchema,
+    "person_card",
+  );
+  return { scope: "person", periodStart: personKey(input.person), ...parse(raw, shown, DIGEST_BUDGET.person), createdAt: now };
+}
+
+/** A person's card key: the folded name without the PROBE- tag of synthetic data. */
+export const personKey = (name: string): string => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** The projects whose brief is due: they changed, and their last brief is older than `BRIEF_EVERY_MS`. */
+export function briefsDue(changed: ReadonlySet<string>, lastWritten: ReadonlyMap<string, number>, now: number): string[] {
+  return [...changed].filter((p) => now - (lastWritten.get(p) ?? 0) >= BRIEF_EVERY_MS);
+}
+
+/** People seen in at least `PERSON_MIN_EPISODES` episodes (speakers with a name, or card people), with those episodes. */
+export function recurringPeople(meetings: readonly Meeting[], isName: (s: string) => boolean): Map<string, Meeting[]> {
+  const seen = new Map<string, { name: string; meetings: Set<Meeting> }>();
+  for (const m of meetings) {
+    const names = new Set([...m.turns.map((t) => t.speaker ?? ""), ...(m.cards ?? []).flatMap((c) => c.people.map((p) => p.name))].filter(isName));
+    for (const n of names) {
+      const k = personKey(n);
+      const e = seen.get(k) ?? { name: n, meetings: new Set() };
+      e.meetings.add(m);
+      seen.set(k, e);
+    }
+  }
+  return new Map([...seen.values()].filter((e) => e.meetings.size >= PERSON_MIN_EPISODES).map((e) => [e.name, [...e.meetings]]));
 }

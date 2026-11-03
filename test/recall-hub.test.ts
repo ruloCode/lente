@@ -101,8 +101,11 @@ test("a question streams its text, then its chip, then done, from one model call
   assert.equal(done.ok, true);
   assert.equal(done.found, true);
   assert.equal(done.answer, ANSWER);
-  assert.deepEqual(bodies.map((b) => b.url), ["/responses"], "exactly one model call, no plan call");
-  const sent = JSON.parse(bodies[0]!.body);
+  // Background consolidation (people cards on open) may call the model too; the answer is one Responses call and no plan or ask call.
+  const answerCalls = bodies.filter((b) => b.url === "/responses");
+  assert.equal(answerCalls.length, 1, "exactly one answer call");
+  assert.ok(!bodies.some((b) => /"name":"(lookup_plan|ask)"/.test(b.body)), "no plan call");
+  const sent = JSON.parse(answerCalls[0]!.body);
   assert.equal(sent.stream, true);
   assert.equal(sent.input[0].role, "developer");
   assert.match(sent.input[2].content, /RECUPERADO:[\s\S]*18,000 dollars/);
@@ -120,7 +123,8 @@ test("an aggregate shows «searching» at once and takes the deep path", { timeo
   const events = await askStream({ question: "Resume todo lo que hablé con Ana este mes" });
   assert.equal(events[0]!.event, "searching");
   assert.equal(events.at(-1)!.event, "done");
-  assert.ok(bodies.every((b) => b.url === "/chat/completions"), "the deep path's structured call, not the fast one");
+  assert.ok(!bodies.some((b) => b.url === "/responses"), "not the fast path's answer call");
+  assert.ok(bodies.some((b) => /"name":"ask"/.test(b.body)), "the deep path's structured call");
 });
 
 test("inside a project, no model call sees another project's lines", { timeout: 30_000 }, async () => {

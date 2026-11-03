@@ -119,7 +119,14 @@ export function dayUnits(day: string, entries: readonly DayEntry[], meetings: re
 
 export const factUnit = (f: Fact, projectId: string | undefined): MemoryUnit => ({ id: `F${f.id}`, kind: "fact", at: f.createdAt, ...(projectId ? { projectId } : {}), refs: `${f.meetingId}:${f.evidence[0] ?? ""}`, text: `Recuerdo confirmado: ${oneLine(f.text)}` });
 
-export const digestUnit = (d: Digest): MemoryUnit => ({ id: digestId(d), kind: "digest", at: Date.parse(`${d.periodStart}T12:00:00Z`), text: oneLine(d.text) });
+/** A digest as a unit; a brief belongs to its project, and briefs and people cards date from when they were written. */
+export const digestUnit = (d: Digest): MemoryUnit => ({
+  id: digestId(d),
+  kind: "digest",
+  at: d.scope === "brief" || d.scope === "person" ? d.createdAt : Date.parse(`${d.periodStart}T12:00:00Z`),
+  ...(d.scope === "brief" ? { projectId: d.periodStart } : {}),
+  text: oneLine(d.text),
+});
 
 /** The chip for a unit. */
 export function sourceOf(u: MemoryUnit, timeZone: string): AskSource {
@@ -137,7 +144,7 @@ export function sourceOf(u: MemoryUnit, timeZone: string): AskSource {
     case "card":
       return { id: u.id, kind: "fact", label: "Recuerdo", at: u.at, ...(meetingId ? { meetingId } : {}), ...(turnId ? { turnId } : {}) };
     case "digest":
-      return { id: u.id, kind: "fact", label: u.id.startsWith("profile:") ? "Tu perfil" : `Resumen · ${u.id.split(":")[1] ?? ""}`, at: u.at };
+      return { id: u.id, kind: "fact", label: u.id.startsWith("profile:") ? "Tu perfil" : u.id.startsWith("brief:") ? "Resumen del proyecto" : u.id.startsWith("person:") ? "Ficha de la persona" : `Resumen · ${u.id.split(":")[1] ?? ""}`, at: u.at };
   }
 }
 

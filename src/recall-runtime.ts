@@ -6,8 +6,9 @@
 
 import type { AskMessage, AskSource } from "./ask.ts";
 import type { ChatMessage } from "./chat.ts";
+import { cardUnits } from "./cards.ts";
 import type { DayEntry } from "./day-log.ts";
-import type { Digest } from "./digests.ts";
+import { type Digest, personKey } from "./digests.ts";
 import type { Fact } from "./fact-store.ts";
 import type { Meeting } from "./meetings.ts";
 import { MemoryIndex, type MemoryUnit } from "./memory-index.ts";
@@ -20,6 +21,7 @@ export const HOT_DAYS = 92;
 const PREFIX_MEETINGS = 5;
 const PREFIX_DAY_DIGESTS = 7;
 const PREFIX_WEEK_DIGESTS = 4;
+const PREFIX_PEOPLE = 12;
 
 type Awaitable<T> = T | Promise<T>;
 
@@ -33,10 +35,12 @@ export interface RecallRecords {
   keptFacts(): Fact[];
   /** Accounts: the profile and the newest day and week digests, for the whole memory's prefix. */
   digests?(): Promise<{ profile?: Digest; days: Digest[]; weeks: Digest[] }>;
+  /** Project briefs and people cards (add-memory-engine 6.5). */
+  memoryDigests?(): Promise<{ briefs: Digest[]; people: Digest[] }>;
 }
 
 /** A diarization label ("A", "B") or a placeholder is not a person. */
-const isName = (s: string | undefined): s is string => Boolean(s && s.length >= 3 && !/^(?:alguien|tú|tu|you|speaker \w+)$/i.test(s));
+export const isName = (s: string | undefined): s is string => Boolean(s && s.length >= 3 && !/^(?:alguien|tú|tu|you|speaker \w+)$/i.test(s));
 
 export class RecallRuntime {
   readonly index = new MemoryIndex();
@@ -72,6 +76,7 @@ export class RecallRuntime {
     }
     for (const [d, entries] of byDay) this.indexDay(d, entries);
     this.indexFacts();
+    await this.indexDigests();
     this.todaySig = `${localDay(this.now(), this.timeZone)}:${this.records.today().length}:`;
   }
 
@@ -95,7 +100,7 @@ export class RecallRuntime {
     for (const [id, m] of meetings) if (this.meetingSigs.get(id) !== this.sigOf(m)) this.dirtyMeetings.add(id);
     for (const id of this.meetingSigs.keys()) if (!meetings.has(id)) this.dirtyMeetings.add(id);
     for (const id of this.dirtyMeetings) {
-      this.index.removeWhere((u) => u.id === id || u.id.startsWith(`s${id}:`));
+      this.index.removeWhere((u) => u.id === id || u.id.startsWith(`s${id}:`) || u.id.startsWith(`c${id}:`));
       this.meetingSigs.delete(id);
       const m = meetings.get(id);
       if (m) this.indexMeeting(m);
@@ -118,14 +123,29 @@ export class RecallRuntime {
     if (this.factsDirty || factsSig !== this.factsSig) this.indexFacts();
     this.factsSig = factsSig;
     this.factsDirty = false;
+    await this.indexDigests();
+  }
+
+  private digestsSig = "";
+  /** Briefs and people cards as units, re-read when one was rewritten. */
+  private async indexDigests(): Promise<void> {
+    if (!this.records.memoryDigests) return;
+    const { briefs, people } = await this.records.memoryDigests();
+    const sig = [...briefs, ...people].map((d) => `${d.scope}:${d.periodStart}@${d.createdAt}`).join(",");
+    if (sig === this.digestsSig) return;
+    this.digestsSig = sig;
+    this.index.removeWhere((u) => u.id.startsWith("brief:") || u.id.startsWith("person:"));
+    for (const d of [...briefs, ...people]) this.index.add(digestUnit(d));
   }
 
   private sigOf(m: Meeting): string {
-    return `${m.turns.length}|${m.title}|${m.endedAt ?? ""}|${m.notes ? notesText(m).length : ""}|${this.projects.get(m.id) ?? ""}`;
+    const cards = (m.cards ?? []).map((c) => c.facts.map((f) => `${f.id}${f.validTo ?? ""}`).join(",")).join(";");
+    return `${m.turns.length}|${m.title}|${m.endedAt ?? ""}|${m.notes ? notesText(m).length : ""}|${this.projects.get(m.id) ?? ""}|${cards}`;
   }
 
   private indexMeeting(m: Meeting): void {
-    for (const u of meetingUnits(m, this.projects.get(m.id))) this.index.add(u);
+    for (const u of [...meetingUnits(m, this.projects.get(m.id)), ...cardUnits(m, this.projects.get(m.id))]) this.index.add(u);
+    for (const c of m.cards ?? []) for (const p of c.people) if (isName(p.name)) this.people.add(p.name);
     this.meetingSigs.set(m.id, this.sigOf(m));
     for (const t of m.turns) if (isName(t.speaker)) this.people.add(t.speaker);
     for (const c of m.notes?.commitments ?? []) if (c.owner !== "you" && isName(c.owner)) this.people.add(c.owner);
@@ -144,6 +164,11 @@ export class RecallRuntime {
 
   /** The memory prefix: digests for the whole memory (accounts), else the newest meetings' notes and the kept facts; in a project only its own. */
   async prefix(projectId: string | undefined): Promise<MemoryUnit[]> {
+    const memory = this.records.memoryDigests ? await this.records.memoryDigests() : { briefs: [], people: [] };
+    // People cards for the people of this scope (all of them for the whole memory), newest first.
+    const inProject = new Set(this.records.meetings().filter((m) => projectId === undefined || this.projects.get(m.id) === projectId).flatMap((m) => [...m.turns.map((t) => t.speaker ?? ""), ...(m.cards ?? []).flatMap((c) => c.people.map((p) => p.name))]).filter(isName).map((n) => personKey(n)));
+    const people = memory.people.filter((p) => inProject.has(p.periodStart)).sort((a, b) => b.createdAt - a.createdAt).slice(0, PREFIX_PEOPLE).map(digestUnit);
+    const brief = projectId ? memory.briefs.filter((b) => b.periodStart === projectId).map(digestUnit) : [];
     const inScope = (m: Meeting) => projectId === undefined || this.projects.get(m.id) === projectId;
     const notes = this.records.meetings().filter((m) => inScope(m) && m.notes && notesText(m)).sort((a, b) => b.startedAt - a.startedAt).slice(0, PREFIX_MEETINGS);
     const noteUnits = notes.map((m) => meetingUnits(m, this.projects.get(m.id))[0]!).filter((u) => u.kind === "notes");
@@ -151,9 +176,9 @@ export class RecallRuntime {
     if (projectId === undefined && this.records.digests) {
       const d = await this.records.digests();
       const digests = [...(d.profile ? [d.profile] : []), ...d.weeks.slice(0, PREFIX_WEEK_DIGESTS).reverse(), ...d.days.slice(0, PREFIX_DAY_DIGESTS).reverse()].map(digestUnit);
-      if (digests.length) return [...digests, ...facts];
+      if (digests.length) return [...digests, ...people, ...facts];
     }
-    return [...facts, ...noteUnits.reverse()];
+    return [...brief, ...people, ...facts, ...noteUnits.reverse()];
   }
 }
 

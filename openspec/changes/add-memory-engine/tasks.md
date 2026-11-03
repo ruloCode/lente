@@ -44,16 +44,16 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 6. Consolidation while recording
 
-- [ ] 6.1 `src/consolidate.ts` `segmentTurns` (8 s pause, speaker change after 20 s, 40 s cap, episode boundary) and live indexing of segments in the runtime. Tests on synthetic turn streams (`pnpm test`)
-- [ ] 6.2 Card fields in the notes call (`people`, `facts` with `about`/`evidence`/`valid_from`/`supersedes`, `keys_es`, `keys_en`) with validation of evidence and of `supersedes` against the facts shown; the call is shown the 5 best-matching existing facts. Tests with a fake model that invents ids (`pnpm test`)
-- [ ] 6.3 Window cards every 10 minutes of speech in long episodes, skipped under idle pause or the silence gate; card ids `c<episode>:<n>`. Tests with a fake clock (`pnpm test`)
-- [ ] 6.4 Validity: supersession closes `validTo`; "now" questions filter to valid facts; kept facts never superseded. Tests for the launch-date scenario in the spec (`pnpm test`)
-- [ ] 6.5 Briefs and people cards: new digest scopes `brief` and `person`, debounced brief rewrite (30 min) and nightly people cards; in the usage meter and under the spend cap. Tests with a fake model and fake clock (`pnpm test`)
+- [x] 6.1 `src/consolidate.ts` `segmentTurns` (8 s pause, speaker change after 20 s, 40 s cap, episode boundary) and live indexing of segments in the runtime. Tests on synthetic turn streams (`pnpm test`)
+- [x] 6.2 Card fields in the notes call (`people`, `facts` with `about`/`evidence`/`valid_from`/`supersedes`, `keys_es`, `keys_en`) with validation of evidence and of `supersedes` against the facts shown; the call is shown the 5 best-matching existing facts. Tests with a fake model that invents ids (`pnpm test`)
+- [x] 6.3 Window cards every 10 minutes of speech in long episodes, skipped under idle pause or the silence gate; card ids `c<episode>:<n>`. Tests with a fake clock (`pnpm test`)
+- [x] 6.4 Validity: supersession closes `validTo`; "now" questions filter to valid facts; kept facts never superseded. Tests for the launch-date scenario in the spec (`pnpm test`)
+- [x] 6.5 Briefs and people cards: new digest scopes `brief` and `person`, debounced brief rewrite (30 min) and nightly people cards; in the usage meter and under the spend cap. Tests with a fake model and fake clock (`pnpm test`)
 - [ ] 6.6 One 2-hour synthetic Solo grabar run through `scripts/fake-clip.ts`: cards per window, cost per recorded hour and time from window close to card; record in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
 ## 7. Persistence
 
-- [ ] 7.1 Migration `memory_snapshots` (user_id, shard, format_version, encoder, built_through, blob sealed) and `memory_cards` with RLS and no policy for `anon`/`authenticated`; stores in `src/supabase-stores.ts` and file stores in `src/stores.ts` (`data/memory/`). Tests with the fake PostgREST that no plain column carries content (`pnpm test`)
+- [ ] 7.1 Migration `memory_snapshots` (user_id, shard, format_version, encoder, built_through, blob sealed), and `memory_digests` gaining the `brief` and `person` scopes with a `subject` column (cards live in the sealed meeting record, design decision 5), with RLS and no policy for `anon`/`authenticated`; stores in `src/supabase-stores.ts` and file stores in `src/stores.ts` (`data/memory/`). Tests with the fake PostgREST that no plain column carries content (`pnpm test`)
 - [ ] 7.2 Runtime open: load hot snapshots, replay records after `built_through`, write behind every 10 minutes when dirty and at eviction before the key is dropped; cold shards loaded lazily (LRU 3). Tests for open, replay, eviction order and a corrupt snapshot falling back to a rebuild (`pnpm test`)
 - [ ] 7.3 Forget a day and delete a meeting remove units, cards and facts from the index and storage and queue brief and people rewrites. Tests (`pnpm test`)
 - [ ] 7.4 Apply the migration on the project, run the security advisors, check with the publishable key that it returns no rows [key:SUPABASE_SECRET_KEY]
