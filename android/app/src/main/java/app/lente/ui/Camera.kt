@@ -122,27 +122,21 @@ fun Camera(vm: LenteViewModel, hub: HubState) {
 @Composable
 private fun TopCapsule(live: Boolean, onBack: () -> Unit) {
     val c = Lente.c
-    val shape = RoundedCornerShape(50)
+    // A flat header card over the photo: back on the left, the small centred title, the camera's state on the right.
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp).height(52.dp)
-            .shadow(if (c.dark) 0.dp else 8.dp, shape).clip(shape).background(c.glass).border(0.5.dp, c.line, shape).padding(horizontal = 6.dp),
+            .clip(RoundedCornerShape(12.dp)).background(c.surface).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        PlainIcon(Glyph.Back, "Volver a Ahora", Modifier.testTag("camera-back"), onBack)
+        Text("En vivo", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
         Row(
-            Modifier.clip(shape).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 8.dp).semantics { contentDescription = "Volver a Ahora" }.testTag("camera-back"),
+            Modifier.padding(end = 6.dp).clip(RoundedCornerShape(8.dp)).background(c.raised).padding(horizontal = 10.dp, vertical = 5.dp).testTag("camera-state"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Glyph.Back, c.accent, size = 22.dp)
-            Text("Ahora", style = Type.body, color = c.accent)
-        }
-        Text("En vivo", style = Type.headline, color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-        Row(
-            Modifier.clip(shape).background(if (live) c.liveFill else c.raised).padding(horizontal = 12.dp, vertical = 6.dp).testTag("camera-state"),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Dot(if (live) c.onLive else c.muted)
+            Dot(if (live) c.live else c.muted, 7.dp)
             Spacer(Modifier.width(6.dp))
-            Text(if (live) "CÁMARA" else "DETENIDA", style = Type.label, color = if (live) c.onLive else c.ink)
+            Text(if (live) "Cámara" else "Detenida", style = Type.caption, color = c.ink)
         }
     }
 }
@@ -151,22 +145,21 @@ private fun TopCapsule(live: Boolean, onBack: () -> Unit) {
 @Composable
 private fun SaysCard(read: View?, pinned: Boolean, live: Boolean, modifier: Modifier, onFollow: () -> Unit) {
     val c = Lente.c
-    val shape = RoundedCornerShape(24.dp)
     Row(
-        modifier.fillMaxWidth().shadow(if (c.dark) 0.dp else 12.dp, shape).clip(shape).background(c.surface).border(0.5.dp, c.line, shape).padding(16.dp).testTag("camera-says"),
+        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).padding(16.dp).testTag("camera-says"),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(Modifier.size(48.dp).clip(CircleShape).background(c.accentFill), contentAlignment = Alignment.Center) { Icon(Glyph.Speaker, c.onAccent) }
+        Box(Modifier.size(44.dp).clip(CircleShape).background(c.ink), contentAlignment = Alignment.Center) { Icon(Glyph.Speaker, c.bg, size = 20.dp) }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(if (pinned) "Lente dijo:" else "Lente dice:", style = Type.headline, color = c.ink)
+            Text(if (pinned) "Lente dijo" else "Lente dice", style = Type.caption, color = c.muted)
             val text = read?.text?.ifBlank { null }
             Text(
                 text ?: if (live) "Mirando… la primera descripción llega en uno o dos segundos." else "Toca Mirar para una foto, o Reanudar.",
                 style = Type.body, color = if (text != null) c.ink else c.muted, modifier = Modifier.padding(top = 2.dp).testTag("camera-text"),
             )
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (pinned) Text("Volver a lo último", style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = c.accent, modifier = Modifier.clickable(onClick = onFollow).padding(vertical = 4.dp).testTag("camera-follow"))
+                if (pinned) Text("Volver a lo último", style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = c.ink, modifier = Modifier.clickable(onClick = onFollow).padding(vertical = 4.dp).testTag("camera-follow"))
                 Spacer(Modifier.weight(1f))
                 read?.ms?.let { Text("%.1f s".format(it / 1000.0), style = Type.measured, color = c.muted) }
             }
@@ -178,12 +171,12 @@ private fun SaysCard(read: View?, pinned: Boolean, live: Boolean, modifier: Modi
 private fun ReadRow(read: View, elapsed: String, selected: Boolean, onClick: () -> Unit) {
     val c = Lente.c
     Row(
-        Modifier.fillMaxWidth().background(if (selected) c.tag else Color.Transparent).clickable(onClick = onClick).padding(horizontal = Lente.gutter, vertical = 10.dp).testTag("camera-read"),
+        Modifier.fillMaxWidth().background(if (selected) c.raised else Color.Transparent).clickable(onClick = onClick).padding(horizontal = Lente.gutter, vertical = 10.dp).testTag("camera-read"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(elapsed, style = Type.measured.copy(fontSize = Type.callout.fontSize), color = c.muted, modifier = Modifier.width(48.dp))
         val thumb = rememberPhoto(read.photo, sample = 4)
-        Box(Modifier.size(width = 84.dp, height = 60.dp).clip(RoundedCornerShape(10.dp)).background(c.raised)) {
+        Box(Modifier.size(width = 84.dp, height = 60.dp).clip(RoundedCornerShape(6.dp)).background(c.raised)) {
             if (thumb != null) Image(thumb, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
         Spacer(Modifier.width(12.dp))
@@ -197,11 +190,11 @@ private fun ReadRow(read: View, elapsed: String, selected: Boolean, onClick: () 
 private fun Controls(vm: LenteViewModel, hub: HubState, narrate: Boolean, modifier: Modifier) {
     val c = Lente.c
     val s = hub.status
-    val shape = RoundedCornerShape(50)
+    val shape = RoundedCornerShape(12.dp)
     Box(modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, c.bg, c.bg)))) {
         Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = Lente.gutter, end = Lente.gutter, top = 28.dp, bottom = 8.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
-                Modifier.weight(1f).padding(top = 8.dp).height(56.dp).clip(shape).background(c.surface).border(0.5.dp, c.line, shape)
+                Modifier.weight(1f).padding(top = 8.dp).height(56.dp).clip(shape).background(c.surface)
                     .clickable(role = Role.Switch) { vm.setNarrateLive(!narrate) }.padding(start = 16.dp, end = 8.dp)
                     .semantics { contentDescription = "Narrar en voz alta" }.testTag("camera-narrate"),
                 verticalAlignment = Alignment.CenterVertically,
@@ -213,23 +206,24 @@ private fun Controls(vm: LenteViewModel, hub: HubState, narrate: Boolean, modifi
                 )
                 Switch(
                     checked = narrate, onCheckedChange = vm::setNarrateLive,
-                    colors = SwitchDefaults.colors(checkedTrackColor = c.accentFill, checkedThumbColor = c.onAccent, uncheckedTrackColor = c.track, uncheckedThumbColor = c.thumb, uncheckedBorderColor = c.line),
+                    colors = SwitchDefaults.colors(checkedTrackColor = c.ink, checkedThumbColor = c.bg, checkedBorderColor = c.ink, uncheckedTrackColor = c.track, uncheckedThumbColor = c.thumb, uncheckedBorderColor = c.line),
                 )
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
-                    Modifier.size(72.dp).shadow(if (c.dark) 0.dp else 10.dp, CircleShape).clip(CircleShape).background(if (s.clip) c.accentFill else c.raised)
+                    Modifier.size(72.dp).clip(CircleShape).background(if (s.clip) c.ink else c.raised)
                         .clickable(enabled = s.clip) { vm.look() }.semantics { contentDescription = "Mirar otra vez" }.testTag("camera-look"),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Glyph.Camera, if (s.clip) c.onAccent else c.muted, size = 30.dp) }
+                ) { Icon(Glyph.Camera, if (s.clip) c.bg else c.muted, size = 30.dp) }
                 Text("Mirar otra vez", style = Type.caption, color = c.ink, modifier = Modifier.padding(top = 4.dp))
             }
             Box(
-                Modifier.weight(1f).padding(top = 8.dp).height(56.dp).clip(shape).background(c.surface).border(0.5.dp, c.line, shape)
+                // The final action in ink; Reanudar in white.
+                Modifier.weight(1f).padding(top = 8.dp).height(56.dp).clip(shape).background(if (s.live) c.ink else c.surface)
                     .clickable(enabled = s.clip) { if (s.live) vm.stopCamera() else vm.setLive(true) }.testTag("camera-stop"),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (s.live) "Detener" else "Reanudar", style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = if (s.live) c.live else c.accent)
+                Text(if (s.live) "Detener" else "Reanudar", style = Type.callout.copy(fontWeight = FontWeight.SemiBold), color = if (s.live) c.bg else c.ink)
             }
         }
     }

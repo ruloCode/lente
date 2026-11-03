@@ -28,7 +28,8 @@ val LocalPalette = staticCompositionLocalOf { Palette(Tokens.LIGHT, false) }
 
 object Lente {
     val c: Palette @Composable get() = LocalPalette.current
-    val card = 20.dp
+    /** Cards are flat with small corners (add-home-dock's look): grey ground, white cards, ink for what acts. */
+    val card = 12.dp
     val gutter = 16.dp
     val tap = 48.dp
     val row = 52.dp

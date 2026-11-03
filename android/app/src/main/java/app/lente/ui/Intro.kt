@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.lente.LenteViewModel
 import app.lente.Link
@@ -83,9 +84,9 @@ fun Intro(vm: LenteViewModel, onDone: () -> Unit) {
     Column(Modifier.fillMaxSize().background(c.bg).statusBarsPadding().navigationBarsPadding().imePadding().testTag("intro")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (i in 0 until STEPS) Box(Modifier.height(6.dp).width(if (i == step) 22.dp else 6.dp).clip(CircleShape).background(if (i <= step) c.accentFill else c.line))
+                for (i in 0 until STEPS) Box(Modifier.height(6.dp).width(if (i == step) 22.dp else 6.dp).clip(CircleShape).background(if (i <= step) c.ink else c.line))
             }
-            if (step >= 2) Text("Omitir", style = Type.headline, color = c.accent, modifier = Modifier.clickable(onClick = onDone).padding(8.dp).testTag("intro-skip"))
+            if (step >= 2) Text("Omitir", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink, modifier = Modifier.clickable(onClick = onDone).padding(8.dp).testTag("intro-skip"))
         }
         AnimatedContent(step, Modifier.weight(1f), transitionSpec = {
             (slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(300))) togetherWith (slideOutHorizontally(tween(220)) { -it / 4 } + fadeOut(tween(180)))
@@ -96,7 +97,7 @@ fun Intro(vm: LenteViewModel, onDone: () -> Unit) {
                         Spacer(Modifier.height(32.dp))
                         androidx.compose.foundation.Image(
                             androidx.compose.ui.res.painterResource(R.drawable.art_app_icon), contentDescription = "Lente",
-                            modifier = Modifier.size(104.dp).clip(RoundedCornerShape(24.dp)),
+                            modifier = Modifier.size(104.dp).clip(RoundedCornerShape(22.dp)),
                         )
                         Heading("Te dice qué decir, justo cuando te preguntan.")
                         Body("Lente escucha la reunión desde el clip de tus lentes. Cuando alguien te hace una pregunta, aquí aparece una frase para responder: DILO.")

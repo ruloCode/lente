@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/** A white (or dark grey) card with the kit's soft shadow; flat in dark mode. */
+/** A white (or dark grey) card, flat, with small corners, on the grey ground. */
 @Composable
 fun Card(modifier: Modifier = Modifier, padding: PaddingValues = PaddingValues(Lente.gutter), content: @Composable ColumnScope.() -> Unit) {
     val c = Lente.c
@@ -65,7 +65,6 @@ fun Card(modifier: Modifier = Modifier, padding: PaddingValues = PaddingValues(L
     Column(
         modifier
             .fillMaxWidth()
-            .then(if (c.dark) Modifier else Modifier.shadow(6.dp, shape, ambientColor = Color(0x14101828), spotColor = Color(0x1A101828)))
             .clip(shape)
             .background(c.surface)
             .padding(padding),
@@ -73,11 +72,11 @@ fun Card(modifier: Modifier = Modifier, padding: PaddingValues = PaddingValues(L
     )
 }
 
-/** Small uppercase section title over a group, as in iOS settings. */
+/** A quiet section title over a group, in sentence case («General»). */
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: String? = null) {
-    Row(modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text.uppercase(), style = Type.label, color = Lente.c.muted, modifier = Modifier.weight(1f))
+    Row(modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 16.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(if (text == text.uppercase()) text.lowercase().replaceFirstChar { it.uppercase() } else text, style = Type.caption, color = Lente.c.muted, modifier = Modifier.weight(1f))
         if (trailing != null) Text(trailing, style = Type.measured, color = Lente.c.muted)
     }
 }
@@ -125,20 +124,63 @@ fun ListRow(
 }
 
 @Composable
-fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, hint: String? = null, tag: String? = null) {
+fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, hint: String? = null, tag: String? = null, leading: (@Composable () -> Unit)? = null) {
     val c = Lente.c
-    ListRow(title, hint = hint, modifier = (if (tag != null) Modifier.testTag(tag) else Modifier).clickable(role = Role.Switch) { onChange(!checked) }) {
+    ListRow(title, hint = hint, leading = leading, modifier = (if (tag != null) Modifier.testTag(tag) else Modifier).clickable(role = Role.Switch) { onChange(!checked) }) {
         Switch(
             checked = checked,
             onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = c.accentFill, checkedThumbColor = c.onAccent, uncheckedTrackColor = c.track, uncheckedThumbColor = c.thumb, uncheckedBorderColor = c.line),
+            colors = SwitchDefaults.colors(checkedTrackColor = c.ink, checkedThumbColor = c.bg, checkedBorderColor = c.ink, uncheckedTrackColor = c.track, uncheckedThumbColor = c.thumb, uncheckedBorderColor = c.line),
         )
     }
 }
 
-/** iOS-style segmented control: a track with a sliding thumb. */
+/**
+ * Tabs for a screen's main views (add-home-dock): a quiet track and the chosen tab as a solid ink pill,
+ * flat, with no shadow. In dark mode the ink is light, so the pill inverts with the theme.
+ */
+@Composable
+fun Tabs(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier, label: String = "") {
+    val c = Lente.c
+    Row(
+        modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(10.dp)).background(c.raised).padding(3.dp).semantics { contentDescription = label },
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        for ((key, text) in options) {
+            val on = key == selected
+            val bg by animateColorAsState(if (on) c.ink else c.raised, spring(stiffness = 700f), label = "tab")
+            Box(
+                Modifier.weight(1f).fillMaxWidth().height(32.dp).clip(RoundedCornerShape(8.dp)).background(bg)
+                    .semantics { this.selected = on; role = Role.Tab }.clickable { onSelect(key) }.testTag("tab-$key"),
+                contentAlignment = Alignment.Center,
+            ) { Text(text, style = Type.callout.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal), color = if (on) c.bg else c.muted, maxLines = 1) }
+        }
+    }
+}
+
+/** A choice between a few options; it looks like Tabs (the chosen one as an ink pill) and keeps its `seg-` tags. */
 @Composable
 fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier, label: String = "") {
+    val c = Lente.c
+    Row(
+        modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(10.dp)).background(c.raised).padding(3.dp).semantics { contentDescription = label },
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        for ((key, text) in options) {
+            val on = key == selected
+            val bg by animateColorAsState(if (on) c.ink else c.raised, spring(stiffness = 700f), label = "seg")
+            Box(
+                Modifier.weight(1f).fillMaxWidth().height(32.dp).clip(RoundedCornerShape(8.dp)).background(bg)
+                    .semantics { this.selected = on; role = Role.Tab }.clickable { onSelect(key) }.testTag("seg-$key"),
+                contentAlignment = Alignment.Center,
+            ) { Text(text, style = Type.callout.copy(fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal), color = if (on) c.bg else c.muted, maxLines = 1) }
+        }
+    }
+}
+
+/** The kit's earlier segmented control (a white thumb on a track), kept for reference; nothing uses it. */
+@Composable
+private fun SegmentedThumb(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier, label: String = "") {
     val c = Lente.c
     Row(
         modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp)).background(c.track).padding(3.dp).semantics { contentDescription = label },
@@ -172,16 +214,17 @@ enum class Tone { Primary, Plain, Live, Quiet }
 fun Button(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, tone: Tone = Tone.Primary, enabled: Boolean = true, glyph: Glyph? = null) {
     val c = Lente.c
     val (bg, fg) = when (tone) {
-        Tone.Primary -> c.accentFill to c.onAccent
+        Tone.Primary -> c.ink to c.bg
+        // Secondary actions mostly sit inside white cards, so they take the quiet grey fill to stay visible.
         Tone.Plain -> c.raised to c.ink
         Tone.Live -> c.liveFill to c.onLive
-        Tone.Quiet -> Color.Transparent to c.accent
+        Tone.Quiet -> Color.Transparent to c.ink
     }
     val alpha by animateFloatAsState(if (enabled) 1f else 0.45f, label = "btn")
     Row(
         modifier
             .heightIn(min = Lente.tap)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(bg.copy(alpha = bg.alpha * alpha))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 18.dp),
@@ -203,8 +246,8 @@ fun ConfirmButton(text: String, confirm: String, onConfirm: () -> Unit, modifier
 
 /** The rounded tag that names a card: DILO, EN PANTALLA… */
 @Composable
-fun Tag(text: String, modifier: Modifier = Modifier, bg: Color = Lente.c.tag, fg: Color = Lente.c.accent) {
-    Text(text, style = Type.label, color = fg, modifier = modifier.clip(RoundedCornerShape(8.dp)).background(bg).padding(horizontal = 8.dp, vertical = 4.dp))
+fun Tag(text: String, modifier: Modifier = Modifier, bg: Color = Lente.c.raised, fg: Color = Lente.c.ink) {
+    Text(text, style = Type.label, color = fg, modifier = modifier.clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 8.dp, vertical = 3.dp))
 }
 
 @Composable
@@ -229,7 +272,7 @@ fun Empty(text: String, modifier: Modifier = Modifier, action: String? = null, a
         Text(text, style = Type.callout, color = Lente.c.muted)
         if (action != null && onAction != null) {
             Spacer(Modifier.height(8.dp))
-            Text(action, style = Type.headline, color = Lente.c.accent, modifier = Modifier.clickable(onClick = onAction).padding(vertical = 6.dp))
+            Text(action, style = Type.headline, color = Lente.c.ink, modifier = Modifier.clickable(onClick = onAction).padding(vertical = 6.dp))
         }
     }
 }
@@ -246,7 +289,8 @@ fun Field(value: String, onChange: (String) -> Unit, placeholder: String, modifi
         shape = RoundedCornerShape(12.dp),
         keyboardOptions = KeyboardOptions(imeAction = if (onDone != null) ImeAction.Done else ImeAction.Default),
         keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
-        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.accent, unfocusedBorderColor = c.line, focusedContainerColor = c.surface, unfocusedContainerColor = c.surface, cursorColor = c.accent),
+        // A grey well, so the field reads inside a white card and on the grey ground alike; ink when focused.
+        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = c.ink, unfocusedBorderColor = Color.Transparent, focusedContainerColor = c.raised, unfocusedContainerColor = c.raised, cursorColor = c.ink),
         modifier = modifier.fillMaxWidth().then(if (tag != null) Modifier.testTag(tag) else Modifier),
     )
 }
@@ -260,10 +304,10 @@ fun One(text: String, style: TextStyle, color: Color, modifier: Modifier = Modif
 @Composable
 fun Notice(text: String, modifier: Modifier = Modifier, action: String? = null, tag: String? = null, onAction: (() -> Unit)? = null) {
     val c = Lente.c
-    Surface(modifier.fillMaxWidth().then(if (tag != null) Modifier.testTag(tag) else Modifier), shape = RoundedCornerShape(16.dp), color = c.surface, border = BorderStroke(1.dp, c.line)) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(modifier.fillMaxWidth().then(if (tag != null) Modifier.testTag(tag) else Modifier), shape = RoundedCornerShape(12.dp), color = c.surface) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(text, style = Type.callout, color = c.ink, modifier = Modifier.weight(1f))
-            if (action != null && onAction != null) Text(action, style = Type.headline, color = c.accent, modifier = Modifier.padding(start = 12.dp).clickable(onClick = onAction).padding(vertical = 6.dp))
+            if (action != null && onAction != null) Text(action, style = Type.headline, color = c.ink, modifier = Modifier.padding(start = 12.dp).clickable(onClick = onAction).padding(vertical = 6.dp))
         }
     }
 }

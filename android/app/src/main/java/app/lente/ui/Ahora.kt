@@ -138,7 +138,7 @@ private fun RestingHero(vm: LenteViewModel, hub: HubState) {
             Image(
                 androidx.compose.ui.res.painterResource(if (c.dark) app.lente.R.drawable.art_clip_dark else app.lente.R.drawable.art_clip),
                 contentDescription = "El clip de Lente en unos lentes", contentScale = ContentScale.Fit,
-                modifier = Modifier.weight(0.5f).aspectRatio(1.25f).clip(RoundedCornerShape(16.dp)),
+                modifier = Modifier.weight(0.5f).aspectRatio(1.25f).clip(RoundedCornerShape(12.dp)),
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(0.5f)) {
@@ -164,7 +164,7 @@ private fun ListeningHero(vm: LenteViewModel, hub: HubState) {
     val level by animateFloatAsState((hub.level / 3000f).coerceIn(0f, 1f), spring(stiffness = 300f), label = "level")
     val breath = rememberInfiniteTransition(label = "orb")
     val pulse by breath.animateFloat(0f, 1f, infiniteRepeatable(tween(2200), RepeatMode.Restart), label = "pulse")
-    val ring = if (s.clip || s.listening) c.accent else c.muted
+    val ring = if (s.clip || s.listening) c.ink else c.muted
     Card(padding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp)) {
         Box(Modifier.fillMaxWidth().height(196.dp), contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(196.dp)) {
@@ -205,11 +205,11 @@ private fun QuickAction(label: String, glyph: Glyph, enabled: Boolean, pressed: 
     val c = Lente.c
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.semantics(mergeDescendants = true) {}) {
         Box(
-            Modifier.size(64.dp).shadow(if (c.dark || !enabled) 0.dp else 8.dp, CircleShape).clip(CircleShape)
-                .background(if (pressed) c.accentFill else c.surface).border(0.5.dp, if (pressed) androidx.compose.ui.graphics.Color.Transparent else c.line, CircleShape)
+            Modifier.size(64.dp).clip(CircleShape)
+                .background(if (pressed) c.ink else c.surface)
                 .clickable(enabled = enabled, onClick = onClick).testTag(tag).semantics { contentDescription = label },
             contentAlignment = Alignment.Center,
-        ) { Icon(glyph, when { pressed -> c.onAccent; enabled -> c.accent; else -> c.muted }, size = 26.dp) }
+        ) { Icon(glyph, when { pressed -> c.bg; enabled -> c.ink; else -> c.muted }, size = 26.dp) }
         Text(label, style = Type.caption.copy(fontWeight = FontWeight.Medium), color = if (enabled) c.ink else c.muted, modifier = Modifier.padding(top = 6.dp))
     }
 }
@@ -234,7 +234,7 @@ private fun TodayCard(hub: HubState) {
 private fun Stat(glyph: Glyph, value: String, label: String, modifier: Modifier) {
     val c = Lente.c
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(glyph, c.accent, size = 20.dp)
+        Icon(glyph, c.ink, size = 20.dp)
         Text(value, style = Type.title, color = c.ink, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
         Text(label, style = Type.caption, color = c.muted)
     }
@@ -248,7 +248,7 @@ private fun LiveBar(vm: LenteViewModel, hub: HubState, modifier: Modifier = Modi
     val c = Lente.c
     val now = ticker()
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.liveFill).clickable { vm.openLive() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("live-bar"),
+        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.liveFill).clickable { vm.openLive() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("live-bar"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Dot(c.onLive)
@@ -349,7 +349,7 @@ private fun ViewCard(vm: LenteViewModel, hub: HubState) {
         }
         if (s.mode != "camera") Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Cámara apagada para ahorrar batería. Mirar toma una sola foto.", style = Type.callout, color = c.muted, modifier = Modifier.weight(1f))
-            Text("Activar", style = Type.headline, color = c.accent, modifier = Modifier.padding(start = 12.dp).clickable { vm.setMode("camera") }.padding(vertical = 6.dp).testTag("cam-on"))
+            Text("Activar", style = Type.headline, color = c.ink, modifier = Modifier.padding(start = 12.dp).clickable { vm.setMode("camera") }.padding(vertical = 6.dp).testTag("cam-on"))
         }
     }
 }
@@ -359,8 +359,8 @@ fun TimelineRow(e: Entry, wearer: String) {
     val c = Lente.c
     val chip = Copy.speaker(e, wearer)
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp).testTag("row-${e.kind}"), verticalAlignment = Alignment.Top) {
-        Box(Modifier.width(30.dp).height(24.dp).clip(RoundedCornerShape(8.dp)).background(if (chip == "Tú") c.tag else c.raised), contentAlignment = Alignment.Center) {
-            Text(chip, style = Type.label, color = if (chip == "Tú") c.accent else c.ink, maxLines = 1)
+        Box(Modifier.width(30.dp).height(24.dp).clip(RoundedCornerShape(6.dp)).background(if (chip == "Tú") c.ink else c.raised), contentAlignment = Alignment.Center) {
+            Text(chip, style = Type.label, color = if (chip == "Tú") c.bg else c.ink, maxLines = 1)
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {

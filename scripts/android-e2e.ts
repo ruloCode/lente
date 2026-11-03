@@ -3,7 +3,7 @@
 // The hub's data starts from a synthetic, made-up meeting (no real meeting data) so the memory
 // sections have something to show. Passes when, on the device:
 //   - the app connects and shows the clip the clip emulator stands in for,
-//   - the listening pill opens Grabar and «Empezar a grabar» starts listening on the hub,
+//   - the round button opens Grabar, and «Empezar a grabar» starts listening on the hub and opens the live view,
 //   - the DILO line appears and the hub records the app's acknowledgement (the `phone` stage),
 //   - Reuniones opens the seeded meeting, Acciones approves its action, Memoria keeps its fact,
 //   - with the clip gone, "Usar el teléfono" in Dispositivos makes the phone the device: audio reaches the hub and
@@ -247,12 +247,13 @@ step("the clip emulator connects");
 let clip = startClip();
 await waitFor("the clip connected", (n) => n.id === "device" && n.text === "Clip conectado");
 
-step("the pill opens Grabar and «Empezar a grabar» starts listening");
-// The pill opens the record sheet (add-record-sheet 1.2), whose button starts the session. The sheet is its
-// own window, outside Shell's testTagsAsResourceId, so its button is found by its text.
+step("the round button opens the options and «Empezar a grabar» records into the live view");
+// add-home-dock: the round button opens Grabar (mode, capture, project) with the hub's mode and the microphone
+// chosen. The sheet is its own window, outside Shell's testTagsAsResourceId, so its button is found by its text.
 await tapId("pill");
 tap(await waitFor("«Empezar a grabar»", (n) => n.text === "Empezar a grabar"));
 await hubSaw("listening start", (e) => e.kind === "status" && e.listening === true);
+await waitFor("the live view", (n) => n.id === "live-tabs");
 
 step("the DILO line appears and the app acknowledges it");
 const dilo = await waitFor("the DILO line", (n) => n.id === "dilo-text" && n.text === STUB_REPLY);

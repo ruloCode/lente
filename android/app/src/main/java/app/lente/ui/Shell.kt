@@ -1,5 +1,9 @@
 package app.lente.ui
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -77,17 +81,19 @@ fun LenteRoot(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit) {
     }
 }
 
-private val MENU_MAIN = listOf(
-    Triple(Screen.Ahora, "Ahora", Glyph.Wave),
+private val MENU_MEMORY = listOf(
     Triple(Screen.Proyectos, "Proyectos", Glyph.Doc),
     Triple(Screen.Reuniones, "Reuniones", Glyph.Calendar),
     Triple(Screen.Acciones, "Acciones", Glyph.Tasks),
     Triple(Screen.Memoria, "Memoria", Glyph.Brain),
+)
+private val MENU_GENERAL = listOf(
+    Triple(Screen.Ahora, "Inicio", Glyph.Wave),
+    Triple(Screen.Conexiones, "Conexiones", Glyph.Link),
     Triple(Screen.Dispositivos, "Dispositivos", Glyph.Device),
     Triple(Screen.Ajustes, "Ajustes", Glyph.Gear),
 )
 private val MENU_SOON = listOf(
-    Triple(Screen.Pronto("conexiones"), "Conexiones", Glyph.Link),
     Triple(Screen.Pronto("equipo"), "Equipo", Glyph.Team),
 )
 
@@ -98,6 +104,7 @@ fun title(s: Screen) = when (s) {
     Screen.Acciones -> "Acciones"
     Screen.Memoria -> "Memoria"
     Screen.Proyectos -> "Proyectos"
+    Screen.Conexiones -> "Conexiones"
     is Screen.Proyecto -> "Proyecto"
     Screen.Dispositivos -> "Dispositivos"
     Screen.Ajustes -> "Ajustes"
@@ -125,16 +132,23 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
 
     val usePhone: () -> Unit = { askMicrophone { ok -> if (ok) vm.startPhone() } }
 
+    // The menu button sits top right, so the menu slides in from the right (add-home-dock): the drawer runs
+    // right to left, and its sheet and the screen behind it go back to left to right.
+    val ltr: @Composable (@Composable () -> Unit) -> Unit = { content -> CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr, content = content) }
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
     ModalNavigationDrawer(
         drawerState = drawer,
         scrimColor = c.scrim,
         gesturesEnabled = !live && !camera && !voice,
         drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = c.surface, drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp), modifier = Modifier.width(304.dp)) {
-                Drawer(vm, screen) { target -> vm.go(target); scope.launch { drawer.close() } }
+            ltr {
+                ModalDrawerSheet(drawerContainerColor = c.bg, drawerShape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp), modifier = Modifier.width(312.dp)) {
+                    Drawer(vm, screen, go = { target -> vm.go(target); scope.launch { drawer.close() } }, close = { scope.launch { drawer.close() } })
+                }
             }
         },
     ) {
+        ltr {
         Box(Modifier.fillMaxSize().background(c.bg)) {
             if (screen == Screen.Ahora) Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
@@ -149,7 +163,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
-                TopBar(title(screen), s, onMenu = { scope.launch { drawer.open() } }, onPill = vm::toggleListening, back = if (screen is Screen.Reunion || screen is Screen.Proyecto) ({ vm.back() }) else null)
+                TopBar(title(screen), s, onMenu = { scope.launch { drawer.open() } }, onPill = vm::toggleListening, back = { vm.back() })
                 if (link is Link.Reconnecting) Notice("Reconectando con la computadora…", Modifier.padding(horizontal = Lente.gutter, vertical = 4.dp), tag = "reconnecting")
                 if (link == Link.Unpaired) Notice("Este hub pide emparejar el teléfono. Abre Ajustes para escribir el código.", Modifier.padding(horizontal = Lente.gutter, vertical = 4.dp))
                 Box(Modifier.weight(1f)) {
@@ -161,6 +175,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                             Screen.Acciones -> Acciones(vm, hub)
                             Screen.Memoria -> Memoria(vm, hub)
                             Screen.Proyectos -> ProyectosScreen(vm)
+                            Screen.Conexiones -> Conexiones(vm)
                             is Screen.Proyecto -> ProyectoScreen(vm)
                             Screen.Dispositivos -> Dispositivos(vm, hub, usePhone)
                             Screen.Ajustes -> Ajustes(vm, hub, replayIntro)
@@ -182,23 +197,19 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 VoiceScreen(vm)
             }
         }
+        }
+    }
     }
 }
 
 @Composable
 private fun TopBar(title: String, s: app.lente.core.Status, onMenu: () -> Unit, onPill: () -> Unit, back: (() -> Unit)?) {
     val c = Lente.c
-    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier.size(44.dp).shadow(if (c.dark) 0.dp else 4.dp, CircleShape).clip(CircleShape).background(c.glass).border(0.5.dp, c.line, CircleShape)
-                .clickable(onClick = back ?: onMenu).semantics { contentDescription = if (back != null) "Volver" else "Abrir menú" }.testTag(if (back != null) "back" else "menu"),
-            contentAlignment = Alignment.Center,
-        ) { Icon(if (back != null) Glyph.Back else Glyph.Menu, c.ink) }
-        Spacer(Modifier.width(12.dp))
-        if (title == "Lente") Mark(size = 26.dp)
-        if (title == "Lente") Spacer(Modifier.width(8.dp))
-        One(title, Type.title, c.ink, Modifier.weight(1f).testTag("screen-title"))
-        Pill(s, onPill)
+    // As every screen of the app now: back on the left, a small centred title, the menu on the right (it opens from there).
+    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        PlainIcon(Glyph.Back, "Volver", Modifier.testTag("back")) { back?.invoke() }
+        Text(title, style = Type.headline.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Normal), color = c.ink, maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f).testTag("screen-title"))
+        PlainIcon(Glyph.Menu, "Abrir menú", Modifier.testTag("menu"), onMenu)
     }
 }
 
@@ -224,35 +235,63 @@ fun Pill(s: app.lente.core.Status, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Drawer(vm: LenteViewModel, current: Screen, go: (Screen) -> Unit) {
+private fun Drawer(vm: LenteViewModel, current: Screen, go: (Screen) -> Unit, close: () -> Unit) {
     val c = Lente.c
     val hub by vm.hub.collectAsState()
     val s = hub.status
-    Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).statusBarsPadding().padding(vertical = 16.dp)) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Mark(size = 30.dp)
+    val chosen = { t: Screen -> current == t || (t == Screen.Reuniones && current is Screen.Reunion) || (t == Screen.Proyectos && current is Screen.Proyecto) }
+    Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Mark(size = 22.dp)
             Spacer(Modifier.width(10.dp))
-            Text("Lente", style = Type.title, color = c.ink)
+            Text("Lente", style = Type.headline, color = c.ink, modifier = Modifier.weight(1f))
+            PlainIcon(Glyph.Close, "Cerrar el menú", Modifier.testTag("menu-close"), close)
         }
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Dot(if (s.clip) c.ok else c.muted)
-            Spacer(Modifier.width(8.dp))
-            Text(Copy.device(s), style = Type.callout, color = c.muted)
+        // The device first: what hears now, and the way to its details.
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).clickable { go(Screen.Dispositivos) }.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Dot(if (s.clip) c.ok else c.muted, 10.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(Copy.device(s), style = Type.body, color = c.ink)
+                Text(if (s.listening) "Escuchando" else "En pausa", style = Type.caption, color = c.muted)
+            }
+            Icon(Glyph.ChevronRight, c.muted, size = 18.dp)
         }
-        Spacer(Modifier.height(12.dp))
-        for ((target, label, glyph) in MENU_MAIN) {
-            val badge = if (target == Screen.Acciones) hub.actions.pending.size else 0
-            DrawerRow(label, glyph, current == target || (target == Screen.Reuniones && current is Screen.Reunion) || (target == Screen.Proyectos && current is Screen.Proyecto), badge) { go(target) }
+        MenuLabel("Tu memoria")
+        MenuCard {
+            MENU_MEMORY.forEachIndexed { i, (target, label, glyph) ->
+                if (i > 0) Hairline()
+                DrawerRow(label, glyph, chosen(target), badge = if (target == Screen.Acciones) hub.actions.pending.size else 0) { go(target) }
+            }
         }
-        Text("PRONTO", style = Type.label, color = c.muted, modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 6.dp))
-        for ((target, label, glyph) in MENU_SOON) DrawerRow(label, glyph, current == target, soon = true) { go(target) }
+        MenuLabel("General")
+        MenuCard {
+            MENU_GENERAL.forEachIndexed { i, (target, label, glyph) ->
+                if (i > 0) Hairline()
+                val waiting = if (target == Screen.Conexiones) vm.jobs.value?.let(app.lente.core.Connections::waiting) ?: 0 else 0
+                DrawerRow(label, glyph, chosen(target), badge = waiting, tag = if (target == Screen.Ahora) "Ahora" else label) { go(target) }
+            }
+        }
+        MenuLabel("Pronto")
+        MenuCard {
+            MENU_SOON.forEachIndexed { i, (target, label, glyph) ->
+                if (i > 0) Hairline()
+                DrawerRow(label, glyph, chosen(target), soon = true) { go(target) }
+            }
+        }
         val recent = hub.meetings.take(3)
         if (recent.isNotEmpty()) {
-            Text("RECIENTES", style = Type.label, color = c.muted, modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 6.dp))
-            for (m in recent) {
-                Row(Modifier.fillMaxWidth().clickable { go(Screen.Reunion(m.id)) }.padding(horizontal = 28.dp, vertical = 10.dp)) {
-                    One(m.displayTitle, Type.callout, c.ink, Modifier.weight(1f))
-                    Text(app.lente.core.Format.hhmm(m.startedAt), style = Type.measured, color = c.muted)
+            MenuLabel("Recientes")
+            MenuCard {
+                recent.forEachIndexed { i, m ->
+                    if (i > 0) Hairline()
+                    Row(Modifier.fillMaxWidth().clickable { go(Screen.Reunion(m.id)) }.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                        One(m.displayTitle, Type.body, c.ink, Modifier.weight(1f))
+                        Text(app.lente.core.Format.hhmm(m.startedAt), style = Type.measured, color = c.muted, modifier = Modifier.padding(start = 8.dp))
+                    }
                 }
             }
         }
@@ -261,18 +300,32 @@ private fun Drawer(vm: LenteViewModel, current: Screen, go: (Screen) -> Unit) {
 }
 
 @Composable
-private fun DrawerRow(label: String, glyph: Glyph, selected: Boolean, badge: Int = 0, soon: Boolean = false, onClick: () -> Unit) {
+private fun MenuLabel(text: String) = Text(text, style = Type.caption, color = Lente.c.muted, modifier = Modifier.padding(start = 6.dp, top = 10.dp))
+
+@Composable
+private fun MenuCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) =
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Lente.c.surface), content = content)
+
+/** One row of the menu: glyph, name, and at the end the pending count, Pronto, or a dot when it is the screen in view. */
+@Composable
+private fun DrawerRow(label: String, glyph: Glyph, selected: Boolean, badge: Int = 0, soon: Boolean = false, tag: String = label, onClick: () -> Unit) {
     val c = Lente.c
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp).height(Lente.row).clip(RoundedCornerShape(14.dp))
-            .background(if (selected) c.tag else c.surface).clickable(onClick = onClick).padding(horizontal = 16.dp).testTag("nav-$label"),
+        Modifier.fillMaxWidth().height(Lente.row).clickable(onClick = onClick).padding(horizontal = 16.dp).testTag("nav-$tag")
+            .semantics { this.selected = selected },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(glyph, if (selected) c.accent else c.ink)
+        Icon(glyph, if (soon) c.muted else c.ink, size = 20.dp)
         Spacer(Modifier.width(14.dp))
-        Text(label, style = Type.body.copy(fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal), color = if (selected) c.accent else c.ink, modifier = Modifier.weight(1f))
-        if (badge > 0) Text("$badge", style = Type.label, color = c.onAccent, modifier = Modifier.clip(CircleShape).background(c.accentFill).padding(horizontal = 8.dp, vertical = 3.dp))
-        if (soon) Text("Pronto", style = Type.caption, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.raised).padding(horizontal = 8.dp, vertical = 2.dp))
+        Text(label, style = Type.body.copy(fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal), color = if (soon) c.muted else c.ink, modifier = Modifier.weight(1f))
+        when {
+            soon -> Text("Pronto", style = Type.caption, color = c.muted, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(c.raised).padding(horizontal = 8.dp, vertical = 2.dp))
+            else -> {
+                if (badge > 0) Text("$badge", style = Type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = c.bg, modifier = Modifier.padding(end = 8.dp).clip(CircleShape).background(c.ink).padding(horizontal = 8.dp, vertical = 2.dp))
+                if (selected) Box(Modifier.padding(end = 8.dp).size(6.dp).clip(CircleShape).background(c.ink))
+                Icon(Glyph.ChevronRight, c.muted, size = 16.dp)
+            }
+        }
     }
 }
 

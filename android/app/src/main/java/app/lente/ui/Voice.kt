@@ -65,28 +65,32 @@ fun VoiceScreen(vm: LenteViewModel) {
     val uri = LocalUriHandler.current
     val turn = view.current
     Column(Modifier.fillMaxSize().background(c.bg).statusBarsPadding().navigationBarsPadding().testTag("voice")) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Hablar con Lente", style = Type.title, color = c.ink)
+        // Header: close on the left, a small centred title with the source under it, an empty slot on the right.
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            PlainIcon(Glyph.Close, "Terminar", Modifier.testTag("voice-close")) { vm.closeVoice() }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Hablar con Lente", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink)
                 VoiceEvents.sourceLabel(view.source).takeIf { it.isNotEmpty() }?.let { Text(it, style = Type.caption, color = c.muted, modifier = Modifier.testTag("voice-source")) }
             }
-            RoundIcon(Glyph.Close, "Terminar", Modifier.testTag("voice-close")) { vm.closeVoice() }
+            Spacer(Modifier.size(44.dp))
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(24.dp))
             StateOrb(view.phase)
             Spacer(Modifier.height(14.dp))
-            Text(VoiceEvents.label(view.phase), style = Type.headline, color = if (view.phase == VoicePhase.Speaking) c.accent else c.ink, modifier = Modifier.testTag("voice-state"))
+            Text(VoiceEvents.label(view.phase), style = Type.headline, color = c.ink, modifier = Modifier.testTag("voice-state"))
             Spacer(Modifier.height(28.dp))
-            // What the wearer is saying now, or what they said last.
+            // What the wearer is saying now, or what they said last, in a white card.
             val said = view.partial.ifBlank { turn?.heard.orEmpty() }
-            if (said.isNotBlank()) Text("«$said»", style = Type.body, color = if (view.partial.isNotBlank()) c.ink else c.muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().testTag("voice-heard"))
+            if (said.isNotBlank()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).padding(16.dp)) {
+                Text("Tú", style = Type.caption, color = c.muted)
+                Text("«$said»", style = Type.body, color = if (view.partial.isNotBlank()) c.ink else c.muted, modifier = Modifier.fillMaxWidth().testTag("voice-heard"))
+            }
             if (turn != null && turn.reply.isNotEmpty() && !turn.cancelled) {
-                Spacer(Modifier.height(20.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                    Box(Modifier.padding(top = 2.dp)) { Mark(size = 24.dp) }
-                    Spacer(Modifier.width(12.dp))
-                    Text(turn.reply.joinToString(" "), style = Type.body.copy(fontWeight = FontWeight.Medium), color = c.ink, modifier = Modifier.weight(1f).testTag("voice-reply"))
+                Spacer(Modifier.height(10.dp))
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).padding(16.dp)) {
+                    Text("Lente", style = Type.caption, color = c.muted)
+                    Text(turn.reply.joinToString(" "), style = Type.body.copy(fontWeight = FontWeight.Medium), color = c.ink, modifier = Modifier.fillMaxWidth().testTag("voice-reply"))
                 }
             }
             if (turn != null && (turn.tools.isNotEmpty() || turn.sources.isNotEmpty())) {
@@ -107,13 +111,12 @@ fun VoiceScreen(vm: LenteViewModel) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.Center) {
             Segmented(listOf("free" to "Manos libres", "hold" to "Mantener para hablar"), if (handsFree) "free" else "hold", { vm.setVoiceHandsFree(it == "free") }, label = "Cómo hablar")
         }
-        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!handsFree) Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) { HoldToTalk(vm) }
+        // The pair at the bottom: white Pausar or Reanudar, ink Terminar.
+        Row(Modifier.fillMaxWidth().padding(start = Lente.gutter, end = Lente.gutter, top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val paused = view.phase == VoicePhase.Paused
-            RoundIcon(if (paused) Glyph.Play else Glyph.Pause, if (paused) "Reanudar" else "Pausar", Modifier.testTag("voice-pause")) { vm.voicePause() }
-            Spacer(Modifier.weight(1f))
-            if (!handsFree) HoldToTalk(vm) else Spacer(Modifier.size(84.dp))
-            Spacer(Modifier.weight(1f))
-            RoundIcon(Glyph.Stop, "Terminar", Modifier.testTag("voice-end")) { vm.closeVoice() }
+            PairButton(if (paused) "Reanudar" else "Pausar", if (paused) Glyph.Play else Glyph.Pause, primary = false, Modifier.weight(1f).testTag("voice-pause")) { vm.voicePause() }
+            PairButton("Terminar", Glyph.Stop, primary = true, Modifier.weight(1f).testTag("voice-end")) { vm.closeVoice() }
         }
     }
 }
@@ -124,12 +127,26 @@ private fun sourceGlyph(s: AskSource): Glyph = when (s.kind) { "web" -> Glyph.Li
 private fun Chip(glyph: Glyph, label: String, tag: String, onClick: (() -> Unit)? = null) {
     val c = Lente.c
     Row(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(c.tag).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 10.dp, vertical = 7.dp).testTag(tag),
+        Modifier.clip(RoundedCornerShape(8.dp)).background(c.surface).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 10.dp, vertical = 7.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(glyph, c.accent, size = 16.dp)
+        Icon(glyph, c.ink, size = 16.dp)
         Spacer(Modifier.width(6.dp))
-        Text(label, style = Type.caption, color = c.accent, maxLines = 1)
+        Text(label, style = Type.caption, color = c.ink, maxLines = 1)
+    }
+}
+
+/** One of the two equal buttons at the bottom: white for the secondary action, ink for the final one. */
+@Composable
+private fun PairButton(label: String, glyph: Glyph, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val c = Lente.c
+    Row(
+        modifier.height(52.dp).clip(RoundedCornerShape(12.dp)).background(if (primary) c.ink else c.surface).clickable(onClick = onClick).semantics { contentDescription = label },
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(glyph, if (primary) c.bg else c.ink, size = 18.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(label, style = Type.headline.copy(fontWeight = FontWeight.Normal), color = if (primary) c.bg else c.ink)
     }
 }
 
@@ -141,11 +158,13 @@ private fun StateOrb(phase: VoicePhase) {
     val period = when (phase) { VoicePhase.Thinking -> 520; VoicePhase.Speaking -> 360; else -> 1600 }
     val pulse by t.animateFloat(0.92f, 1.06f, infiniteRepeatable(tween(period), RepeatMode.Reverse), label = "pulse")
     val still = phase == VoicePhase.Paused || phase == VoicePhase.Ended || phase == VoicePhase.Connecting
-    val fill = when (phase) { VoicePhase.Speaking -> c.accentFill; VoicePhase.Thinking -> c.accent; else -> c.tag }
+    // Monochrome: ink while Lente thinks or speaks, a quiet grey while it listens or waits.
+    val active = phase == VoicePhase.Speaking || phase == VoicePhase.Thinking
+    val fill = if (active) c.ink else c.surface
     Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.size(180.dp).scale(if (still) 1f else pulse * 1.04f).alpha(0.35f).clip(CircleShape).background(fill))
-        Box(Modifier.size(132.dp).scale(if (still) 1f else pulse).clip(CircleShape).background(fill).border(0.5.dp, c.line, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(when (phase) { VoicePhase.Speaking -> Glyph.Speaker; VoicePhase.Thinking -> Glyph.Sparkle; VoicePhase.Paused -> Glyph.Pause; else -> Glyph.Mic }, if (phase == VoicePhase.Speaking || phase == VoicePhase.Thinking) c.onAccent else c.accent, size = 44.dp)
+        Box(Modifier.size(132.dp).scale(if (still) 1f else pulse).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+            Icon(when (phase) { VoicePhase.Speaking -> Glyph.Speaker; VoicePhase.Thinking -> Glyph.Sparkle; VoicePhase.Paused -> Glyph.Pause; else -> Glyph.Mic }, if (active) c.bg else c.ink, size = 44.dp)
         }
     }
 }
@@ -155,8 +174,8 @@ private fun StateOrb(phase: VoicePhase) {
 private fun HoldToTalk(vm: LenteViewModel) {
     val c = Lente.c
     Box(
-        Modifier.size(84.dp).clip(CircleShape).background(c.accentFill).testTag("voice-hold").semantics { contentDescription = "Mantén presionado para hablar" }
+        Modifier.size(84.dp).clip(CircleShape).background(c.ink).testTag("voice-hold").semantics { contentDescription = "Mantén presionado para hablar" }
             .pointerInput(Unit) { detectTapGestures(onPress = { vm.voiceHold(true); tryAwaitRelease(); vm.voiceHold(false) }) },
         contentAlignment = Alignment.Center,
-    ) { Icon(Glyph.Mic, c.onAccent, size = 34.dp) }
+    ) { Icon(Glyph.Mic, c.bg, size = 34.dp) }
 }

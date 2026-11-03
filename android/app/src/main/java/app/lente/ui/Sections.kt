@@ -1,5 +1,14 @@
 package app.lente.ui
 
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
+
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -85,25 +94,37 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
     var byProject by rememberSaveable { mutableStateOf(false) }
     var projectFilter by rememberSaveable { mutableStateOf<String?>(null) }
     var whoFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    val add = { if (newTask.isNotBlank()) { vm.addTask(newTask.trim(), newWho); newTask = "" } }
-    LazyColumn(Modifier.fillMaxSize().testTag("acciones"), contentPadding = PaddingValues(Lente.gutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item("new") {
-            Card {
-                Field(newTask, { newTask = it }, "Nueva tarea", tag = "task-new", onDone = add)
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Segmented(TaskOwners.ORDER.map { it to when (it) { "lente" -> "Lente"; "other" -> "Otro"; else -> "Tú" } }, newWho, { newWho = it }, Modifier.weight(1f), label = "Quién la hace")
-                    Spacer(Modifier.width(10.dp))
-                    Button("Agregar", add, enabled = newTask.isNotBlank())
-                }
+    var showDone by rememberSaveable { mutableStateOf(false) }
+    var adding by rememberSaveable { mutableStateOf(false) }
+    val add = { if (newTask.isNotBlank()) { vm.addTask(newTask.trim(), newWho); newTask = ""; adding = false } }
+    // A new task is written in a sheet, opened from the small + beside the view controls.
+    if (adding) SettingsSheet("Nueva tarea", { adding = false }) {
+        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+        LaunchedEffect(Unit) { kotlinx.coroutines.delay(150); runCatching { focus.requestFocus() } }
+        Field(newTask, { newTask = it }, "Qué hay que hacer", Modifier.focusRequester(focus), tag = "task-new", onDone = add)
+        Text("Quién la hace", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp))
+        Segmented(TaskOwners.ORDER.map { it to when (it) { "lente" -> "Lente"; "other" -> "Otro"; else -> "Tú" } }, newWho, { newWho = it }, label = "Quién la hace")
+        Button("Agregar", add, Modifier.fillMaxWidth().testTag("task-add"), enabled = newTask.isNotBlank())
+    }
+    LazyColumn(Modifier.fillMaxSize().testTag("acciones"), contentPadding = PaddingValues(start = Lente.gutter, end = Lente.gutter, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // At a glance: what is yours, what waits for approval, what is done.
+        item("summary") {
+            val mine = a.tasks.count { !it.done && it.who == "me" }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TaskStat("$mine", "Te tocan", Modifier.weight(1f), on = whoFilter == "me") { whoFilter = if (whoFilter == "me") null else "me" }
+                TaskStat("${a.pending.size}", "Por aprobar", Modifier.weight(1f))
+                TaskStat("${done.size}", "Hechas", Modifier.weight(1f)) { showDone = !showDone }
             }
         }
         if (a.pending.isNotEmpty()) {
             item { SectionTitle("Por aprobar", trailing = "${a.pending.size}") }
             items(a.pending, key = { it.id }) { p -> ActionCard(p) { approve, args -> vm.decide(p.id, approve, args) { mailto -> runCatching { ctx.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(mailto))) } } } }
         }
+        if (a.tasks.none { !it.done }) item("add-first") {
+            Button("Nueva tarea", { adding = true }, Modifier.fillMaxWidth().testTag("task-open"), tone = Tone.Plain, glyph = Glyph.Plus)
+        }
         if (a.tasks.any { !it.done }) item("view") {
-            TaskViewControls(a.tasks, byProject, { byProject = it }, projectFilter, { projectFilter = it }, whoFilter, { whoFilter = it })
+            TaskViewControls(a.tasks, byProject, { byProject = it }, projectFilter, { projectFilter = it }, whoFilter, { whoFilter = it }, onAdd = { adding = true })
         }
         val shown = TaskOwners.filter(a.tasks, projectFilter, whoFilter)
         val groups = if (byProject) TaskOwners.byProject(shown) else TaskOwners.groups(shown).map { (who, list) -> TaskOwners.heading(who) to list }
@@ -122,9 +143,26 @@ fun Acciones(vm: LenteViewModel, hub: HubState) {
             }
         }
         if (done.isNotEmpty()) {
-            item { SectionTitle("Hechas", trailing = "${done.size}") }
-            item { Group { done.forEachIndexed { i, t -> if (i > 0) Hairline(); TaskRow(t, onToggle = { vm.taskDone(t.id, false) }, onOwner = null, onDelete = { vm.deleteTask(t.id) }) } } }
+            item("done-toggle") {
+                Group(Modifier.padding(top = 6.dp)) {
+                    ListRow("Hechas", value = "${done.size}", leading = { Icon(Glyph.Check, c.ink, size = 20.dp) }, chevron = false, onClick = { showDone = !showDone }, trailing = { Icon(if (showDone) Glyph.ChevronDown else Glyph.ChevronRight, c.muted, Modifier.padding(start = 6.dp), size = 16.dp) })
+                    if (showDone) done.forEach { t -> Hairline(); TaskRow(t, onToggle = { vm.taskDone(t.id, false) }, onOwner = null, onDelete = { vm.deleteTask(t.id) }) }
+                }
+            }
         }
+    }
+}
+
+/** One count at the top of Tareas; tappable when it filters or opens something, outlined in ink while it filters. */
+@Composable
+private fun TaskStat(value: String, label: String, modifier: Modifier = Modifier, on: Boolean = false, onClick: (() -> Unit)? = null) {
+    val c = Lente.c
+    Column(
+        modifier.clip(RoundedCornerShape(12.dp)).background(c.surface).then(if (on) Modifier.border(1.5.dp, c.ink, RoundedCornerShape(12.dp)) else Modifier)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(value, style = Type.title.copy(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"), color = c.ink)
+        Text(label, style = Type.caption, color = c.muted, maxLines = 1)
     }
 }
 
@@ -138,9 +176,18 @@ private fun TaskViewControls(
     setProject: (String?) -> Unit,
     who: String?,
     setWho: (String?) -> Unit,
+    onAdd: () -> Unit,
 ) {
+    val c = Lente.c
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Segmented(listOf("who" to "Por quién", "project" to "Por proyecto"), if (byProject) "project" else "who", { setByProject(it == "project") }, label = "Ordenar tareas")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Segmented(listOf("who" to "Por quién", "project" to "Por proyecto"), if (byProject) "project" else "who", { setByProject(it == "project") }, Modifier.weight(1f), label = "Ordenar tareas")
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(38.dp).clip(CircleShape).background(c.ink).clickable(onClick = onAdd).semantics { contentDescription = "Nueva tarea" }.testTag("task-open"),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Glyph.Plus, c.bg, size = 20.dp) }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 label = project?.let { it.ifEmpty { TaskOwners.NO_PROJECT } } ?: "Todos los proyectos",
@@ -164,13 +211,13 @@ private fun TaskViewControls(
 private fun FilterChip(label: String, active: Boolean, options: List<Pair<String?, String>>, tag: String, onPick: (String?) -> Unit) {
     val c = Lente.c
     var open by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(8.dp)
     Box {
         Row(
-            Modifier.clip(shape).background(if (active) c.tag else c.surface).border(0.5.dp, c.line, shape).clickable { open = true }.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).testTag(tag),
+            Modifier.clip(shape).background(if (active) c.ink else c.surface).clickable { open = true }.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).testTag(tag),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, style = Type.callout, color = if (active) c.accent else c.ink, maxLines = 1)
+            Text(label, style = Type.callout, color = if (active) c.bg else c.ink, maxLines = 1)
             Icon(Glyph.ChevronDown, c.muted, Modifier.padding(start = 2.dp), size = 16.dp)
         }
         DropdownMenu(open, { open = false }) {
@@ -182,16 +229,23 @@ private fun FilterChip(label: String, active: Boolean, options: List<Pair<String
 @Composable
 private fun TaskRow(t: app.lente.core.Task, onToggle: () -> Unit, onOwner: (() -> Unit)?, onDelete: () -> Unit, onAgent: (() -> Unit)? = null) {
     val c = Lente.c
-    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 8.dp, vertical = 6.dp).testTag("task-${t.id}"), verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(t.done, { onToggle() }, colors = CheckboxDefaults.colors(checkedColor = c.accentFill, checkmarkColor = c.onAccent, uncheckedColor = c.muted))
+    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp).testTag("task-${t.id}"), verticalAlignment = Alignment.Top) {
+        // A round check: an ink disc with a tick when done, an empty ring otherwise.
+        Box(
+            Modifier.padding(top = 1.dp).size(22.dp).clip(CircleShape).then(if (t.done) Modifier.background(c.ink) else Modifier.border(1.5.dp, c.line, CircleShape)).clickable(onClick = onToggle),
+            contentAlignment = Alignment.Center,
+        ) { if (t.done) Icon(Glyph.Check, c.bg, size = 14.dp) }
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(t.title, style = Type.body, color = if (t.done) c.muted else c.ink)
-            TaskOwners.context(t).takeIf { it.isNotEmpty() }?.let { Text(it, style = Type.caption, color = c.muted) }
+            Text(t.title, style = Type.body.copy(textDecoration = if (t.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null), color = if (t.done) c.muted else c.ink)
+            // The project, the meeting and the due date, as TaskOwners already words them.
+            val context = TaskOwners.context(t)
+            if (context.isNotEmpty()) Text(context, style = Type.caption, color = c.muted, modifier = Modifier.padding(top = 2.dp))
             // add-agent-bridge: hands the task to the wearer's coding agent, after approval in Por aprobar.
-            if (onAgent != null) Text("Que lo haga un agente", style = Type.caption, color = c.accent, modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onAgent).padding(vertical = 4.dp).testTag("task-agent-${t.id}"))
+            if (onAgent != null) Text("Que lo haga un agente", style = Type.caption.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = c.ink, modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onAgent).padding(vertical = 4.dp).testTag("task-agent-${t.id}"))
         }
         if (onOwner != null) Tag(TaskOwners.tag(t), Modifier.padding(start = 8.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onOwner).testTag("task-owner-${t.id}"))
-        Box(Modifier.padding(start = 4.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onDelete).padding(6.dp).testTag("task-delete-${t.id}")) { Icon(Glyph.Trash, c.muted, size = 18.dp) }
+        Box(Modifier.padding(start = 2.dp).clip(CircleShape).clickable(onClick = onDelete).padding(6.dp).testTag("task-delete-${t.id}").semantics { contentDescription = "Borrar la tarea" }) { Icon(Glyph.Trash, c.muted.copy(alpha = 0.7f), size = 16.dp) }
     }
 }
 
@@ -208,7 +262,7 @@ private fun ActionCard(p: PendingAction, decide: (Boolean, Map<String, String>) 
         Text(Copy.TOOL[p.tool] ?: p.tool, style = Type.headline, color = c.ink)
         if (p.meetingTitle.isNotBlank()) Text(p.meetingTitle, style = Type.caption, color = c.muted)
         for ((k, label) in FIELDS[p.tool] ?: emptyList()) {
-            Text(label.uppercase(), style = Type.label, color = c.muted, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+            Text(label, style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, top = 10.dp, bottom = 4.dp))
             if (editing) Field(values[k] ?: "", { values[k] = it }, label, singleLine = k != "body" && k != "instruction")
             else Text((values[k] ?: "").ifBlank { "—" }, style = Type.callout, color = c.ink)
         }
@@ -270,7 +324,7 @@ fun Memoria(vm: LenteViewModel, hub: HubState) {
                 Group {
                     kept.forEachIndexed { i, f ->
                         if (i > 0) Hairline()
-                        ListRow(f.text, chevron = false) { Text("Borrar", style = Type.callout, color = c.accent, modifier = Modifier.clickable { vm.fact(f.id, false) }.padding(8.dp)) }
+                        ListRow(f.text, chevron = false) { Text("Borrar", style = Type.callout.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = c.ink, modifier = Modifier.clickable { vm.fact(f.id, false) }.padding(8.dp)) }
                     }
                 }
             }
@@ -309,44 +363,87 @@ fun Dispositivos(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
     val s = hub.status
     val capture by Capture.state.collectAsState()
     val phoneOn = capture is Capture.State.On || capture == Capture.State.Starting
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter).padding(bottom = 32.dp).testTag("dispositivos")) {
-        ClipPicture(Modifier.padding(top = 8.dp))
-        SectionTitle("Clip")
-        Group {
-            ListRow(Copy.device(s), leading = { Dot(if (s.clip) c.ok else c.muted, 10.dp) }, value = Copy.mode(s))
-            Hairline(); ListRow("Audio perdido", value = "${s.audioLost}")
-            Hairline(); ListRow("Audio con retraso", value = "${s.audioLate}")
-            Hairline(); ListRow("Grabado hoy", hint = "Audio recibido, guardado solo como texto", value = Format.recorded(hub.recordedMs))
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = Lente.gutter).padding(top = 4.dp, bottom = 24.dp).testTag("dispositivos")) {
+        // The device as one card: its picture, its name and state, and a badge that says at a glance whether it hears.
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surface)) {
+            Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(c.raised, c.surface)))) {
+                ClipPicture(Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                Row(
+                    Modifier.align(Alignment.TopEnd).padding(12.dp).clip(RoundedCornerShape(10.dp)).background(c.surface).padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Dot(if (s.clip) c.ok else c.muted, 8.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (s.clip) "Conectado" else "Desconectado", style = Type.caption.copy(fontWeight = FontWeight.SemiBold), color = c.ink)
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)) {
+                Text(if (s.phoneIsDevice) "Tu teléfono" else "Clip de Lente", style = Type.title.copy(fontWeight = FontWeight.Medium), color = c.ink)
+                Text(
+                    when {
+                        !s.clip -> "Enciéndelo cerca: se conecta solo a la misma red Wi-Fi que el hub."
+                        s.listening -> "${Copy.device(s)} · Escuchando · ${Copy.mode(s)}"
+                        else -> "${Copy.device(s)} · En pausa · ${Copy.mode(s)}"
+                    },
+                    style = Type.callout, color = c.muted,
+                )
+            }
         }
-        if (!s.clip) Text("Enciende el clip: se conecta solo a la misma red Wi-Fi que la computadora.", style = Type.caption, color = c.muted, modifier = Modifier.padding(4.dp, 8.dp))
         SectionTitle("Hoy")
-        Group {
-            ListRow("Transcrito", hint = "Audio enviado a transcribir; en silencio no se envía", value = Format.minutes(hub.spend.audioSeconds))
-            Hairline(); ListRow("Tokens", hint = "Resúmenes y respuestas", value = Format.tokens(hub.spend.tokens))
-            Hairline(); ListRow("Costo aproximado", hint = "Precios de lista", value = Format.usd(hub.spend.usd, hub.spend.unpriced))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile(Format.recorded(hub.recordedMs), "Grabado", Modifier.weight(1f))
+            StatTile(Format.minutes(hub.spend.audioSeconds), "Transcrito", Modifier.weight(1f))
         }
-        SectionTitle("Modo")
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile(Format.tokens(hub.spend.tokens), "Tokens", Modifier.weight(1f))
+            StatTile(Format.usd(hub.spend.usd, hub.spend.unpriced), "Costo aproximado", Modifier.weight(1f))
+        }
+        Text("Solo texto: el audio se transcribe y no se guarda. En silencio no se envía.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
+        SectionTitle("Conexión")
+        Group {
+            val clean = s.audioLost == 0 && s.audioLate == 0
+            ListRow(
+                if (clean) "Sin pérdidas" else "Audio con problemas",
+                hint = if (clean) "Todo el audio llegó a tiempo" else "${s.audioLost} perdidos · ${s.audioLate} con retraso",
+                leading = { Dot(if (clean) c.ok else c.live, 10.dp) },
+            )
+        }
+        SectionTitle("Captura")
         Segmented(listOf("mic" to "Solo audio", "camera" to "Audio y cámara"), s.mode, vm::setMode, label = "Modo del clip")
         SectionTitle("Otras formas de usar Lente")
         Group {
             val hint = when {
-                s.clipIsDevice && !phoneOn -> "El clip está conectado: el teléfono no hace falta."
-                phoneOn -> "Escuchando con el micrófono del teléfono, también con la pantalla apagada"
+                s.clipIsDevice && !phoneOn -> "El clip ya está conectado"
+                phoneOn -> "Escuchando con el teléfono, también con la pantalla apagada"
                 else -> "Su micrófono y cámara, sin el clip"
             }
             ListRow(
                 if (phoneOn) "Dejar de usar el teléfono" else "Usar el teléfono", hint = hint, chevron = false,
-                leading = { Icon(Glyph.Phone, c.ink) },
+                leading = { Icon(Glyph.Phone, c.ink, size = 20.dp) },
                 onClick = if (s.clipIsDevice && !phoneOn) null else ({ if (phoneOn) vm.stopPhone() else usePhone() }),
                 modifier = Modifier.testTag("phone-toggle"),
             )
-            Hairline(); ListRow("Modo computadora", hint = "Meet, Teams o Zoom, sin el clip", value = "Pronto", onClick = { vm.go(Screen.Pronto("computadora")) })
-            Hairline(); ListRow("Hub en la nube", hint = "Funciona fuera de casa", value = "Pronto", onClick = { vm.go(Screen.Pronto("nube")) })
+            Hairline(); ListRow("Modo computadora", hint = "Meet, Teams o Zoom, sin el clip", leading = { Icon(Glyph.Device, c.muted, size = 20.dp) }, titleColor = c.muted, trailing = { SoonTag() }, chevron = false, onClick = { vm.go(Screen.Pronto("computadora")) })
+            Hairline(); ListRow("Hub en la nube", hint = "Funciona fuera de casa", leading = { Icon(Glyph.Link, c.muted, size = 20.dp) }, titleColor = c.muted, trailing = { SoonTag() }, chevron = false, onClick = { vm.go(Screen.Pronto("nube")) })
         }
         SectionTitle("Hub")
-        Group { ListRow(vm.hubAddress ?: "Sin hub", hint = "La computadora donde corre Lente", onClick = { vm.go(Screen.Ajustes) }) }
+        Group { ListRow(vm.hubAddress?.removePrefix("https://")?.removePrefix("http://")?.substringBefore('/')?.let { if (it.endsWith(".modal.run")) "En la nube" else it } ?: "Sin hub", leading = { Icon(Glyph.Link, c.ink, size = 20.dp) }, onClick = { vm.go(Screen.Ajustes) }) }
     }
 }
+
+/** One number of the day in its own tile: the value large, what it is under it. */
+@Composable
+private fun StatTile(value: String, label: String, modifier: Modifier = Modifier) {
+    val c = Lente.c
+    Column(modifier.clip(RoundedCornerShape(12.dp)).background(c.surface).padding(horizontal = 16.dp, vertical = 14.dp)) {
+        Text(value, style = Type.title.copy(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum"), color = c.ink, maxLines = 1)
+        Text(label, style = Type.caption, color = c.muted)
+    }
+}
+
+@Composable
+private fun SoonTag() = Text("Pronto", style = Type.caption, color = Lente.c.muted, modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Lente.c.raised).padding(horizontal = 8.dp, vertical = 2.dp))
 
 /** The clip on a pair of glasses: the transparent render in light, the one lit on black in dark. */
 @Composable
@@ -356,7 +453,7 @@ fun ClipPicture(modifier: Modifier = Modifier) {
         androidx.compose.ui.res.painterResource(if (c.dark) app.lente.R.drawable.art_clip_dark else app.lente.R.drawable.art_clip),
         contentDescription = "El clip de Lente en unos lentes",
         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-        modifier = modifier.fillMaxWidth().aspectRatio(3f / 2f).clip(RoundedCornerShape(Lente.card)),
+        modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f),
     )
 }
 
@@ -367,150 +464,229 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
     val c = Lente.c
     val s = hub.status
     val voice by vm.readAloud.collectAsState()
-    var names by rememberSaveable(s.names) { mutableStateOf(s.names.joinToString(", ")) }
-    var editing by rememberSaveable { mutableStateOf(false) }
-    var address by rememberSaveable { mutableStateOf(vm.hubAddress ?: "") }
-    var code by rememberSaveable { mutableStateOf("") }
-    var linkNote by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    val link by vm.link.collectAsState()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter).padding(bottom = 32.dp).testTag("ajustes")) {
-        if (vm.account.configured || vm.account.signedIn) AccountSection(vm)
+    val theme by vm.theme.collectAsState()
+    val signedIn by vm.signedIn.collectAsState()
+    // Ajustes is a list of rows; what edits opens in a sheet (names, theme, hub, devices, deletes), never inline.
+    var sheet by rememberSaveable { mutableStateOf<String?>(null) }
+    val open = { what: String -> sheet = what }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = Lente.gutter).padding(top = 4.dp, bottom = 24.dp).testTag("ajustes")) {
+        if (vm.account.configured || vm.account.signedIn) AccountSection(vm, open)
         SectionTitle("Tú")
         Group {
-            ListRow("Tu nombre", value = s.names.joinToString(", ").ifBlank { "sin definir" }, onClick = { editing = !editing })
-            if (editing) Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Field(names, { names = it }, "Rulo, Raúl", Modifier.weight(1f), onDone = { vm.saveNames(names); editing = false }, tag = "names")
-                    Spacer(Modifier.width(10.dp))
-                    Button("Guardar", { vm.saveNames(names); editing = false })
-                }
-                Text("Lente te avisa cuando alguien dice uno de estos nombres. Separa los apodos con comas.", style = Type.caption, color = c.muted, modifier = Modifier.padding(top = 6.dp))
-            }
-            Hairline(); ListRow("Tu voz", hint = "Di “Lente, soy …” con el clip puesto", value = if (s.wearer.isNotEmpty()) "Reconocida" else "Sin reconocer")
+            SetRow(Glyph.Person, "Tu nombre", value = s.names.joinToString(", ").ifBlank { "Sin definir" }) { open("names") }
+            Hairline(); SetRow(Glyph.Mic, "Tu voz", hint = "Di «Lente, soy…» con el clip", value = if (s.wearer.isNotEmpty()) "Reconocida" else "Sin reconocer")
         }
-        SectionTitle("Apariencia")
-        val theme by vm.theme.collectAsState()
-        Segmented(listOf("system" to "Sistema", "light" to "Claro", "dark" to "Oscuro"), theme, vm::setTheme, label = "Tema")
         SectionTitle("Lente")
         Group {
-            SwitchRow("Solo grabar", s.recordOnly, { vm.setAssist(if (it) "record" else "assist") }, hint = "Guarda tu día como texto y aprende, sin sugerencias", tag = "set-record")
-            Hairline(); SwitchRow("Leer en voz alta", voice, vm::setReadAloud, hint = "Las respuestas y los resúmenes, en el teléfono", tag = "set-voice")
-            Hairline(); SwitchRow("Contestar todas las preguntas", s.everyQuestion, vm::everyQuestion, hint = "Para pruebas: aunque no sean para ti", tag = "set-all")
+            SwitchRow("Solo grabar", s.recordOnly, { vm.setAssist(if (it) "record" else "assist") }, hint = "Sin sugerencias", tag = "set-record", leading = { RowGlyph(Glyph.Wave) })
+            Hairline(); SwitchRow("Leer en voz alta", voice, vm::setReadAloud, hint = "Respuestas y resúmenes", tag = "set-voice", leading = { RowGlyph(Glyph.Speaker) })
+            Hairline(); SwitchRow("Todas las preguntas", s.everyQuestion, vm::everyQuestion, hint = "Solo para pruebas", tag = "set-all", leading = { RowGlyph(Glyph.Sparkle) })
         }
-        SectionTitle("Hub")
-        Card {
-            Text("La dirección de la computadora donde corre Lente.", style = Type.callout, color = c.muted)
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Field(address, { address = it }, "192.168.1.20", Modifier.weight(1f), tag = "hub-address")
-                Spacer(Modifier.width(10.dp))
-                Button("Conectar", { scope.launch { linkNote = vm.tryHub(address) ?: "Conectado." } })
-            }
-            if (link == app.lente.Link.Unpaired) {
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Field(code, { code = it }, "Código de emparejamiento", Modifier.weight(1f))
-                    Spacer(Modifier.width(10.dp))
-                    Button("Emparejar", { scope.launch { linkNote = if (vm.pair(code)) "Emparejado." else "Ese código no sirve: pide uno nuevo en el hub." } })
-                }
-            }
-            linkNote?.let { Text(it, style = Type.caption, color = c.muted, modifier = Modifier.padding(top = 8.dp)) }
-        }
+        SectionTitle("Apariencia")
+        Group { SetRow(Glyph.Contrast, "Tema", value = THEMES.firstOrNull { it.first == theme }?.second ?: "Sistema") { open("theme") } }
+        SectionTitle("Conexión")
+        Group { SetRow(Glyph.Link, "Hub", value = vm.hubAddress?.removePrefix("https://")?.removePrefix("http://")?.substringBefore('/')?.let { host -> if (host.endsWith(".modal.run")) "En la nube" else if (host.length > 16) host.take(15) + "…" else host } ?: "Sin hub") { open("hub") } }
         SectionTitle("Privacidad")
-        Card {
-            Text("Lente guarda solo texto, nunca audio, también en Solo grabar. Mientras escucha o graba lo verás siempre arriba, y puedes pausarlo cuando quieras. En el teléfono solo queda la dirección del hub y estos ajustes.", style = Type.callout, color = c.ink)
-            Spacer(Modifier.height(12.dp))
-            ConfirmButton("Borrar toda la memoria", "Toca de nuevo para borrar todo", vm::deleteAll, tag = "wipe")
+        Group {
+            SetRow(Glyph.Trash, "Borrar toda la memoria", danger = true) { open("wipe") }
+            if (signedIn) { Hairline(); AccountDataRows(vm, open) }
         }
+        Text("Lente guarda solo texto, nunca audio. Los precios del gasto son los de lista.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
         SectionTitle("Ayuda")
         Group {
-            ListRow("Ver la introducción", onClick = replayIntro)
-            Hairline(); ListRow("Modelos", hint = "Muse Voice Transcribe y Muse Spark 1.3 de Meta, en el hub")
-            Hairline(); ListRow("Versión", value = BuildConfig.VERSION_NAME)
+            SetRow(Glyph.Play, "Ver la introducción", onClick = replayIntro)
+            Hairline(); SetRow(Glyph.Brain, "Modelos", value = "Muse · Meta")
+            Hairline(); SetRow(Glyph.Doc, "Versión", value = BuildConfig.VERSION_NAME)
+        }
+        if (signedIn) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Cerrar sesión", style = Type.body, color = c.ink, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).clickable(onClick = vm::signOut).padding(vertical = 15.dp).testTag("sign-out"),
+            )
+        }
+    }
+    sheet?.let { AjustesSheet(vm, hub, it) { sheet = null } }
+}
+
+private val THEMES = listOf("system" to "Sistema", "light" to "Claro", "dark" to "Oscuro")
+
+/** A settings row: a bare glyph, the title (red when it destroys), an optional hint and value, a chevron when it opens something. */
+@Composable
+private fun SetRow(glyph: Glyph, title: String, hint: String? = null, value: String? = null, danger: Boolean = false, onClick: (() -> Unit)? = null) {
+    val c = Lente.c
+    ListRow(title, hint = hint, value = value, titleColor = if (danger) c.live else null, leading = { RowGlyph(glyph, if (danger) c.live else c.ink) }, onClick = onClick)
+}
+
+@Composable
+private fun RowGlyph(glyph: Glyph, tint: androidx.compose.ui.graphics.Color = Lente.c.ink) = Icon(glyph, tint, size = 20.dp)
+
+/** The sheet a row opens: a centred small title and its content, on the grey ground, fully open. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsSheet(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val c = Lente.c
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.bg, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = Lente.gutter).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp))
+            content()
         }
     }
 }
 
-// --- Cuenta (add-accounts 7.3) ------------------------------------------------------------------
-
-/** The account in Ajustes: who, this month's spend, the clips, a new clip token, export, delete, sign out. */
+/** The sheets of Ajustes, by what was tapped. */
 @Composable
-fun AccountSection(vm: LenteViewModel) {
+private fun AjustesSheet(vm: LenteViewModel, hub: HubState, what: String, close: () -> Unit) {
     val c = Lente.c
-    val signedIn by vm.signedIn.collectAsState()
-    val info by vm.accountInfo.collectAsState()
-    val devices by vm.devices.collectAsState()
+    val s = hub.status
+    val scope = rememberCoroutineScope()
+    when {
+        what == "names" -> {
+            var names by rememberSaveable { mutableStateOf(s.names.joinToString(", ")) }
+            SettingsSheet("Tu nombre", close) {
+                Field(names, { names = it }, "Rulo, Raúl", onDone = { vm.saveNames(names); close() }, tag = "names")
+                Text("Lente te avisa cuando alguien dice uno de estos nombres. Separa los apodos con comas.", style = Type.caption, color = c.muted)
+                Button("Guardar", { vm.saveNames(names); close() }, Modifier.fillMaxWidth())
+            }
+        }
+        what == "theme" -> {
+            val theme by vm.theme.collectAsState()
+            SettingsSheet("Tema", close) {
+                Group {
+                    THEMES.forEachIndexed { i, (key, label) ->
+                        if (i > 0) Hairline()
+                        ListRow(label, onClick = { vm.setTheme(key); close() }, chevron = false, trailing = { if (theme == key) Icon(Glyph.Check, c.ink, size = 20.dp) })
+                    }
+                }
+            }
+        }
+        what == "hub" -> {
+            val link by vm.link.collectAsState()
+            var address by rememberSaveable { mutableStateOf(vm.hubAddress ?: "") }
+            var code by rememberSaveable { mutableStateOf("") }
+            var note by remember { mutableStateOf<String?>(null) }
+            SettingsSheet("Hub", close) {
+                Text("La dirección de la computadora o de la nube donde corre Lente.", style = Type.callout, color = c.muted)
+                Field(address, { address = it }, "192.168.1.20", tag = "hub-address")
+                Button("Conectar", { scope.launch { note = vm.tryHub(address) ?: "Conectado." } }, Modifier.fillMaxWidth())
+                if (link == app.lente.Link.Unpaired) {
+                    Field(code, { code = it }, "Código de emparejamiento")
+                    Button("Emparejar", { scope.launch { note = if (vm.pair(code)) "Emparejado." else "Ese código no sirve: pide uno nuevo en el hub." } }, Modifier.fillMaxWidth(), tone = Tone.Plain)
+                }
+                note?.let { Text(it, style = Type.caption, color = c.muted) }
+            }
+        }
+        what == "wipe" -> SettingsSheet("Borrar toda la memoria", close) {
+            Text("Se borran tus reuniones, recuerdos y tareas. No se puede deshacer.", style = Type.callout, color = c.ink)
+            Button("Borrar toda la memoria", { vm.deleteAll(); close() }, Modifier.fillMaxWidth().testTag("wipe"), tone = Tone.Live)
+            Button("Cancelar", close, Modifier.fillMaxWidth(), tone = Tone.Plain)
+        }
+        what == "delete-account" -> SettingsSheet("Borrar mi cuenta", close) {
+            Text("Primero se borra tu clave: lo que quede en copias ya no se puede leer. Se borra todo, sin vuelta atrás.", style = Type.callout, color = c.ink)
+            Button("Borrar mi cuenta", { vm.deleteAccount(); close() }, Modifier.fillMaxWidth().testTag("delete-account"), tone = Tone.Live)
+            Button("Cancelar", close, Modifier.fillMaxWidth(), tone = Tone.Plain)
+        }
+        what == "new-device" -> NewDeviceSheet(vm, close)
+        what.startsWith("device:") -> {
+            val devices by vm.devices.collectAsState()
+            val d = devices.firstOrNull { it.id == what.removePrefix("device:") } ?: return close()
+            SettingsSheet(d.label, close) {
+                Group {
+                    ListRow("Tipo", value = Account.kindLine(d))
+                    Hairline(); ListRow("Estado", value = if (d.revoked) "Revocado" else Account.lastSeen(d.lastSeenAt, System.currentTimeMillis()))
+                }
+                if (!d.revoked) Button("Revocar acceso", { vm.revokeDevice(d.id); close() }, Modifier.fillMaxWidth().testTag("revoke-${d.id}"), tone = Tone.Live)
+            }
+        }
+    }
+}
+
+/** A new clip or agent token: the kind, what an agent may do, a name, then the token once with copy. */
+@Composable
+private fun NewDeviceSheet(vm: LenteViewModel, close: () -> Unit) {
+    val c = Lente.c
     val token by vm.newClipToken.collectAsState()
-    val activity = LocalContext.current as? Activity
     val clipboard = LocalClipboardManager.current
-    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(vm::exportTo) }
     var label by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf("clip") }
     var access by rememberSaveable { mutableStateOf("read") }
     var tokenKind by rememberSaveable { mutableStateOf("clip") }
+    val done = { vm.forgetClipToken(); close() }
+    SettingsSheet("Conectar un clip o agente", done) {
+        if (token == null) {
+            Segmented(listOf("clip" to "Clip", "mcp" to "Agente"), kind, { kind = it }, label = "Tipo")
+            if (kind == "mcp") Segmented(Account.AGENT_ACCESS, access, { access = it }, label = "Puede")
+            Field(label, { label = it }, if (kind == "mcp") "Nombre del agente" else "Nombre del clip", tag = "clip-label")
+            Button("Crear token", { if (kind == "mcp") vm.newAgent(label, access) else vm.newClip(label); tokenKind = kind; label = "" }, Modifier.fillMaxWidth())
+        } else {
+            Text(if (tokenKind == "mcp") "Token del agente. Se muestra una sola vez: ponlo en tu agente (Claude Code, Codex, Cursor) o en LENTE_TOKEN." else "Token del clip. Se muestra una sola vez: cópialo ahora en el firmware del clip.", style = Type.callout, color = c.muted)
+            Text(token!!, style = Type.measured, color = c.ink, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).padding(14.dp).testTag("clip-token"))
+            Button("Copiar", { clipboard.setText(AnnotatedString(token!!)) }, Modifier.fillMaxWidth())
+            Button("Listo", done, Modifier.fillMaxWidth(), tone = Tone.Plain)
+        }
+    }
+}
+
+/** The account at the top of Ajustes: who (or the way in), this month's spend, and the clips and agents with access. */
+@Composable
+fun AccountSection(vm: LenteViewModel, open: (String) -> Unit) {
+    val c = Lente.c
+    val signedIn by vm.signedIn.collectAsState()
+    val info by vm.accountInfo.collectAsState()
+    val devices by vm.devices.collectAsState()
+    val activity = LocalContext.current as? Activity
     LaunchedEffect(signedIn) { if (signedIn) vm.loadAccount() }
-    // The token is shown once: leaving the screen forgets it.
+    // A new token is shown once: leaving the screen forgets it.
     DisposableEffect(Unit) { onDispose { vm.forgetClipToken() } }
 
-    SectionTitle("Cuenta")
     if (!signedIn) {
-        Card {
-            Text("Entra con tu cuenta de Google para tener tu memoria en la nube, en cualquier teléfono.", style = Type.callout, color = c.muted)
-            Spacer(Modifier.height(10.dp))
-            Button("Entrar con Google", { activity?.let(vm::signIn) }, Modifier.testTag("sign-in"))
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(c.surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).clip(CircleShape).background(c.raised), contentAlignment = Alignment.Center) { Icon(Glyph.Person, c.ink, size = 24.dp) }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text("Tu cuenta", style = Type.headline, color = c.ink)
+                    Text("Tu memoria en la nube, en cualquier teléfono", style = Type.caption, color = c.muted)
+                }
+            }
+            Button("Entrar con Google", { activity?.let(vm::signIn) }, Modifier.fillMaxWidth().testTag("sign-in"))
         }
         return
     }
-    Group {
-        ListRow(vm.account.name.ifBlank { "Tu cuenta" }, hint = info?.email?.ifBlank { null } ?: vm.account.email.ifBlank { null })
-        info?.let {
-            Hairline(); ListRow("Gasto", hint = "Modelos y transcripción, precios de lista", value = Account.spendLine(it))
+    val name = vm.account.name.ifBlank { "Tu cuenta" }
+    Group(Modifier.padding(top = 8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(52.dp).clip(CircleShape).background(c.ink), contentAlignment = Alignment.Center) {
+                Text(name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }, style = Type.headline, color = c.bg)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, style = Type.headline, color = c.ink)
+                (info?.email?.ifBlank { null } ?: vm.account.email.ifBlank { null })?.let { Text(it, style = Type.caption, color = c.muted) }
+            }
         }
+        info?.let { Hairline(); SetRow(Glyph.Summary, "Gasto este mes", value = Account.spendLine(it).removeSuffix(" este mes")) }
     }
-    SectionTitle("Dispositivos")
+    SectionTitle("Clips y agentes")
     Group {
-        if (devices.isEmpty()) ListRow("Sin clips todavía", hint = "Crea un token y grábalo en el clip")
         devices.forEachIndexed { i, d ->
             if (i > 0) Hairline()
-            ListRow(d.label, hint = Account.kindLine(d) + " · " + if (d.revoked) "Revocado" else Account.lastSeen(d.lastSeenAt, System.currentTimeMillis()))
-            if (!d.revoked) ConfirmButton("Revocar", "Toca de nuevo para revocar", { vm.revokeDevice(d.id) }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), tag = "revoke-${d.id}")
+            SetRow(if (d.kind == "mcp") Glyph.Team else Glyph.Device, d.label, hint = Account.kindLine(d) + " · " + if (d.revoked) "Revocado" else Account.lastSeen(d.lastSeenAt, System.currentTimeMillis())) { open("device:${d.id}") }
         }
+        if (devices.isNotEmpty()) Hairline()
+        SetRow(Glyph.Plus, "Conectar un clip o agente") { open("new-device") }
     }
-    Card {
-        if (token == null) {
-            // A clip's token, or an agent's (add-agent-bridge) with what it may do.
-            Segmented(listOf("clip" to "Clip", "mcp" to "Agente"), kind, { kind = it }, label = "Tipo")
-            if (kind == "mcp") {
-                Spacer(Modifier.height(8.dp))
-                Segmented(Account.AGENT_ACCESS, access, { access = it }, label = "Puede")
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Field(label, { label = it }, if (kind == "mcp") "Nombre del agente" else "Nombre del clip", Modifier.weight(1f), tag = "clip-label")
-                Spacer(Modifier.width(10.dp))
-                Button("Nuevo token", { if (kind == "mcp") vm.newAgent(label, access) else vm.newClip(label); tokenKind = kind; label = "" })
-            }
-        } else {
-            Text(if (tokenKind == "mcp") "Token del agente. Se muestra una sola vez: ponlo en tu agente (Claude Code, Codex, Cursor) o en LENTE_TOKEN." else "Token del clip. Se muestra una sola vez: cópialo ahora en el firmware del clip.", style = Type.callout, color = c.muted)
-            Text(token!!, style = Type.measured, color = c.ink, modifier = Modifier.padding(vertical = 8.dp).testTag("clip-token"))
-            Row {
-                Button("Copiar", { clipboard.setText(AnnotatedString(token!!)) })
-                Spacer(Modifier.width(10.dp))
-                Button("Listo", vm::forgetClipToken, tone = Tone.Plain)
-            }
-        }
-    }
-    SectionTitle("Tus datos")
-    Card {
-        Text("Descarga todo lo que Lente guarda de ti, o borra tu cuenta: primero se borra tu clave, y lo que quede en copias ya no se puede leer.", style = Type.callout, color = c.ink)
-        Spacer(Modifier.height(12.dp))
-        Button("Exportar mis datos", { save.launch("lente-export.json") }, tone = Tone.Plain)
-        Spacer(Modifier.height(8.dp))
-        ConfirmButton("Borrar mi cuenta", "Toca de nuevo: se borra todo, sin vuelta atrás", vm::deleteAccount, tag = "delete-account")
-        Spacer(Modifier.height(8.dp))
-        Button("Cerrar sesión", vm::signOut, tone = Tone.Plain)
-    }
+}
+
+/** Export and delete the account, as rows of the privacy group. */
+@Composable
+private fun AccountDataRows(vm: LenteViewModel, open: (String) -> Unit) {
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(vm::exportTo) }
+    SetRow(Glyph.Share, "Exportar mis datos") { save.launch("lente-export.json") }
+    Hairline(); SetRow(Glyph.Person, "Borrar mi cuenta", danger = true) { open("delete-account") }
 }
 
 // --- Pronto -----------------------------------------------------------------------------------
@@ -520,9 +696,9 @@ fun Pronto(what: String) {
     val c = Lente.c
     val (title, text, change) = SOON[what] ?: Triple("Pronto", "", "")
     Column(Modifier.fillMaxSize().padding(32.dp).testTag("pronto"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Box(Modifier.size(72.dp).clip(RoundedCornerShape(22.dp)).background(c.tag), contentAlignment = Alignment.Center) { Icon(if (what == "equipo") Glyph.Team else Glyph.Link, c.accent, size = 34.dp) }
+        Box(Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(c.surface), contentAlignment = Alignment.Center) { Icon(if (what == "equipo") Glyph.Team else Glyph.Link, c.ink, size = 34.dp) }
         Spacer(Modifier.height(16.dp))
-        Text("PRONTO", style = Type.label, color = c.muted)
+        Text("Pronto", style = Type.caption, color = c.muted)
         Text(title, style = Type.title, color = c.ink, modifier = Modifier.padding(top = 6.dp))
         Text(text, style = Type.body, color = c.muted, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
         if (change.isNotBlank()) Text(change, style = Type.measured, color = c.muted, modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(8.dp)).background(c.raised).padding(horizontal = 10.dp, vertical = 4.dp))

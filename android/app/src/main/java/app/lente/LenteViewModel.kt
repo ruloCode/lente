@@ -12,6 +12,8 @@ import app.lente.capture.CaptureService
 import app.lente.core.Account
 import app.lente.core.Briefing
 import app.lente.core.ChatJson
+import app.lente.core.ChatHistory
+import app.lente.core.ChatThreadView
 import app.lente.core.ChatLine
 import app.lente.core.Effect
 import app.lente.core.Fact
@@ -65,6 +67,8 @@ sealed interface Screen {
     data object Dispositivos : Screen
     data object Ajustes : Screen
     data object Proyectos : Screen
+    /** The agents connected to Lente and their jobs (add-home-dock). */
+    data object Conexiones : Screen
     data class Proyecto(val id: String) : Screen
     data class Pronto(val what: String) : Screen
 }
@@ -207,6 +211,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             is Screen.Proyecto -> openProject(screen.id)
             Screen.Proyectos, Screen.Ahora -> loadProjects()
             Screen.Memoria -> loadFacts()
+            Screen.Conexiones -> { loadAccount(); loadJobs() }
             else -> {}
         }
     }
@@ -250,7 +255,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         chat.value = before + asked + waiting
-        post("/ask", ChatJson.request(q, before).apply { chatProject.value?.let { put("project", it) } }) { a ->
+        post("/ask", ChatJson.request(q, before, chatThread.value).apply { chatProject.value?.let { put("project", it) } }) { a ->
             val reply = runCatching { ChatJson.answer(waiting.id, a.text) }.getOrNull()
                 ?: ChatLine(waiting.id, false, when {
                     a.code == 404 -> "Este hub todavía no tiene el chat: actualízalo para preguntarle a Lente."
@@ -264,7 +269,37 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     /** Reads one of Lente's answers aloud, whatever Voz says. */
     fun speak(text: String) = speech.say(text, Voice.Priority.Normal)
 
-    fun clearChat() { chat.value = emptyList() }
+    /** The conversation in the chat, a new thread each time it starts over; the hub keeps it under this id (add-home-dock). */
+    val chatThread = MutableStateFlow(java.util.UUID.randomUUID().toString())
+
+    fun clearChat() { chat.value = emptyList(); chatThread.value = java.util.UUID.randomUUID().toString() }
+
+    /** The chat's history: null while it loads, then the hub's threads; `historyNote` says why it is empty when it failed. */
+    val history = MutableStateFlow<List<ChatThreadView>?>(null)
+    val historyNote = MutableStateFlow<String?>(null)
+
+    fun loadHistory() {
+        val c = client ?: run { history.value = emptyList(); historyNote.value = "No hay hub conectado: revisa Ajustes."; return }
+        history.value = null
+        historyNote.value = null
+        viewModelScope.launch {
+            val a = c.get("/chat/threads")
+            val parsed = if (a.ok) runCatching { ChatHistory.threads(a.text, firstId = chatIds + 1) }.getOrNull() else null
+            history.value = parsed ?: emptyList()
+            historyNote.value = when {
+                parsed != null -> null
+                a.code == 404 -> "Este hub todavía no guarda el historial: actualízalo."
+                else -> "No pude traer el historial; revisa la conexión."
+            }
+        }
+    }
+
+    /** Opens a past conversation in the chat; the next question continues its thread. */
+    fun openThread(t: ChatThreadView) {
+        chatIds = maxOf(chatIds, t.lines.maxOfOrNull { it.id } ?: chatIds)
+        chat.value = t.lines
+        chatThread.value = t.id
+    }
 
     /** Detener en vivo: live reads off, back to where the wearer was. */
     fun stopCamera() {
@@ -374,6 +409,24 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun forgetClipToken() { newClipToken.value = null }
+
+    /** Agent jobs for Conexiones: null while loading; `jobsNote` says why the list is empty when it failed. */
+    val jobs = MutableStateFlow<List<app.lente.core.JobItem>?>(null)
+    val jobsNote = MutableStateFlow<String?>(null)
+
+    fun loadJobs() {
+        val c = client ?: run { jobs.value = emptyList(); jobsNote.value = "No hay hub conectado: revisa Ajustes."; return }
+        viewModelScope.launch {
+            val a = c.get("/agent/jobs")
+            val parsed = if (a.ok) runCatching { app.lente.core.Connections.jobs(a.text) }.getOrNull() else null
+            jobs.value = parsed ?: emptyList()
+            jobsNote.value = when {
+                parsed != null -> null
+                a.code == 404 -> "Este hub todavía no lista los trabajos: actualízalo."
+                else -> "No pude traer los trabajos; revisa la conexión."
+            }
+        }
+    }
 
     fun revokeDevice(id: String) = post("/devices/revoke", JSONObject().put("id", id)) { if (it.ok) loadAccount() else failed(it, "revocar el dispositivo") }
 
@@ -526,6 +579,10 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         val a = c.post("/meeting/start", body)
         if (!a.ok) return@launch failed(a, "empezar a grabar")
         setListening(true)
+        // "Micrófono y cámara en vivo": the camera's live reads come on with the recording.
+        if (camera) setLive(true)
+        // Recording always lands on the live transcript and summary (add-home-dock).
+        openLive()
     }
 
     fun stopPhone() = CaptureService.stop(getApplication())
@@ -538,6 +595,14 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val voiceHandsFree = MutableStateFlow(true)
     /** The voice agent asked to open the record sheet with these choices; Inicio shows it. */
     val recordRequest = MutableStateFlow<RecordSheetRequest?>(null)
+    /** Something asked Inicio to open the chat (a project's «Preguntar», add-home-dock); Inicio opens it and clears this. */
+    val chatRequest = MutableStateFlow(false)
+
+    /** From a project: back to Inicio with the chat open and asking within that project. */
+    fun askInProject(id: String) { chatProject.value = id; chatRequest.value = true; go(Screen.Ahora) }
+
+    /** From a project: back to Inicio with the recording options open and the project chosen. */
+    fun recordInProject(id: String) { recordRequest.value = RecordSheetRequest(id, camera = false); go(Screen.Ahora) }
     private var voiceClient: VoiceClient? = null
 
     fun openVoice() {

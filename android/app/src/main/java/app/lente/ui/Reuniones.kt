@@ -77,7 +77,7 @@ fun Reuniones(vm: LenteViewModel, hub: HubState) {
                     for ((kind, label) in Copy.BRIEFING) {
                         val items = b.items.filter { it.kind == kind }
                         if (items.isEmpty()) continue
-                        Text(label.uppercase(), style = Type.label, color = c.muted, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+                        Text(label, style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
                         for (i in items) Text("• ${i.text}", style = Type.callout, color = c.ink, modifier = Modifier.padding(vertical = 2.dp))
                     }
                 }
@@ -158,8 +158,8 @@ fun Reunion(vm: LenteViewModel, screen: Screen.Reunion) {
         else {
             if (d.turns.isEmpty()) item { Empty("Sin transcripción.") }
             items(d.turns, key = { it.id }) { t ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (t.id == focus) c.tag else c.bg).padding(8.dp)) {
-                    Text(if (t.wearer) "Tú" else t.speaker ?: "·", style = Type.label, color = if (t.wearer) c.accent else c.ink, modifier = Modifier.width(34.dp))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (t.id == focus) c.raised else c.bg).padding(8.dp)) {
+                    Text(if (t.wearer) "Tú" else t.speaker ?: "·", style = Type.label, color = if (t.wearer) c.ink else c.muted, modifier = Modifier.width(34.dp))
                     Column(Modifier.weight(1f)) {
                         Text(t.text, style = Type.callout, color = c.ink)
                         Text(Format.hhmm(t.at), style = Type.measured, color = c.muted)
@@ -193,7 +193,7 @@ private fun LazyListScope.notes(m: MeetingSummary, openTurn: (String) -> Unit) {
     }
     item {
         Card {
-            Text("RESUMEN", style = Type.label, color = Lente.c.muted)
+            Text("Resumen", style = Type.caption, color = Lente.c.muted)
             Spacer(Modifier.height(6.dp))
             Text(n.summary, style = Type.body, color = Lente.c.ink)
         }
@@ -202,7 +202,7 @@ private fun LazyListScope.notes(m: MeetingSummary, openTurn: (String) -> Unit) {
         if (lines.isEmpty()) return
         item(title) {
             Card(padding = PaddingValues(vertical = 8.dp)) {
-                Text(title.uppercase(), style = Type.label, color = Lente.c.muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                Text(title.lowercase().replaceFirstChar { it.uppercase() }, style = Type.caption, color = Lente.c.muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                 for ((text, turn) in lines) Text(
                     text, style = Type.callout, color = Lente.c.ink,
                     modifier = Modifier.fillMaxWidth().then(if (turn != null) Modifier.clickable { openTurn(turn) } else Modifier).padding(horizontal = 16.dp, vertical = 8.dp),
