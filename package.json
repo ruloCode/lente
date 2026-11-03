@@ -21,6 +21,7 @@
     "test": "node --test test/*.test.ts",
     "gen:fixtures": "node scripts/gen-fixtures-header.ts",
     "typecheck": "tsc --noEmit",
+    "lente": "node scripts/lente.ts",
     "pilot": "node --env-file-if-exists=.env src/pilot.ts",
     "deploy:hub": "modal deploy --strategy recreate deploy/modal/hub.py",
     "smoke": "node scripts/smoke.ts",

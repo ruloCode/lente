@@ -9,6 +9,7 @@ Everything needed to build and submit Lente without re-reading the event pages. 
 | [claude-managed-agents.md](claude-managed-agents.md) | Claude Managed Agents for the cloud auto lane: endpoints, headers, sessions, budgets, and where the key lives (never `.env`) |
 | [modal.md](modal.md) | The cloud hub on Modal: shape, secrets, volume, long-lived connections (measured), how to operate it |
 | [kickoff-notes.md](kickoff-notes.md) | What was said at the kickoff that isn't in the written guide |
+| [agents.md](agents.md) | Agent tokens and scopes, MCP for Claude Code, Cursor and Codex, the `lente` CLI, jobs and the bridge (tested lines) |
 | [decisions.md](decisions.md) | Product and technical decisions, with the reason for each |
 | [ui-reference.md](ui-reference.md) | Measured layout, type, colour and components of the Meta AI app, and what Lente borrows |
 

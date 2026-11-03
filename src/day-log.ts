@@ -21,7 +21,9 @@ export type DayEntry =
     }
   | { at: number; kind: "cue"; label: string; text: string; /** Spanish meaning of a DILO line in another language. */ meaning?: string; ms?: number; /** Speaker label of who asked and the addressing rule that let the cue through. */ asker?: string; why?: string; /** Model and provider that produced the line. */ model?: string; provider?: string; stages?: Stages }
   | { at: number; kind: "live"; text: string; stages?: Stages }
-  | { at: number; kind: "summary"; text: string };
+  | { at: number; kind: "summary"; text: string }
+  /** An outside agent called one of Lente's tools (add-agent-bridge): which tool and which token, a fixed sentence, never content. */
+  | { at: number; kind: "agent"; tool: string; client: string; text: string };
 
 export function dayKey(at: number): string {
   const d = new Date(at);

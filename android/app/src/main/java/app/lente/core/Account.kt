@@ -12,7 +12,27 @@ import java.util.Locale
 object Account {
     data class Info(val email: String, val month: String, val spentUsd: Double, val capUsd: Double?)
 
-    data class Device(val id: String, val kind: String, val label: String, val createdAt: Long, val lastSeenAt: Long?, val revoked: Boolean)
+    data class Device(val id: String, val kind: String, val label: String, val createdAt: Long, val lastSeenAt: Long?, val revoked: Boolean, val scopes: List<String> = emptyList())
+
+    /**
+     * What an agent token may do (add-agent-bridge), as the three choices the screen offers: read the
+     * memory and tasks, also write tasks, or run approved jobs (the bridge on the wearer's computer).
+     */
+    val AGENT_ACCESS = listOf("read" to "Leer", "tasks" to "Leer y tareas", "bridge" to "Puente")
+
+    fun scopesFor(access: String): List<String> = when (access) {
+        "tasks" -> listOf("read", "tasks.write")
+        "bridge" -> listOf("agent.run")
+        else -> listOf("read")
+    }
+
+    /** "Agente · Leer y tareas", "Puente", "Clip": what a device is, for its row. */
+    fun kindLine(d: Device): String = when {
+        d.kind != "mcp" -> if (d.kind == "desktop") "Computadora" else "Clip"
+        "agent.run" in d.scopes -> "Puente de agentes"
+        "tasks.write" in d.scopes -> "Agente · Leer y tareas"
+        else -> "Agente · Leer"
+    }
 
     fun info(text: String): Info {
         val o = JSONObject(text)
@@ -24,7 +44,8 @@ object Account {
         val list = JSONObject(text).optJSONArray("devices") ?: JSONArray()
         return (0 until list.length()).map { i ->
             val d = list.getJSONObject(i)
-            Device(d.optString("id"), d.optString("kind"), d.optString("label"), d.optLong("createdAt"), if (d.isNull("lastSeenAt")) null else d.optLong("lastSeenAt"), d.optBoolean("revoked"))
+            val scopes = d.optJSONArray("scopes") ?: JSONArray()
+            Device(d.optString("id"), d.optString("kind"), d.optString("label"), d.optLong("createdAt"), if (d.isNull("lastSeenAt")) null else d.optLong("lastSeenAt"), d.optBoolean("revoked"), (0 until scopes.length()).map { scopes.optString(it) })
         }
     }
 

@@ -8,7 +8,7 @@
 //   4. Answer: the same schema as add-ask-lente; cited ids are checked against everything shown.
 // Pure apart from the injected model call and loaders.
 
-import { type AskMessage, type AskOutcome, type AskSource, NOT_FOUND, askSchema, parseAsk } from "./ask.ts";
+import { type AskMessage, type AskOutcome, type AskSource, COMMAND_RULE, NOT_FOUND, askSchema, parseAsk } from "./ask.ts";
 import type { ChatMessage } from "./chat.ts";
 import type { DayEntry } from "./day-log.ts";
 import { type Digest, digestId } from "./digests.ts";
@@ -204,6 +204,7 @@ const SYSTEM = [
   "Responde en español, en una a tres frases, cálido y directo, hablándole de tú.",
   "Usa solo la memoria. Cada afirmación debe salir de una o más líneas: pon sus ids en `sources`. Prefiere citar la línea más concreta (una frase de una reunión antes que un resumen).",
   "Si la memoria no lo dice, responde `found: false` y `answer` vacío. No uses conocimiento general ni inventes nombres, fechas ni cifras.",
+  COMMAND_RULE,
 ].join("\n");
 
 const PLANNER = [
@@ -235,6 +236,6 @@ export async function askTiers(
   const lookupText = found.lines.length ? `\n\nBUSCADO PARA ESTA PREGUNTA:\n${found.lines.join("\n")}` : "";
   const raw = await call([{ role: "system", content: `${SYSTEM}\n\n${memory}${lookupText}` }, ...historyMessages(history), { role: "user", content: question }], askSchema, "ask");
   const sources = new Map([...context.sources, ...found.sources]);
-  const answer = parseAsk(raw, sources);
+  const answer = parseAsk(raw, sources, question);
   return { ok: true, ...answer, answer: answer.found ? answer.answer : NOT_FOUND, ms: Math.round(clock() - started), ...(plan ? { plan } : {}) };
 }

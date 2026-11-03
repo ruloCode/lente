@@ -129,3 +129,13 @@ Talking with Lente is a separate session (`/voice`), not the meeting pipeline.
 - **Barge-in runs on the hub.** A partial of two or more words that is not an echo of what Lente just said (`NarrationGuard`) cancels the turn's request. The phone records with `VOICE_COMMUNICATION` for the platform's echo canceller.
 - **Measured** (`scripts/bench-voice.ts`, 10 turns): first sentence 2.15 s and first answer sentence 3.21 s at p50, US$ 0.0044 per turn.
 - **Next.** The 1.5 s target is met only without tools. The next lever is the first step on the fast lane, once Spark Open's function calling is verified.
+
+### 2026-11-02 · Agents reach Lente with per-user scoped tokens, and Lente's jobs run only on the user's machine (add-agent-bridge)
+
+- **MCP server, hand-written.** `add-glasses-mcp` planned one key in `.env`. With accounts, a key must belong to one user, so agent tokens are `mcp` devices with scopes: read by default, task writes and the bridge only when asked. The server is written by hand over the hub's HTTP server, with no dependency:
+  - It speaks the current MCP revision (2026-07-28, stateless, headers checked against the body) and the `initialize` revisions, because clients still ship both.
+  - Claude Code 2.1.316 turned out to use the current one.
+  - Replies are single JSON objects; no tool needs a stream.
+- **Jobs.** A job is an `agent_actions` row with tool `run_agent`, so "nothing runs without approval" is the same code path as the closing agent's proposals. Approving only queues the job: the hub never runs a process. The bridge runs it on the user's computer, in a folder from a local allow list, with the most restrictive flags each CLI offers that still let it edit. Its token sees only the queue of approved jobs, never transcripts.
+- **The chat.** A command in the chat is recognized by a new `intent` field in the same structured Muse Spark call, not a second call. A pure check on the sentence (an imperative or a named agent) must agree, so a question can never become a job.
+- **Copied from nowhere.** Omi's hosted MCP server with per-user keys, read-only defaults and a CLI with `--json` and exit codes was the product reference; no code was used from it.

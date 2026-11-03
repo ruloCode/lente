@@ -276,7 +276,7 @@ object Copy {
 
     val MEETING_STATE = mapOf("running" to "en curso", "extracting" to "sacando notas…", "too-short" to "muy corta, sin notas", "failed" to "no se pudieron sacar notas")
 
-    val TOOL = mapOf("create_task" to "Crear una tarea", "create_reminder" to "Crear un recordatorio", "draft_email" to "Redactar un correo")
+    val TOOL = mapOf("create_task" to "Crear una tarea", "create_reminder" to "Crear un recordatorio", "draft_email" to "Redactar un correo", "run_agent" to "Que lo haga un agente")
 
     val BRIEFING = mapOf("owed" to "Le debes", "open" to "Quedó abierto", "term" to "Palabras que pueden salir", "phrase" to "Frases a la mano")
 }

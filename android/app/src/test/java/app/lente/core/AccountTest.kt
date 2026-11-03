@@ -28,6 +28,16 @@ class AccountTest {
         assertEquals(emptyList<Account.Device>(), Account.devices("{}"))
     }
 
+    @Test fun agentTokens() {
+        assertEquals(listOf("read"), Account.scopesFor("read"))
+        assertEquals(listOf("read", "tasks.write"), Account.scopesFor("tasks"))
+        assertEquals(listOf("agent.run"), Account.scopesFor("bridge"))
+        val list = Account.devices("""{"devices":[{"id":"a","kind":"mcp","label":"Claude Code","scopes":["read","tasks.write"],"createdAt":5,"lastSeenAt":null,"revoked":false},{"id":"b","kind":"mcp","label":"Puente","scopes":["agent.run"],"createdAt":5,"lastSeenAt":null,"revoked":false},{"id":"c","kind":"clip","label":"Clip","createdAt":1,"lastSeenAt":null,"revoked":false}]}""")
+        assertEquals(listOf("read", "tasks.write"), list[0].scopes)
+        assertEquals(listOf("Agente · Leer y tareas", "Puente de agentes", "Clip"), list.map(Account::kindLine))
+        assertEquals("Que lo haga un agente", Copy.TOOL["run_agent"])
+    }
+
     @Test fun lastSeenInWords() {
         val now = 10L * 24 * 3600_000
         assertEquals("Nunca conectado", Account.lastSeen(null, now))

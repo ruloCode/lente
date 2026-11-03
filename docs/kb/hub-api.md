@@ -94,3 +94,25 @@ Action tools: `create_task {title, due?}`, `create_reminder {title, date (YYYY-M
 ## Device WebSocket: `/device`
 
 Binary messages carrying clip protocol v2 (`docs/PROTOCOL.md`): the first frame is the `H` hello (`{"proto":"2.0","device":"lente-phone","fw":…,"codec":"pcm16","rate":16000,"rssi":0,"camera":false}`), then `A` audio (u32 sequence, u32 capture ms, 1280 PCM16 samples = 80 ms) and `J` JPEG stills. Downlink is single bytes in binary messages: `M`/`m` send or stop sending audio, `P` take a still (the page sends at most 1024 px on the long side, JPEG quality 0.8), `B` signal a card, `C`/`c` camera mode, `T` another device took over (the hub then closes). On connect the hub sends `C` or `c`, then `M` or `m`. One device at a time: the newest connection wins.
+
+## Agents (add-agent-bridge, 2026-11-02)
+
+Details and tested client lines are in [agents.md](agents.md).
+
+- `POST /devices {kind: "mcp", label, scopes?}` makes an agent token. `scopes` is a subset of `read`, `tasks.write` and `agent.run`, default `["read"]`; an unknown one is a 400. `GET /devices` lists each device's `scopes`. On a hub without accounts, `/devices` makes agent tokens only.
+- `POST /mcp`: MCP over Streamable HTTP with `Authorization: Bearer <agent token>`.
+  - Missing, unknown or revoked token: 401 with `WWW-Authenticate: Bearer`.
+  - `GET` and `DELETE`: 405.
+  - Bodies up to 64 KB.
+- `GET /agents` → `{paused}`; `POST /agents/pause` and `POST /agents/resume` → 204.
+- `POST /agent/jobs {instruction? | taskId?, agent?: "claude"|"codex", workdir?}` → 201 `{id, agent, instruction, workdir?, taskId?}`. An unknown task is a 404. The job shows in `actions.pending` with `tool: "run_agent"`.
+- `POST /actions/decide` approving a `run_agent` job answers `{status: "approved", outcome: {state: "queued"}}` and runs nothing. `actions.decided` items of jobs carry `job: {state, agent, instruction, summary, exitCode}`.
+- `POST /ask`:
+  - a request to have something done answers `{…, answer: "Lo dejé en «Por aprobar»…", job: {id, agent, instruction}}`;
+  - a new day entry kind, `agent` `{at, tool, client, text}`, is one agent call, with no content.
+- The bridge (an `agent.run` token):
+  - `GET /events` sends only `{kind: "jobs", items: [{id, agent, instruction, workdir?, taskId?}]}`, on connect and after every change, with the usual keep-alive;
+  - `POST /agent/jobs/<id>/claim` → 200, or 409 when it is not queued (claimed once);
+  - `POST /agent/jobs/<id>/result {exitCode, summary}` → `{status, taskDone}`.
+
+  A token without `agent.run` gets 403 on these routes.
