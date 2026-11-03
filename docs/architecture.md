@@ -40,7 +40,7 @@ flowchart LR
     mem[Memory · profile · briefing]
     agent[Closing agent<br/>approval + traces]
     mcp[MCP server]
-    day[(Day record<br/>text only)]
+    day[(Day record<br/>text, plus sealed audio and keyframes when kept)]
   end
   subgraph Meta[Meta models]
     vt[Muse Voice Transcribe]
@@ -98,16 +98,16 @@ One question, end to end: the clip sends 80 ms audio frames → the hub paces th
 
 | Data | Where | Kept | Notes |
 |---|---|---|---|
-| Audio | Memory only, streamed to Muse Voice Transcribe | Never stored | Paused = nothing sent |
-| Photos | Memory only, sent to Muse Spark | Never stored | Mic-only mode powers the camera down |
-| Day record | `data/days/*.jsonl` | Until deleted | Text only, also in Solo grabar, which keeps the whole day as text with no real-time cues |
+| Audio | Streamed to Muse Voice Transcribe; with «Guardar audio» on (owner, or terms that describe media), speech only is kept per segment, sealed, in `data/media/` or the private `media` bucket | 30 days by default (7 or 90), a forgotten day, a deleted meeting | Paused = nothing sent; switch off = nothing kept from then on |
+| Photos | Sent to Muse Spark to be described; with «Guardar fotos» on, a frame is kept only when the scene changes (at most one every 30 s), sealed | Same as audio | Mic-only mode powers the camera down |
+| Day record | `data/days/*.jsonl` | Until deleted | Text, also in Solo grabar, which keeps the whole day with no real-time cues; its audio and keyframes follow the rows above |
 | Recorded time | `data/recorded.json` | Today only, replaced each new day | How long audio was received today, no content; shown in Dispositivos |
 | Memory, profile, traces | `data/meetings/`, `data/profile.json`, `data/traces/` | Until deleted | Solo grabar's automatic episodes are kept as meetings (notes, glossary, phrases); delete one or all from the phone. The profile remembers the assist mode |
 | Secrets | `.env`, `firmware/**/secrets.h` (git-ignored); platform secrets in the cloud | — | Rotated after the demo |
 
 Consent is a product feature, not a footnote: a clear listening state on the phone (the red strip and the pill; the clip's LED only blinks for a cue), pause everywhere, agents and MCP tools obey the same rules, and nothing leaves the hub without approval. Only standard (non-contributor) Meta endpoints are used; while on the free credits, content may be used for product improvement, so tests use the author's voice and public media and the demo meeting uses informed consent.
 
-Solo grabar makes consent matter more, not less, because it listens all day instead of during one meeting. It keeps text, never audio. On the phone the listening pill reads "GRABANDO" on the same red strip, and a tap on it pauses, which stops the clip sending audio. The first-run introduction and Ajustes say that only text is kept and what Solo grabar does, and every episode it opens can be deleted like a meeting. The clip itself shows no recording light (its LED is dark unless a cue arrives), so in Solo grabar the wearer should tell the people around them, as with any meeting.
+Solo grabar makes consent matter more, not less, because it listens all day instead of during one meeting. It keeps text, and the speech audio and keyframes only for the owner with the switches on (`add-media-archive`). On the phone the listening pill reads "GRABANDO" on the same red strip, and a tap on it pauses, which stops the clip sending audio. The first-run introduction and Ajustes say that only text is kept and what Solo grabar does, and every episode it opens can be deleted like a meeting. The clip itself shows no recording light (its LED is dark unless a cue arrives), so in Solo grabar the wearer should tell the people around them, as with any meeting.
 
 ## 6. Engineering practices
 

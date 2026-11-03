@@ -1,5 +1,5 @@
 // Durable facts about people, projects and clients as one JSON file (data/facts.json, git-ignored,
-// text only). Proposed facts wait for the wearer; only kept ones are ever read into a prompt.
+// kept as text). Proposed facts wait for the wearer; only kept ones are ever read into a prompt.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";

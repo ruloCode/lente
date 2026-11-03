@@ -83,9 +83,14 @@ export interface Profile {
   readonly names: string[];
   readonly everyQuestion: boolean;
   readonly assistMode: AssistMode;
+  /** «Guardar audio» and «Guardar fotos» (add-media-archive). */
+  readonly media: { audio: boolean; photos: boolean };
+  readonly mediaRetentionDays: 7 | 30 | 90;
   setNames(input: string): string[];
   setEveryQuestion(on: boolean): void;
   setAssistMode(mode: AssistMode): void;
+  setMedia(kind: "audio" | "photos", on: boolean): void;
+  setMediaRetention(days: 7 | 30 | 90): void;
 }
 
 /** The glossary and language profile: read by transcription, so kept in memory. */
@@ -238,5 +243,103 @@ export class FileSnapshots implements SnapshotStore {
 
   remove(shard: string): void {
     for (const ext of ["bin", "json"]) rmSync(this.path(shard, ext), { force: true });
+  }
+}
+
+// --- Media (add-media-archive 2.1) ---------------------------------------------------------------
+
+export type MediaKind = "audio" | "frame";
+
+/** What the database may see of a media object: ids, times, sizes and the codec, never content. */
+export interface MediaRecord {
+  kind: MediaKind;
+  /** The segment (`s<meeting id>:<n>`) or the moment (`d<day>:<n>`) it belongs to. */
+  ref: string;
+  at: number;
+  ms: number;
+  bytes: number;
+  codec: string;
+}
+
+export interface MediaStore {
+  put(record: MediaRecord, data: Uint8Array): Awaitable<void>;
+  get(kind: MediaKind, ref: string): Awaitable<{ record: MediaRecord; data: Uint8Array } | undefined>;
+  /** Records in [from, to), oldest first. */
+  list(from: number, to: number): Awaitable<MediaRecord[]>;
+  /** Each removal deletes the objects before their rows; returns how many went. */
+  remove(kind: MediaKind, refs: readonly string[]): Awaitable<number>;
+  removeBetween(from: number, to: number): Awaitable<number>;
+  /** Retention: up to `cap` records older than `before`, oldest first. */
+  expire(before: number, cap: number): Awaitable<number>;
+  removeAll(): Awaitable<number>;
+}
+
+const safeRef = (ref: string) => {
+  if (!/^[a-zA-Z0-9:._-]{1,80}$/.test(ref)) throw new Error(`media: "${ref.slice(0, 40)}" is not a segment or moment id`);
+  return ref.replace(/:/g, "_");
+};
+
+/** The laptop's media: `data/media/<kind>/<ref>.<codec>` and an index of the records, private to the user. */
+export class FileMedia implements MediaStore {
+  private readonly dir: string;
+
+  constructor(dir: string) {
+    this.dir = dir;
+  }
+
+  private file(r: Pick<MediaRecord, "kind" | "ref" | "codec">): string {
+    return `${this.dir}/${r.kind}/${safeRef(r.ref)}.${r.codec}`;
+  }
+
+  private all(): MediaRecord[] {
+    const index = `${this.dir}/index.json`;
+    return existsSync(index) ? (JSON.parse(readFileSync(index, "utf8")) as MediaRecord[]) : [];
+  }
+
+  private write(list: MediaRecord[]): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const tmp = `${this.dir}/index.json.tmp`;
+    writeFileSync(tmp, JSON.stringify(list), { mode: 0o600 });
+    renameSync(tmp, `${this.dir}/index.json`);
+  }
+
+  put(record: MediaRecord, data: Uint8Array): void {
+    mkdirSync(`${this.dir}/${record.kind}`, { recursive: true, mode: 0o700 });
+    writeFileSync(this.file(record), data, { mode: 0o600 });
+    this.write([...this.all().filter((r) => !(r.kind === record.kind && r.ref === record.ref)), record]);
+  }
+
+  get(kind: MediaKind, ref: string): { record: MediaRecord; data: Uint8Array } | undefined {
+    const record = this.all().find((r) => r.kind === kind && r.ref === ref);
+    if (!record || !existsSync(this.file(record))) return undefined;
+    return { record, data: new Uint8Array(readFileSync(this.file(record))) };
+  }
+
+  list(from: number, to: number): MediaRecord[] {
+    return this.all().filter((r) => r.at >= from && r.at < to).sort((a, b) => a.at - b.at);
+  }
+
+  private drop(pick: (r: MediaRecord) => boolean, cap = Infinity): number {
+    const all = this.all();
+    const gone = all.filter(pick).sort((a, b) => a.at - b.at).slice(0, cap);
+    for (const r of gone) rmSync(this.file(r), { force: true });
+    this.write(all.filter((r) => !gone.includes(r)));
+    return gone.length;
+  }
+
+  remove(kind: MediaKind, refs: readonly string[]): number {
+    return this.drop((r) => r.kind === kind && refs.includes(r.ref));
+  }
+
+  removeBetween(from: number, to: number): number {
+    return this.drop((r) => r.at >= from && r.at < to);
+  }
+
+  expire(before: number, cap: number): number {
+    return this.drop((r) => r.at < before, cap);
+  }
+
+  removeAll(): number {
+    return this.drop(() => true);
   }
 }

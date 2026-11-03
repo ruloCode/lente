@@ -6,7 +6,7 @@ Depends on: `add-meeting-library`, `add-ask-lente`, `add-accounts` (group 3 also
 
 Lente already keeps the wearer's day as text with times: every turn heard, every camera description, every meeting with its turns and notes, every kept fact. The only ways back into it today are a meeting's detail page and a question to the chat. Neither lets the wearer simply go back to a moment ("what was happening at 10:40 on Tuesday?") and see it again as it unfolded.
 
-"The Entire History of You" (Black Mirror, 2011, cited in README "Related work") imagined that interface: a timeline of rings and a way to re-watch any moment. The episode is a warning: re-watching without end destroys the person, and the harm comes from memories being shared and demanded. Lente takes the idea of going back to a moment and turns the ending around: **remember in order to let go**. Going back is private, it is text only, it nudges the wearer to act instead of looping, and any day can be forgotten. Only the general idea is taken; no image, layout or text from the series is used.
+"The Entire History of You" (Black Mirror, 2011, cited in README "Related work") imagined that interface: a timeline of rings and a way to re-watch any moment. The episode is a warning: re-watching without end destroys the person, and the harm comes from memories being shared and demanded. Lente takes the idea of going back to a moment and turns the ending around: **remember in order to let go**. Going back is private and sealed (text, and the audio and frames the wearer chose to keep), it nudges the wearer to act instead of looping, and any day can be forgotten. Only the general idea is taken; no image, layout or text from the series is used.
 
 ## What Changes
 

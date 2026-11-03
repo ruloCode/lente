@@ -1,4 +1,4 @@
-// Text-only record of the day: turns, cues, summaries and what the camera described.
+// The day record, as text: turns, cues, summaries and what the camera described.
 // One JSON line per entry in data/days/YYYY-MM-DD.jsonl (git-ignored). No audio, no photos.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";

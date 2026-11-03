@@ -134,7 +134,7 @@ fun Intro(vm: LenteViewModel, onDone: () -> Unit) {
                     else -> {
                         Art(R.drawable.art_intro_privacy, ART)
                         Heading("Siempre a la vista")
-                        Body("Mientras escucha verás la franja roja arriba y este botón. Tócalo cuando quieras pausar. Lente guarda solo texto, nunca audio.")
+                        Body("Mientras escucha verás la franja roja arriba y este botón. Tócalo cuando quieras pausar. Lente guarda el texto del día y, con «Guardar audio» y «Guardar fotos» activados, también el audio de lo que se dijo y una foto cuando cambia la escena, cifrados y por los días que elijas.")
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Pill(app.lente.core.Status(clip = true, listening = true)) {}

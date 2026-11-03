@@ -14,7 +14,7 @@ The hub SHALL derive a day's moments from its meetings, day record and kept fact
 - **THEN** the hub answers 404 and reveals nothing about it
 
 ### Requirement: Replay as timed text
-Revivir SHALL play a moment back as text only: each line with its offset from the moment's start taken from the stored times, its kind and its source. Silences longer than 8 seconds SHALL be shortened and marked. Lente SHALL NOT keep or request audio or video for replay.
+Revivir SHALL play a moment back as timed text: each line with its offset from the moment's start taken from the stored times, its kind and its source. Silences longer than 8 seconds SHALL be shortened and marked. When the media archive kept the moment's speech audio or the frame of its minute (add-media-archive), Revivir SHALL play them with the text; Lente SHALL NOT keep or request media only for replay.
 
 #### Scenario: Subtitles at their pace
 - **WHEN** the wearer relives a meeting whose second turn came 4 seconds after the first

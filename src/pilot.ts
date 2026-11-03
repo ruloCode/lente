@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { type DevicePreference, mayTakeOver, AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
-import { type AskMessage, type AskOutcome, CutOffError, ask, askSchema } from "./ask.ts";
+import { type AskMessage, type AskOutcome, type AskSource, CutOffError, ask, askSchema } from "./ask.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
@@ -50,7 +50,11 @@ import { DatabaseHealth, dbFailing } from "./db-health.ts";
 import { SupabaseRest } from "./supabase-rest.ts";
 import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, briefsDue, personKey, recurringPeople, writeBrief, writePersonCard, writeProfile } from "./digests.ts";
-import { type DigestStore, FileDigestStore, FileSnapshots } from "./stores.ts";
+import { type DigestStore, FileDigestStore, FileMedia, FileSnapshots, type MediaRecord, type MediaStore } from "./stores.ts";
+import { SegmentAudio, mediaAllowed } from "./media-tap.ts";
+import { SupabaseStorage } from "./supabase-storage.ts";
+import { decodeAdpcm, wav } from "./media-chunks.ts";
+import { KeyframePicker } from "./keyframes.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
@@ -124,6 +128,8 @@ const RECALL_FLUSH_MS = 5_000;
 const CARD_TICK_MS = 15_000;
 /** The index's changed months are written behind this often, and at eviction. */
 const SNAPSHOT_EVERY_MS = 10 * 60_000;
+/** Media objects expired per nightly run at most, oldest first. */
+const MEDIA_EXPIRE_PER_RUN = 500;
 const CARD_NOTES_TOKENS = 4_500;
 /** Briefs are checked every 5 minutes (each rewritten at most every 30); how many briefs and people cards are read, and how many meetings feed each. */
 const BRIEF_TICK_MS = 5 * 60_000;
@@ -175,6 +181,8 @@ const auth = CLOUD ? new DeviceAuth(join(DATA_DIR, "devices.json")) : undefined;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const userAuth = SUPABASE_URL ? new UserAuth(SUPABASE_URL) : undefined;
 const supabase = SUPABASE_URL && process.env.SUPABASE_SECRET_KEY ? new SupabaseRest({ url: SUPABASE_URL, secretKey: process.env.SUPABASE_SECRET_KEY }) : undefined;
+/** Storage for the media archive, once its migration and bucket exist (add-media-archive 2.4): LENTE_MEDIA_STORAGE=on. */
+const mediaStorage = SUPABASE_URL && process.env.SUPABASE_SECRET_KEY && process.env.LENTE_MEDIA_STORAGE === "on" ? new SupabaseStorage({ url: SUPABASE_URL, secretKey: process.env.SUPABASE_SECRET_KEY }) : undefined;
 /** The database in health and on the phone (decision 13); checked every minute so a paused project shows. */
 const dbHealth = supabase ? new DatabaseHealth(() => supabase.system.ping()) : undefined;
 const DB_CHECK_EVERY_MS = 60_000;
@@ -271,7 +279,7 @@ async function accountRights(req: IncomingMessage, res: ServerResponse, who: Ide
   if (req.method === "GET" && path === "/account/export") {
     if (wearers.has(userId)) await wearers.get(userId).flush();
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": 'attachment; filename="lente-export.json"', "Cache-Control": "no-store" });
-    await exportAccount(supabase, userId, await accounts.dek(userId), res);
+    await exportAccount(supabase, userId, await accounts.dek(userId), res, Date.now(), mediaStorage);
     return void res.end();
   }
   if (req.method === "POST" && path === "/account/delete") {
@@ -283,6 +291,7 @@ async function accountRights(req: IncomingMessage, res: ServerResponse, who: Ide
         accounts.forget(id);
       },
       deleteSignIn: (id) => deleteAuthUser(SUPABASE_URL, process.env.SUPABASE_SECRET_KEY!, id),
+      ...(mediaStorage ? { storage: mediaStorage } : {}),
     });
     console.log(`[account] deleted an account in ${steps.length} steps`);
     return void res.writeHead(204, { "Set-Cookie": clearCookie(SESSION_COOKIE), "Cache-Control": "no-store" }).end();
@@ -563,6 +572,75 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   const clients = new Set<ServerResponse>();
   const day = sealed?.day ?? new DayLog(join(dataDir, "days"));
+
+  // The media archive (add-media-archive 2.2): speech audio per segment and keyframes per moment, for the
+  // owner (LOCAL_OWNER, or the account LENTE_OWNER_USER_ID names); other accounts only once add-consent
+  // can say their accepted terms describe media, so not yet.
+  const mediaStore: MediaStore | undefined = sealed ? sealed.sealed.media : new FileMedia(join(dataDir, "media"));
+  const isOwner = userId === LOCAL_OWNER || (process.env.LENTE_OWNER_USER_ID !== undefined && userId === process.env.LENTE_OWNER_USER_ID);
+  const mediaOn = (kind: "audio" | "photos") => Boolean(mediaStore) && !mediaBroken && mediaAllowed(kind, { env: process.env.LENTE_MEDIA, switches: profile.media, isOwner, acceptedMediaTerms: false });
+  const segmentAudio = new SegmentAudio();
+  const keyframes = new KeyframePicker();
+  /** Media this runtime kept, as `kind:ref`, so chips can say what can be played. */
+  const keptMedia = new Set<string>();
+  let mediaBroken = false;
+  async function keepMedia(record: MediaRecord, data: Uint8Array): Promise<void> {
+    if (!mediaStore) return;
+    try {
+      await mediaStore.put(record, data);
+      keptMedia.add(`${record.kind}:${record.ref}`);
+    } catch (error) {
+      // One failure (no table yet, Storage down) stops media for this runtime instead of failing every segment.
+      mediaBroken = true;
+      console.error(`[media] keeping media failed, stopped until restart: ${(error as Error).message.slice(0, 160)}`);
+    }
+  }
+  /** The switches, and whether audio and photos are being kept right now (Ahora: «Guardando audio · fotos»). */
+  function mediaStatus() {
+    return { switches: profile.media, retentionDays: profile.mediaRetentionDays, keepingAudio: status.listening && mediaOn("audio"), keepingPhotos: status.listening && mediaOn("photos"), offered: isOwner && Boolean(mediaStore) };
+  }
+  /** A chip with the media behind it, when this runtime kept some. */
+  const withMedia = <S extends AskSource>(s: S): S => {
+    const audio = keptMedia.has(`audio:${s.id}`) ? `/media/audio/${encodeURIComponent(s.id)}` : undefined;
+    const frame = keptMedia.has(`frame:${s.id}`) ? `/media/frame/${encodeURIComponent(s.id)}` : undefined;
+    return audio || frame ? { ...s, media: { ...(audio ? { audio } : {}), ...(frame ? { frame } : {}) } } : s;
+  };
+  // What was kept in the last month, so chips of older answers can play too.
+  if (mediaStore) void Promise.resolve(mediaStore.list(Date.now() - 31 * 86_400_000, Date.now() + 1)).then((list) => list.forEach((r) => keptMedia.add(`${r.kind}:${r.ref}`)), () => undefined);
+
+  /** Retention (add-media-archive 3.1): media older than the wearer's setting goes, oldest first, a capped number a run. */
+  async function expireMedia(): Promise<void> {
+    if (!mediaStore) return;
+    try {
+      const gone = await mediaStore.expire(Date.now() - profile.mediaRetentionDays * 86_400_000, MEDIA_EXPIRE_PER_RUN);
+      if (gone) console.log(`[media] ${gone} expired object(s) removed (keeping ${profile.mediaRetentionDays} days)`);
+    } catch (error) {
+      console.error(`[media] expiry failed: ${(error as Error).message.slice(0, 160)}`);
+    }
+  }
+
+  /**
+   * Media of what is being forgotten, removed before the records (add-media-archive 3.1): a meeting's
+   * segment audio, or everything kept on a day. Forget a day (add-memory-timeline 1.8) calls it first.
+   */
+  async function forgetMedia(what: { meetings?: Meeting[]; day?: { from: number; to: number } }): Promise<void> {
+    if (!mediaStore) return;
+    for (const m of what.meetings ?? []) {
+      const refs = (await mediaStore.list(m.startedAt - 1, (m.endedAt ?? Date.now()) + 1)).filter((r) => r.ref.startsWith(`s${m.id}:`)).map((r) => r.ref);
+      await mediaStore.remove("audio", refs);
+      for (const r of refs) keptMedia.delete(`audio:${r}`);
+    }
+    if (what.day) {
+      for (const r of await mediaStore.list(what.day.from, what.day.to)) keptMedia.delete(`${r.kind}:${r.ref}`);
+      await mediaStore.removeBetween(what.day.from, what.day.to);
+    }
+  }
+
+  /** Stores the segments of the open meeting that closed (all of them when it ended). */
+  function storeClosedSegments(m: Meeting, ended: boolean): void {
+    for (const c of segmentAudio.closed(m, ended)) void keepMedia({ kind: "audio", ref: c.segment, at: c.at, ms: c.ms, bytes: c.bytes.length, codec: "adpcm" }, c.bytes);
+  }
+
   /** The listening session behind the phone's elapsed time; it runs while listening with the clip on. */
   const sessionClock = new SessionClock();
   /** Text of the turn in progress, for a phone that connects mid-sentence; cleared on turn and on pause. */
@@ -571,7 +649,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   /** The status as sent: the session view is taken at send time so every phone shows the same elapsed time. */
   /** The device the wearer chose to record with; see mayTakeOver. */
   let devicePreference: DevicePreference = "any";
-  const statusEvent = () => ({ ...status, devicePreference, modelDown: modelDown(), databaseDown: databaseDown(), session: sessionClock.view(Date.now()) });
+  const statusEvent = () => ({ ...status, devicePreference, modelDown: modelDown(), databaseDown: databaseDown(), session: sessionClock.view(Date.now()), media: mediaStatus() });
 
   /** What the phone read out loud lately; a turn that repeats it is Lente hearing itself. */
   const narration = new NarrationGuard();
@@ -985,6 +1063,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const wearerLabel = wearerTracker.wearer();
     for (const t of m.turns) if (wearerLabel !== undefined && t.speaker === wearerLabel) t.wearer = true;
     m.stats = countAskedAnswered(m.turns);
+    if (mediaOn("audio")) storeClosedSegments(m, true);
     m.status = isTooShort(m) ? "too-short" : "extracting";
     meetings.save(m);
     syncMeeting();
@@ -1188,7 +1267,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       },
     );
     if (written.length) console.log(`[digests] wrote ${written.length} digest(s)`);
-    if (recall) await runMemoryNightly();
+    await runMemoryNightly();
   }
   if (sealed && key) nightly.start(userId, TIME_ZONE, runDigests);
 
@@ -1260,8 +1339,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     every(() => void recall.flush().catch((error: Error) => console.error(`[recall] index update failed: ${error.message.slice(0, 200)}`)), RECALL_FLUSH_MS);
     every(() => void cardWindow(), CARD_TICK_MS);
     every(() => void writeBriefs(false), BRIEF_TICK_MS);
-    if (key && !sealed) nightly.start(userId, TIME_ZONE, runMemoryNightly);
   }
+  // The laptop's nightly run: consolidation with fast recall, and media expiry (accounts run it after their digests).
+  if (!sealed && (recall || mediaStore)) nightly.start(userId, TIME_ZONE, runMemoryNightly);
 
   /** Each project whose cards changed gets its brief rewritten, at most every 30 minutes (or now, nightly). */
   async function writeBriefs(nightlyRun: boolean): Promise<void> {
@@ -1332,8 +1412,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     }
   }
 
-  /** The nightly part of consolidation: every changed brief, then the people cards. */
+  /** The nightly part of consolidation: every changed brief, then the people cards; and media past its retention. */
   async function runMemoryNightly(): Promise<void> {
+    await expireMedia();
+    if (!recall) return;
     await writeBriefs(true);
     await writePeople();
   }
@@ -1463,6 +1545,13 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         lastLive = text;
         const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
         recordStaged({ at: Date.now(), kind: "live", text, stages }, { ms, photo });
+        // A keyframe when the scene changed, named by the moment id the index gives this description (add-media-archive 2.2).
+        const at = Date.now();
+        if (keyframes.consider({ at, description: text, jpeg }, mediaOn("photos"))) {
+          const today = localDay(at, TIME_ZONE);
+          const n = day.entries.filter((e) => (e.kind === "live" || (e.kind === "cue" && e.label === "ON SCREEN")) && e.text.trim() && localDay(e.at, TIME_ZONE) === today).length;
+          void keepMedia({ kind: "frame", ref: `d${today}:${n}`, at, ms: 0, bytes: jpeg.length, codec: "jpeg" }, jpeg);
+        }
       }
       console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · ${said(text)}`);
     } catch (error) {
@@ -1632,6 +1721,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         if (current) {
           const added = addTurn(current, { at: Date.now(), startAt: anchor.spokeAt, speaker: turn.speaker, wearer: turn.speaker !== undefined && turn.speaker === wearerTracker.wearer(), text: turn.text });
           meetingTurns.set(turn.turnId, added);
+          if (mediaOn("audio") && anchor.audioStartMs !== undefined && anchor.audioEndMs !== undefined) {
+            segmentAudio.turn(current, added.id, anchor.audioStartMs, anchor.audioEndMs);
+            storeClosedSegments(current, false);
+          } else if (!mediaOn("audio")) segmentAudio.drop();
           lastSpeechAt = Date.now();
           meetings.save(current);
           syncMeeting();
@@ -1650,7 +1743,11 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const pcm = jitter.take();
       const step = gate.push({ pcm, sessionMs }, rms(pcm));
       if (step.reopen) session.resume();
-      for (const f of step.send) session.send(f.pcm, f.sessionMs);
+      for (const f of step.send) {
+        session.send(f.pcm, f.sessionMs);
+        // Speech audio for the media archive, only what passed the silence gate (add-media-archive 2.2).
+        if (current && mediaOn("audio")) segmentAudio.push(f.pcm, f.sessionMs);
+      }
       if (step.send.length) {
         usage.addAudio((step.send.length * FRAME_MS) / 1000);
         usageChanged = true;
@@ -2312,6 +2409,15 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     } else if (req.method === "POST" && req.url === "/meetings/delete") {
       const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
       const gone = meetings.list().find((m) => m.id === id);
+      // Its kept audio goes before its records (add-media-archive 3.1); a failure keeps the meeting.
+      if (gone && id !== current?.id) {
+        try {
+          await forgetMedia({ meetings: [gone] });
+        } catch (error) {
+          console.error(`[media] removing a meeting's media failed: ${(error as Error).message.slice(0, 160)}`);
+          return void res.writeHead(502).end();
+        }
+      }
       const removed = typeof id === "string" && id !== current?.id && meetings.delete(id);
       if (removed && gone) void forgetInMemory({ meetings: [gone] });
       if (removed) {
@@ -2326,6 +2432,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.writeHead(removed ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/meetings/delete-all") {
       const all = [...meetings.list(), ...(current ? [current] : [])];
+      if (mediaStore) await Promise.resolve(mediaStore.removeAll()).catch((error: Error) => console.error(`[media] removing all media failed: ${error.message.slice(0, 160)}`));
+      keptMedia.clear();
       for (const m of all) deletedMeetings.add(m.id);
       setTimeout(() => void forgetInMemory({ meetings: all }), 0);
       if (current) {
@@ -2368,6 +2476,35 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const threads = (await chats.recent(HISTORY_THREADS)).map((t) => ({ ...t, title: threadTitle(t) }));
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ threads }));
+    } else if (req.method === "GET" && /^\/media\/(audio|frame)\/[a-zA-Z0-9:._-]{1,80}$/.test(req.url ?? "")) {
+      // Playback through the hub only (add-media-archive 2.3): opened here, never a signed URL, never logged.
+      const [, , kind, ref] = req.url!.split("/") as [string, string, "audio" | "frame", string];
+      const found = mediaStore ? await Promise.resolve(mediaStore.get(kind, decodeURIComponent(ref))).catch(() => undefined) : undefined;
+      if (!found) return void res.writeHead(404).end();
+      const body = kind === "audio" ? Buffer.from(wav(decodeAdpcm(found.data))) : Buffer.from(found.data);
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
+      const type = kind === "audio" ? "audio/wav" : "image/jpeg";
+      if (range && (range[1] || range[2])) {
+        const start = range[1] ? Number(range[1]) : Math.max(0, body.length - Number(range[2]));
+        const end = range[1] && range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+        if (start >= body.length || start > end) return void res.writeHead(416, { "Content-Range": `bytes */${body.length}` }).end();
+        res.writeHead(206, { "Content-Type": type, "Content-Length": end - start + 1, "Content-Range": `bytes ${start}-${end}/${body.length}`, "Accept-Ranges": "bytes", "Cache-Control": "private, no-store" });
+        return void res.end(body.subarray(start, end + 1));
+      }
+      res.writeHead(200, { "Content-Type": type, "Content-Length": body.length, "Accept-Ranges": "bytes", "Cache-Control": "private, no-store" });
+      res.end(body);
+    } else if (req.method === "POST" && /^\/media\/retention\/(7|30|90)$/.test(req.url ?? "")) {
+      profile.setMediaRetention(Number(req.url!.split("/")[3]) as 7 | 30 | 90);
+      broadcast(statusEvent());
+      res.writeHead(204).end();
+    } else if (req.method === "POST" && /^\/media\/(audio|photos)\/(on|off)$/.test(req.url ?? "")) {
+      // «Guardar audio» and «Guardar fotos»: off stops storage at once; on keeps media from now, not before.
+      const [, , kind, state] = req.url!.split("/") as [string, string, "audio" | "photos", "on" | "off"];
+      profile.setMedia(kind, state === "on");
+      if (kind === "audio" && state === "off") segmentAudio.drop();
+      console.log(`[media] ${kind} ${state}`);
+      broadcast(statusEvent());
+      res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/ask") {
       const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown; threadId?: unknown };
       const askedAt = Date.now();
@@ -2383,7 +2520,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       };
       let sentText = false;
-      const out = await answerAsk(body, true, streaming ? (e) => (e.type === "delta" ? ((sentText = true), send("delta", { text: e.text })) : e.type === "source" ? send("source", e.source) : send("searching", {})) : undefined);
+      const answered = await answerAsk(body, true, streaming ? (e) => (e.type === "delta" ? ((sentText = true), send("delta", { text: e.text })) : e.type === "source" ? send("source", withMedia(e.source)) : send("searching", {})) : undefined);
+      const out = answered !== "no_project" && answered.ok ? { ...answered, sources: answered.sources.map(withMedia) } : answered;
       if (out === "no_project") return void (opened ? res.end() : res.writeHead(404).end());
       // A typed conversation is kept like a voice one (sealed in the cloud) when the phone names its thread.
       if (out.ok && isThreadId(body.threadId) && typeof body.question === "string" && body.question.trim()) {
@@ -2496,7 +2634,7 @@ type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" 
  * request tries again.
  */
 function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
-  const ready = (async () => createWearerRuntime(userId, runtimeDir(userId), mayListen, await openCachedStores(supabase!, userId, await accounts!.dek(userId))))();
+  const ready = (async () => createWearerRuntime(userId, runtimeDir(userId), mayListen, await openCachedStores(supabase!, userId, await accounts!.dek(userId), Date.now(), mediaStorage)))();
   let open: WearerRuntime | undefined;
   ready.then(
     (rt) => (open = rt),

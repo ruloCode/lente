@@ -23,8 +23,10 @@ import type { AssistMode } from "./profile.ts";
 import type { ProjectStore } from "./project-store.ts";
 import type { Project } from "./projects.ts";
 import { open, seal } from "./seal.ts";
-import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Meetings, Profile, SnapshotRecord, SnapshotStore, Tasks, Traces, UsageStore } from "./stores.ts";
+import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, MediaKind, MediaRecord, MediaStore, Meetings, Profile, SnapshotRecord, SnapshotStore, Tasks, Traces, UsageStore } from "./stores.ts";
+import type { SupabaseStorage } from "./supabase-storage.ts";
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
+import { MEDIA_RETENTIONS, type MediaRetention } from "./profile.ts";
 import { type UsageSnapshot, priceTokens } from "./usage-meter.ts";
 import { AGENT_SCOPES, type AgentScope, type DeviceRecord } from "./user-devices.ts";
 import type { SessionRow, SessionStore } from "./web-session.ts";
@@ -40,7 +42,8 @@ const fingerprint = (value: unknown): string => createHash("sha256").update(JSON
 /** Seals and opens one user's values, bound to table, column and row. */
 export class Sealer {
   readonly userId: string;
-  private readonly dek: Buffer;
+  /** Read by the media store, which seals objects outside a table row. */
+  readonly dek: Buffer;
 
   constructor(userId: string, dek: Buffer) {
     this.userId = userId;
@@ -583,6 +586,8 @@ export class SupabaseProfile implements Profile {
   names: string[] = [];
   everyQuestion = false;
   assistMode: AssistMode = "assist";
+  media = { audio: true, photos: true };
+  mediaRetentionDays: MediaRetention = 30;
   private readonly db: Db;
   private readonly s: Sealer;
   private readonly writes = new WriteBehind();
@@ -598,16 +603,18 @@ export class SupabaseProfile implements Profile {
     if (row) {
       profile.assistMode = row.assist_mode === "record" ? "record" : "assist";
       if (row.display_name_enc != null) {
-        const saved = sealer.openJson<{ names: string[]; everyQuestion: boolean }>("accounts", "display_name_enc", sealer.userId, row.display_name_enc);
+        const saved = sealer.openJson<{ names: string[]; everyQuestion: boolean; media?: { audio?: boolean; photos?: boolean }; mediaRetentionDays?: number }>("accounts", "display_name_enc", sealer.userId, row.display_name_enc);
         profile.names = saved.names;
         profile.everyQuestion = saved.everyQuestion;
+        profile.media = { audio: saved.media?.audio !== false, photos: saved.media?.photos !== false };
+        profile.mediaRetentionDays = MEDIA_RETENTIONS.includes(saved.mediaRetentionDays as MediaRetention) ? (saved.mediaRetentionDays as MediaRetention) : 30;
       }
     }
     return profile;
   }
 
   private save(): void {
-    const values = { display_name_enc: this.s.json("accounts", "display_name_enc", this.s.userId, { names: this.names, everyQuestion: this.everyQuestion }), assist_mode: this.assistMode };
+    const values = { display_name_enc: this.s.json("accounts", "display_name_enc", this.s.userId, { names: this.names, everyQuestion: this.everyQuestion, media: this.media, mediaRetentionDays: this.mediaRetentionDays }), assist_mode: this.assistMode };
     this.writes.push(() => this.db.update(this.db.query("accounts"), values));
   }
 
@@ -619,6 +626,16 @@ export class SupabaseProfile implements Profile {
 
   setEveryQuestion(on: boolean): void {
     this.everyQuestion = on;
+    this.save();
+  }
+
+  setMedia(kind: "audio" | "photos", on: boolean): void {
+    this.media = { ...this.media, [kind]: on };
+    this.save();
+  }
+
+  setMediaRetention(days: MediaRetention): void {
+    this.mediaRetentionDays = days;
     this.save();
   }
 
@@ -764,6 +781,83 @@ export class SupabaseSnapshots implements SnapshotStore {
 
   async remove(shard: string): Promise<void> {
     await this.db.remove(this.db.query("memory_snapshots").eq("shard", shard));
+  }
+}
+
+/**
+ * The media archive (add-media-archive 2.1): a `media_chunks` row per segment's audio or moment's frame,
+ * and the object sealed with AAD `media / <kind> / user / <ref>` in the private `media` bucket under a key
+ * that is the user's id, the day and a random id. Removals delete the objects before the rows.
+ */
+export class SupabaseMedia implements MediaStore {
+  static readonly BUCKET = "media";
+  private readonly db: Db;
+  private readonly s: Sealer;
+  private readonly storage: SupabaseStorage;
+  private readonly userId: string;
+
+  constructor(db: Db, sealer: Sealer, storage: SupabaseStorage, userId: string) {
+    this.db = db;
+    this.s = sealer;
+    this.storage = storage;
+    this.userId = userId;
+  }
+
+  private record(r: Row): MediaRecord & { object: string; id: string } {
+    return { id: String(r.id), kind: r.kind as MediaKind, ref: String(r.ref), at: msOf(r.at), ms: Number(r.ms), bytes: Number(r.bytes), codec: String(r.codec), object: String(r.object) };
+  }
+
+  async put(record: MediaRecord, data: Uint8Array): Promise<void> {
+    const sealed = seal(this.s.dek, Buffer.from(data), { table: "media", column: record.kind, userId: this.userId, rowId: record.ref });
+    const object = `${this.userId}/${new Date(record.at).toISOString().slice(0, 10)}/${randomUUID()}`;
+    await this.storage.put(SupabaseMedia.BUCKET, object, sealed);
+    const [old] = await this.db.select<Row>(this.db.query("media_chunks").eq("kind", record.kind).eq("ref", record.ref).limit(1));
+    await this.db.insert("media_chunks", [{ ...(old ? { id: old.id } : {}), kind: record.kind, ref: record.ref, at: iso(record.at), ms: record.ms, bytes: record.bytes, codec: record.codec, object }], { upsertOn: "user_id,kind,ref" });
+    if (old) await this.storage.remove(SupabaseMedia.BUCKET, [String(old.object)]);
+  }
+
+  async get(kind: MediaKind, ref: string): Promise<{ record: MediaRecord; data: Uint8Array } | undefined> {
+    const [row] = await this.db.select<Row>(this.db.query("media_chunks").eq("kind", kind).eq("ref", ref).limit(1));
+    if (!row) return undefined;
+    const r = this.record(row);
+    const sealed = await this.storage.get(SupabaseMedia.BUCKET, r.object);
+    if (!sealed) return undefined;
+    const data = new Uint8Array(open(this.s.dek, Buffer.from(sealed), { table: "media", column: kind, userId: this.userId, rowId: ref }));
+    return { record: { kind: r.kind, ref: r.ref, at: r.at, ms: r.ms, bytes: r.bytes, codec: r.codec }, data };
+  }
+
+  async list(from: number, to: number): Promise<MediaRecord[]> {
+    const rows = await this.db.select<Row>(this.db.query("media_chunks").gte("at", iso(from)).lt("at", iso(to)).order("at", "asc"));
+    return rows.map((r) => {
+      const { kind, ref, at, ms, bytes, codec } = this.record(r);
+      return { kind, ref, at, ms, bytes, codec };
+    });
+  }
+
+  /** Objects first, then rows: a failure halfway leaves rows pointing at nothing, never objects with no row. */
+  private async drop(rows: Row[]): Promise<number> {
+    if (!rows.length) return 0;
+    const list = rows.map((r) => this.record(r));
+    await this.storage.remove(SupabaseMedia.BUCKET, list.map((r) => r.object));
+    for (const r of list) await this.db.remove(this.db.query("media_chunks").eq("id", r.id));
+    return list.length;
+  }
+
+  async remove(kind: MediaKind, refs: readonly string[]): Promise<number> {
+    const rows = (await this.db.select<Row>(this.db.query("media_chunks").eq("kind", kind))).filter((r) => refs.includes(String(r.ref)));
+    return this.drop(rows);
+  }
+
+  async removeBetween(from: number, to: number): Promise<number> {
+    return this.drop(await this.db.select<Row>(this.db.query("media_chunks").gte("at", iso(from)).lt("at", iso(to))));
+  }
+
+  async expire(before: number, cap: number): Promise<number> {
+    return this.drop(await this.db.select<Row>(this.db.query("media_chunks").lt("at", iso(before)).order("at", "asc").limit(cap)));
+  }
+
+  async removeAll(): Promise<number> {
+    return this.drop(await this.db.select<Row>(this.db.query("media_chunks")));
   }
 }
 
@@ -983,7 +1077,7 @@ export function supabaseCanaries(rest: SupabaseRest): CanaryStore {
 }
 
 /** Every store for one user, opened with their data key. */
-export async function openUserStores(rest: SupabaseRest, userId: string, dek: Buffer, now = Date.now()) {
+export async function openUserStores(rest: SupabaseRest, userId: string, dek: Buffer, now = Date.now(), storage?: SupabaseStorage) {
   const db = rest.forUser(userId);
   const sealer = new Sealer(userId, dek);
   const index = new MeetingIndex(db);
@@ -1002,6 +1096,8 @@ export async function openUserStores(rest: SupabaseRest, userId: string, dek: Bu
     projects: new SupabaseProjects(db, sealer, index),
     chats: new SupabaseChats(db, sealer),
     snapshots: new SupabaseSnapshots(db, sealer),
+    /** The media archive, when the hub has Storage (add-media-archive 2.1). */
+    media: storage ? new SupabaseMedia(db, sealer, storage, userId) : undefined,
     /** Waits for the written-behind settings (eviction flushes before dropping the key). */
     flush: async () => {
       await Promise.all([profile.flush(), language.flush()]);

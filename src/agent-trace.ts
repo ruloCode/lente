@@ -1,5 +1,5 @@
 // Traces of the closing agent: one JSON line per step in data/traces/<meetingId>.jsonl, appended
-// as the run goes (the same pattern as the day record). Text only, deleted with the meeting.
+// as the run goes (the same pattern as the day record). Kept as text, deleted with the meeting.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";

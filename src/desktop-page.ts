@@ -72,7 +72,7 @@ ${THEME_TOKENS}
         <button id="share">Compartir una pestaña</button>
         <p id="note"></p>
       </div>
-      <p class="privacy">El navegador pide permiso antes de compartir y Lente muestra siempre que está escuchando. Se guarda solo texto, nunca audio.</p>
+      <p class="privacy">El navegador pide permiso antes de compartir y Lente muestra siempre que está escuchando. Se guarda el texto; el audio y las fotos, solo con «Guardar audio» y «Guardar fotos» activados, cifrados.</p>
     </section>
     <section class="main" aria-label="En vivo">
       <p class="cap">Qué decir</p>

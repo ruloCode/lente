@@ -56,6 +56,8 @@ export interface AskSource {
   at: number;
   meetingId?: string;
   turnId?: string;
+  /** Kept media behind it (add-media-archive 2.3): hub paths to play the segment's audio or see the moment's frame. */
+  media?: { audio?: string; frame?: string };
 }
 
 export interface AskMessage {

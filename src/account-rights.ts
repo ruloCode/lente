@@ -6,7 +6,9 @@
 
 import type { Writable } from "node:stream";
 import { openUserStores } from "./supabase-stores.ts";
-import type { SupabaseRest } from "./supabase-rest.ts";
+import { SupabaseError, type SupabaseRest } from "./supabase-rest.ts";
+import type { SupabaseStorage } from "./supabase-storage.ts";
+import { decodeAdpcm, wav } from "./media-chunks.ts";
 
 /** The order rows are deleted in after the key: what grants access first, then content, the account last. */
 export const DELETE_ORDER = [
@@ -21,6 +23,8 @@ export const DELETE_ORDER = [
   "agent_traces",
   "chat_messages",
   "memory_digests",
+  "memory_snapshots",
+  "media_chunks",
   "meeting_projects",
   "projects",
   "glossary",
@@ -30,9 +34,13 @@ export const DELETE_ORDER = [
   "accounts",
 ] as const;
 
+/** Tables added by later migrations (add-memory-engine 7.1, add-media-archive 2.1), absent until those are applied. */
+const LATER_TABLES: ReadonlySet<string> = new Set(["memory_snapshots", "media_chunks"]);
+const isMissingTable = (error: unknown): boolean => error instanceof SupabaseError && (error.code === "PGRST205" || error.code === "42P01");
+
 /** Writes one user's memory as a JSON document, a section at a time, opened with their key. */
-export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buffer, out: Writable, now = Date.now()): Promise<void> {
-  const stores = await openUserStores(rest, userId, dek, now);
+export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buffer, out: Writable, now = Date.now(), storage?: SupabaseStorage): Promise<void> {
+  const stores = await openUserStores(rest, userId, dek, now, storage);
   const db = rest.forUser(userId);
   const write = (text: string) => new Promise<void>((resolve, reject) => out.write(text, (error) => (error ? reject(error) : resolve())));
   const section = async (name: string, value: unknown, first = false) => write(`${first ? "" : ","}\n  ${JSON.stringify(name)}: ${JSON.stringify(value)}`);
@@ -44,7 +52,7 @@ export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buf
   await section("tasks", await stores.tasks.list());
   await section("actions", await stores.actions.list());
   const digests = [];
-  for (const scope of ["profile", "day", "week", "month"] as const) digests.push(...(await stores.digests.latest(scope, 10_000)));
+  for (const scope of ["profile", "day", "week", "month", "brief", "person"] as const) digests.push(...(await stores.digests.latest(scope, 10_000)));
   await section("digests", digests);
   await section("glossary", stores.language.glossary);
   await section("chat", await stores.chats.recent(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER));
@@ -54,6 +62,20 @@ export async function exportAccount(rest: SupabaseRest, userId: string, dek: Buf
   const devices = await db.select<Record<string, unknown>>(db.query("devices").order("created_at"), "id,kind,label,created_at,last_seen_at,revoked_at");
   await section("devices", devices);
   await section("usage", await db.select(db.query("usage_daily").order("day"), "day,provider,model,calls,input_tokens,cached_tokens,output_tokens,audio_seconds,cost_micro_usd"));
+  if (stores.media) {
+    // Kept media (add-media-archive 3.2): each object opened with the key, one entry at a time, as its file's bytes in base64.
+    await write(`,\n  "media": [`);
+    let first = true;
+    for (const r of await stores.media.list(0, now + 1)) {
+      const found = await stores.media.get(r.kind, r.ref);
+      if (!found) continue;
+      const file = `${r.kind}/${r.ref.replace(/:/g, "_")}.${r.kind === "audio" ? "wav" : "jpg"}`;
+      const bytes = r.kind === "audio" && r.codec === "adpcm" ? wav(decodeAdpcm(found.data)) : found.data;
+      await write(`${first ? "" : ","}\n    ${JSON.stringify({ ...r, file, base64: Buffer.from(bytes).toString("base64") })}`);
+      first = false;
+    }
+    await write("\n  ]");
+  }
   await write("\n}\n");
 }
 
@@ -71,6 +93,8 @@ export interface DeleteDeps {
   forgetInMemory(userId: string): Promise<void>;
   /** Deletes the user's Supabase sign-in (Auth admin API). */
   deleteSignIn(userId: string): Promise<void>;
+  /** Media objects (add-media-archive 3.1): removed before their rows, from the keys the rows hold. */
+  storage?: SupabaseStorage;
 }
 
 /** Deletes an account in the order the design sets; returns the steps taken, for the log and the tests. */
@@ -81,9 +105,21 @@ export async function deleteAccount(rest: SupabaseRest, userId: string, deps: De
   steps.push("user_keys");
   await deps.forgetInMemory(userId);
   steps.push("memory");
+  if (deps.storage) {
+    // Objects before rows: the rows are the only place their keys are written.
+    const objects = (await db.select<{ object: string }>(db.query("media_chunks"), "object")).map((r) => String(r.object));
+    await deps.storage.remove("media", objects);
+    steps.push("media objects");
+  }
   for (const table of DELETE_ORDER) {
-    await db.remove(db.query(table));
-    steps.push(table);
+    try {
+      await db.remove(db.query(table));
+      steps.push(table);
+    } catch (error) {
+      // Tables of a migration not applied yet hold nothing to delete; any other failure stops the deletion.
+      if (!LATER_TABLES.has(table) || !isMissingTable(error)) throw error;
+      steps.push(`${table} (not created yet)`);
+    }
   }
   await deps.deleteSignIn(userId);
   steps.push("auth");

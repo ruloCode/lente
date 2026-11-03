@@ -18,7 +18,7 @@ Lente is a real-time meeting copilot for people who work in their second languag
 
 - A small clip on **any pair of glasses** (camera + microphone) listens to the meeting and sees what the wearer sees. It also works from the phone or the laptop, with no clip.
 - When someone asks the wearer a question, the phone shows **one line they can say right away**, 90 characters or less. That card is called **"Dilo"** (Spanish for "say it"). Below the line, its meaning in the wearer's language.
-- It also explains a term the wearer missed, says what is on the slide in front of them, summarizes the meeting, keeps the day as text (never audio), and prepares the follow-up after the meeting.
+- It also explains a term the wearer missed, says what is on the slide in front of them, summarizes the meeting, keeps the day as text, with its speech audio and keyframes when the wearer keeps them, and prepares the follow-up after the meeting.
 - It runs on Meta's AI models and was built for the Meta Global AI Developer Hackathon (Oct–Nov 2026).
 
 The problem it solves: in a live meeting in a second language the hard part isn't vocabulary, it's **speed**. By the time you've translated in your head, the moment has passed, and you stay quiet in the meetings that decide your work.

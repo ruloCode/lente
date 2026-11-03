@@ -5,6 +5,7 @@
 // read from the database when asked (those routes await). Ids are chosen here, so memory and the
 // database agree on them.
 
+import type { SupabaseStorage } from "./supabase-storage.ts";
 import { randomUUID } from "node:crypto";
 import type { PendingAction } from "./action-store.ts";
 import type { Proposal, TraceStep } from "./agent-loop.ts";
@@ -255,8 +256,8 @@ export class CachedActions {
 }
 
 /** Every store of one signed-in user, opened with their data key. */
-export async function openCachedStores(rest: SupabaseRest, userId: string, dek: Buffer, now = Date.now()) {
-  const sealed = await openUserStores(rest, userId, dek, now);
+export async function openCachedStores(rest: SupabaseRest, userId: string, dek: Buffer, now = Date.now(), storage?: SupabaseStorage) {
+  const sealed = await openUserStores(rest, userId, dek, now, storage);
   const queue = new WriteQueue();
   const [meetings, facts, tasks, actions, usage] = await Promise.all([sealed.meetings.list(), sealed.facts.list(), sealed.tasks.list(), sealed.actions.list(), sealed.usage.load(now)]);
   return {

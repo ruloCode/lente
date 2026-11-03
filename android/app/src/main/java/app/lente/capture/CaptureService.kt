@@ -179,7 +179,7 @@ class CaptureService : Service() {
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_lente)
             .setContentTitle("Lente escucha con el teléfono")
-            .setContentText("Solo se guarda texto, nunca audio.")
+            .setContentText("Se guarda el texto; el audio y las fotos, solo si los activaste.")
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(0, "Detener", stop)

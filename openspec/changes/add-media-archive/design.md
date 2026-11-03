@@ -67,6 +67,12 @@ The owner decided on 2026-11-03 that Lente keeps the day as audio, keyframes and
 
 **The `media_chunks` row** holds only `user_id`, `segment` (ordinal), `kind`, `at`, `ms`, `bytes`, `codec` and `object`. These are plain columns with no content, like the other plain columns in decision 6 of `add-accounts`.
 
+**As built (2.1–2.3), where it differs from the plan above:**
+- **Audio is cut per turn, stored per segment.** The hub keeps two minutes of gated frames with their session times. Each transcribed turn takes its own span (the transcription maps it back to session time). When a segment closes, its turns become one chunk named by the segment's id: `s<meeting id>:<n>` (`src/media-tap.ts`). Speech outside a meeting is not kept yet; in Solo grabar every stretch of speech is inside an episode.
+- **The object key** is `<user uuid>/<YYYY-MM-DD>/<random uuid>`, not a segment ordinal: it says even less. The row keeps the segment or moment id in `ref`. That is an id, like the meeting ids already in plain columns.
+- **The owner** is `LOCAL_OWNER` on the laptop. On a cloud hub it is the account named by `LENTE_OWNER_USER_ID`. Cloud media also needs `LENTE_MEDIA_STORAGE=on`, set once 2.4's migration and bucket exist. Until then a cloud runtime keeps no media.
+- **A failed write** (no table yet, Storage down) stops media for that runtime with one log line, instead of failing every segment.
+
 ### 3. Codec by measurement
 
 The candidates:
@@ -80,6 +86,8 @@ The candidates:
 
 **The rule.** Opus ships only if it at least halves storage at acceptable CPU. Otherwise ADPCM ships. The dependency and its rejected zero-dependency alternative go in `docs/kb/decisions.md`.
 
+**Measured in 1.2** (`docs/benchmarks.md`): ADPCM keeps an hour of speech in 28.8 MB, with 472 ms of encoder CPU per audio hour and a 28.4 dB round trip. Opus is not measured; it waits for the owner's listening check.
+
 ### 4. Keyframes on change
 
 A frame that has already been described is kept when all of these hold:
@@ -88,6 +96,8 @@ A frame that has already been described is kept when all of these hold:
 - «Guardar fotos» is on.
 
 Kept frames are sealed with AAD `media / frame / user / moment id`, using the moment id the description already has.
+
+**As built (1.3):** the cheap signature is the JPEG's size plus a 16-bucket histogram of its scan bytes, not its DC coefficients. Reading DC coefficients needs Huffman-decoding every block, which is close to a full decode. The histogram moves with the scene, needs only a walk to the start of scan, and is tested on synthetic JPEG byte sequences. A real-frame check on the clip's JPEGs is still to do.
 
 ### 5. Playback through the hub only
 

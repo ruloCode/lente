@@ -316,3 +316,17 @@ The encoder bake-off is recorded with the choice in `docs/kb/decisions.md` ("The
 | Cost | US$ 0.105 for 30 answers | — |
 
 At 365 days the index microbench with 384-dimension vectors (task 2.4) gave 93 ms p95 for retrieval. Add 3.9 ms p95 for the query's embedding: about 97 ms, against the ≤ 150 ms target, met. The RSS at 365 days is in 2.4's table; only the three hot months stay loaded at once (7.5).
+
+## Media archive (add-media-archive) — 2026-11-03
+
+### Audio codec (task 1.2, measured; the choice waits for the owner)
+
+`node scripts/bench-media.ts`: IMA ADPCM (pure TypeScript, `src/media-chunks.ts`) on 60 minutes of synthetic speech (the `say` lines of `scripts/bench-consolidation.ts`, looped), cut into 30-second chunks as segments would be. Measured on the owner's Mac, not the Modal container.
+
+| Codec | Bytes per hour of speech | Encoder CPU per audio hour | Round-trip SNR | Dependency |
+|---|---|---|---|---|
+| PCM16 (reference) | 115.2 MB | — | — | — |
+| IMA ADPCM | 28.8 MB | 472 ms | 28.4 dB | none |
+| Opus (WASM) | not measured | — | — | one runtime dependency |
+
+Opus is not measured: measuring it means adding a WASM build of libopus, and the handoff asks for the owner's listening check before choosing it. ADPCM is the default until then. Decision 3's rule says Opus ships only if it at least halves storage at acceptable CPU. The design's arithmetic puts Opus at 7–11 MB an hour, which would qualify on size. The ADPCM number is a ceiling, because only speech that passes the silence gate is kept.

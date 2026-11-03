@@ -399,7 +399,7 @@ fun Dispositivos(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
             StatTile(Format.tokens(hub.spend.tokens), "Tokens", Modifier.weight(1f))
             StatTile(Format.usd(hub.spend.usd, hub.spend.unpriced), "Costo aproximado", Modifier.weight(1f))
         }
-        Text("Solo texto: el audio se transcribe y no se guarda. En silencio no se envía.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
+        Text("El audio se transcribe; se guarda solo con «Guardar audio» activado, cifrado. En silencio no se envía.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
         SectionTitle("Conexión")
         Group {
             val clean = s.audioLost == 0 && s.audioLate == 0
@@ -491,7 +491,7 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
             SetRow(Glyph.Trash, "Borrar toda la memoria", danger = true) { open("wipe") }
             if (signedIn) { Hairline(); AccountDataRows(vm, open) }
         }
-        Text("Lente guarda solo texto, nunca audio. Los precios del gasto son los de lista.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
+        Text("Lente guarda el texto; el audio y las fotos, solo con «Guardar audio» y «Guardar fotos» activados. Los precios del gasto son los de lista.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
         SectionTitle("Ayuda")
         Group {
             SetRow(Glyph.Play, "Ver la introducción", onClick = replayIntro)
