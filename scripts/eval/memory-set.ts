@@ -269,3 +269,47 @@ export const ASK_SCENARIOS: AskScenario[] = [
   { id: "design-in-atlas", question: "¿A quién entrevistamos para diseño?", project: "p-atlas", outOfProject: true, leak: /Orion|Luc[ií]a/ },
   { id: "pilot-in-atlas", question: "¿Cuándo arranca el piloto?", project: "p-atlas", expect: /lunes|9|nueve/i, leak: /Orion|Luc[ií]a/ },
 ];
+
+/** All-day recording, for the index microbench: about 150 spoken words a minute for 8 hours, in segments of about 60 words. */
+export const SEGMENTS_PER_DAY = 1200;
+const WORDS_PER_SEGMENT = 60;
+/** Distinct content words in a year of speech (synthetic tokens, Zipf-distributed like real speech). */
+const VOCABULARY = 30_000;
+const FUNCTION_WORDS = ["de", "la", "que", "el", "en", "y", "a", "los", "se", "del", "the", "and", "to", "of", "is", "it", "we", "for"];
+
+/**
+ * `days` days of all-day segments, newest day ending at MEMORY_NOW: content words drawn from a Zipf
+ * vocabulary, about 40% function words, two projects by the hour, the PROBE- people as speakers.
+ * Yields units ready for the index; deterministic.
+ */
+export function* allDayUnits(days: number, segmentsPerDay = SEGMENTS_PER_DAY): Generator<import("../../src/memory-index.ts").MemoryUnit> {
+  const r = rng(424_242);
+  // Inverse-CDF table for Zipf(s = 1) over the vocabulary.
+  const cdf = new Float64Array(VOCABULARY);
+  let sum = 0;
+  for (let i = 0; i < VOCABULARY; i++) cdf[i] = sum += 1 / (i + 1);
+  const word = () => {
+    const x = r() * sum;
+    let lo = 0;
+    let hi = VOCABULARY - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cdf[mid]! < x) lo = mid + 1;
+      else hi = mid;
+    }
+    return `w${lo.toString(36)}`;
+  };
+  const people = Object.values(PEOPLE);
+  const today = localDayStart(MEMORY_NOW);
+  for (let back = days - 1; back >= 0; back--) {
+    const start = today - back * DAY_MS + 8 * 3_600_000;
+    const day = isoLocalDay(start);
+    const step = (8 * 3_600_000) / segmentsPerDay;
+    for (let n = 1; n <= segmentsPerDay; n++) {
+      const at = start + (n - 1) * step;
+      const words = Array.from({ length: WORDS_PER_SEGMENT }, () => (r() < 0.4 ? pick(r, FUNCTION_WORDS) : word()));
+      const speakers = [pick(r, people), pick(r, people)];
+      yield { id: `s${day}:${n}`, kind: "segment", at, to: at + step, projectId: Math.floor(n / 150) % 2 ? "p-orion" : "p-atlas", speakers, text: `${speakers[0]}: ${words.join(" ")}` };
+    }
+  }
+}

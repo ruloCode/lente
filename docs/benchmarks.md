@@ -218,3 +218,20 @@ What this says:
 - The out-of-project question was declined both before and after. Now that holds in the data, not only in the model's obedience.
 - No reply hit the length cap in this run. Before, the laptop's cap was 500 tokens and the 2026-11-03 probe hit it on «¿Qué prometí entregar esta semana?». Now the cap is 1,500, and a cut-off reply is retried once at 3,000 or reported as a failure (task 1.2, unit-tested).
 - Spend: US$ 0.19 before, US$ 0.23 after.
+
+### The memory index alone (task 2.4)
+
+`pnpm bench:ask --index-only` and `pnpm bench:ask --index-only --vectors` (2026-11-03, MacBook, Node 22). Each size is built in its own process from synthetic all-day segments: 1,200 a day of about 60 words, content words drawn from a 30,000-word Zipf vocabulary, two projects. Each of 300 queries runs the fast path's retrieval: 4–6 words of a real segment, a project filter on a third, a one-week window on a third, a named person on a fifth, BM25, the people list, with `--vectors` a random 384-dimension int8 vector per unit and a vector search (bit-code prefilter to 200, int8 rescoring), then fusion and neighbour expansion. RSS is measured after a forced GC, before and after the build, and includes the units' text.
+
+| Days | Units | Vectors | Build | Query p50 | Query p95 | Target p95 | RSS added | per 100k units |
+|---|---|---|---|---|---|---|---|---|
+| 30 | 36,000 | — | 0.8 s | 0.6 ms | 3.5 ms | — | 135 MB | 374 MB |
+| 90 | 108,000 | — | 2.6 s | 2.5 ms | 12.2 ms | ≤ 30 ms, met | 267 MB | 247 MB |
+| 365 | 438,000 | — | 12.4 s | 10.3 ms | 48.3 ms | ≤ 150 ms, met | 884 MB | 202 MB |
+| 30 | 36,000 | 384 | 1.3 s | 3.5 ms | 6.6 ms | — | 151 MB | 418 MB |
+| 90 | 108,000 | 384 | 3.8 s | 10.6 ms | 20.9 ms | ≤ 30 ms, met | 339 MB | 314 MB |
+| 365 | 438,000 | 384 | 18.6 s | 45.7 ms | 93.1 ms | ≤ 150 ms, met | 865 MB | 198 MB |
+
+The first version missed: 90 days lexical took 55 ms p95. Three changes brought it to 12 ms: document frequencies are kept as units come and go instead of being recounted per query; scores accumulate in typed arrays instead of maps; and a top-k heap replaces sorting every candidate. Decision 3 (three hot months) stands on latency.
+
+Memory is the cost to watch. A hot quarter with vectors adds about 340 MB per listening wearer. Decision 3 estimated about 47 MB for the vectors alone; the rest is postings and the units' text. The container runs every listening runtime (`add-accounts` 6.4). Before more than a few wearers record all day at once, the hot window shrinks to one month (about 150 MB), or hot shards drop their text and reopen it from the sealed records, as cold shards already plan to. This goes to the capacity measure, not to group 3.

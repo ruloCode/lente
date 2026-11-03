@@ -7,6 +7,7 @@
 // usage). Synthetic PROBE- data only; prints its cost.
 //
 //   pnpm bench:ask [runs=2] [days=14] [--paths tiers,laptop] [--src <dir>]
+//   pnpm bench:ask --index-only [days…] [--vectors]   (scripts/bench-index.ts)
 //
 // `runs` is per question. `--src` loads the answer paths from another checkout's `src/` (for a
 // before/after table): with it, the hub's earlier behaviour is reproduced (no length retry, the
@@ -14,6 +15,11 @@
 // Each answer prints one JSON line; the summary prints one per path, for docs/benchmarks.md.
 
 import { parseArgs } from "node:util";
+// `--index-only` is the index microbench (task 2.4): no model, no key.
+if (process.argv.includes("--index-only") || process.argv.includes("--index-child")) {
+  await import("./bench-index.ts");
+  process.exit(0);
+}
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import type { AskOutcome } from "../src/ask.ts";

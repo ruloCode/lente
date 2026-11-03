@@ -131,7 +131,7 @@ The plan call is the slowest step and the least reliable one. The probe measured
 
 **Context expansion.** Each top segment brings its neighbours (±1 segment), so a quote keeps its question and its reply.
 
-**Confidence.** When the top fused score is under `RECALL_MIN_SCORE` and no person or time matched, or when the parser marks the question as an aggregate («todo», «resume», «cuántas veces», «everything»), the request takes the deep path (decision 8).
+**Confidence.** Fused scores are ranks, not evidence, so confidence is read from the top 3 fused units: a lexical hit that holds at least `RECALL_MIN_SCORE` (0.5) of the question's distinct terms, or a vector hit at least `VECTOR_MIN_SIMILARITY` close. When neither holds and no person or time matched, or when the parser marks the question as an aggregate («todo», «resume», «cuántas veces», «everything»), the request takes the deep path (decision 8).
 
 **Rejected:**
 - Postgres FTS or pgvector. The database would need plain content, against decision 6 of `add-accounts`.
@@ -157,7 +157,9 @@ The plan call is the slowest step and the least reliable one. The probe measured
 
 **Laptop mode** writes the same sealed format to `data/memory/<shard>.bin`, with the local key.
 
-**Arithmetic to measure in 2.4, not results:**
+**Measured in 2.4** (`docs/benchmarks.md`): 90 days query in 12 ms p95 lexical and 21 ms with 384-dimension vectors; 365 days in 48 ms and 93 ms. A hot quarter with vectors adds about 340 MB of RSS, mostly postings and text. So the three hot months stand on latency, and memory is what may shrink the window to one month (see Risks).
+
+**Arithmetic before 2.4, kept for comparison:**
 - Size. About 150 spoken words a minute for 8 h is about 72k words a day. At about 60 words per segment, that is about 1,200 segments a day and about 0.44 M a year.
 - Vectors. At 384 dimensions, int8 is 384 B and the 1-bit code is 48 B, so a hot quarter is about 110k units and about 47 MB with codes.
 - Text. Unit text is not kept in RAM for cold shards; it is reopened from the sealed records when shown.
@@ -335,6 +337,7 @@ The benchmark numbers these projects publish are their own claims and are not qu
   - Hot shards cost RAM for every listening user.
   - Mitigations: hot shards for listening users only, cold loading, and the capacity measure (`add-accounts` 6.4) gaining an index row.
   - If the numbers do not fit, the hot window shrinks to one month.
+  - Measured in 2.4: about 340 MB per hot quarter with vectors, about 150 MB per month. Hot shards that drop their text (reopened from the sealed records, as cold shards do) are the next saving.
 - **Streaming rules out JSON validation before display.** A wrong claim can show for a moment before `replace`. This is mitigated by sources streaming next to the text and by the eval's citation-accuracy check.
 - **Window cards cost money in all-day recording.** They run only while speech flows, are capped by the spend cap, and skip silent windows. The cost per recorded hour is measured in 6.6.
 - **Bilingual keys depend on the model.** The eval measures recall with and without them.

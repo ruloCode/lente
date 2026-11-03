@@ -15,10 +15,10 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 2. The index core (pure)
 
-- [ ] 2.1 `src/memory-index.ts`: units, accent folding and ES/EN stopwords (shared with the planned blind index), BM25 postings per shard, filters (project, time range, speaker or person, validity), incremental add and remove. Tests: add, search, remove, filter isolation between projects (`pnpm test`)
-- [ ] 2.2 Fusion: reciprocal rank fusion (k 60) across lists, people boost, recency prior off when a time is named, ±1 neighbour expansion, `RECALL_MIN_SCORE` confidence. Tests on hand-built lists with known expected order (`pnpm test`)
-- [ ] 2.3 Snapshot codec: shard ↔ compact binary (term dictionary, postings, unit table, optional int8 vectors and bit codes), versioned, round-trip and corruption tests (`pnpm test`)
-- [ ] 2.4 Microbench in `scripts/bench-ask.ts --index-only`: build time, query p50/p95 and RSS at 30, 90 and 365 synthetic days, lexical only and with random int8 vectors of 384 dims. Verify: numbers recorded in `docs/benchmarks.md`; if 90 days exceeds 30 ms p95, revise decision 3 before group 3
+- [x] 2.1 `src/memory-index.ts`: units, accent folding and ES/EN stopwords (shared with the planned blind index), BM25 postings per shard, filters (project, time range, speaker or person, validity), incremental add and remove. Tests: add, search, remove, filter isolation between projects (`pnpm test`)
+- [x] 2.2 Fusion: reciprocal rank fusion (k 60) across lists, people boost, recency prior off when a time is named, ±1 neighbour expansion, `RECALL_MIN_SCORE` confidence. Tests on hand-built lists with known expected order (`pnpm test`)
+- [x] 2.3 Snapshot codec: shard ↔ compact binary (term dictionary, postings, unit table, optional int8 vectors and bit codes), versioned, round-trip and corruption tests (`pnpm test`)
+- [x] 2.4 Microbench in `scripts/bench-ask.ts --index-only`: build time, query p50/p95 and RSS at 30, 90 and 365 synthetic days, lexical only and with random int8 vectors of 384 dims. Verify: numbers recorded in `docs/benchmarks.md`; if 90 days exceeds 30 ms p95, revise decision 3 before group 3
 
 ## 3. Fast recall for text
 
