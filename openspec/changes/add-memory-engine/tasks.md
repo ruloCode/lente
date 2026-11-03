@@ -32,7 +32,7 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 - [x] 4.1 Android chat: read the SSE answer, render text as it streams, chips as `source` events arrive, «Buscando más…» on `searching`, swap on `replace`; JVM tests for the event reducer (`pnpm android:test`). `pnpm android:e2e` installs over the app on the connected device; on 2026-11-03 that was the owner's phone, about to record all day, so it was not run (listed for 4.3)
 - [x] 4.2 Web desktop `/app`: the same events in the chat panel; unit test for the reducer (`pnpm test`)
-- [ ] 4.3 On the phone against a hub with synthetic memory from test speech: a whole-memory question, a project question and an out-of-project probe; screenshots and the first-text time from the hub log [phone]
+- [x] 4.3 On the phone against a hub with synthetic memory from test speech: a whole-memory question, a project question and an out-of-project probe; screenshots and the first-text time from the hub log [phone]. Done 2026-11-03 in Chrome on the phone against a laptop hub (`docs/benchmarks.md`): right answers with chips, the probe declined; first text 3.2 s and 4.5 s
 
 ## 5. Voice in one step
 

@@ -379,3 +379,19 @@ The 2-hour rerun (bold row) measures 6.6. It also found a problem in the idle pa
 - **What the clip does:** it stops sending, and the phone shows the pause («En pausa»).
 
 In the bench the "wearer" is one of two synthetic voices. On the glasses the wearer's voice is the loudest, which should be re-identified more often, but nothing guarantees it.
+
+### On the phone (add-memory-engine 4.3)
+
+2026-11-03, Samsung S25 (SM-S931B), Chrome. The web app's chat ran against a laptop hub from this branch with `LENTE_ENCODER=hub`, through `adb reverse`. The memory was the 2-hour Solo grabar run's synthetic speech: 2 episodes, 11 cards, 277 indexed units. A second project with no meetings («Lanzamiento Lima») was added for the probe. The questions were asked through Chrome DevTools, and each screenshot is of the page itself. Times come from the hub's `[ask]` lines.
+
+| Question | Scope | Answer | Retrieval | First text | Answer total |
+|---|---|---|---|---|---|
+| «¿Qué temas quedaron en pausa hasta la otra semana?» | All memory | The eight paused topics, with chips to both episodes | 5.8 ms | 3,193 ms | 3,883 ms |
+| «¿Qué tengo que revisar antes de seguir?» | Piloto Bogotá | The six items to review before continuing, 3 chips | 3.8 ms | 4,490 ms | 5,242 ms |
+| «¿Qué se decidió sobre el piloto en Bogotá?» | Lanzamiento Lima (out-of-project probe) | «No lo encuentro en lo que viste y escuchaste.»: no lines in scope, so the deep path, no chips | 0.6 ms | — | 3,102 ms |
+
+The first text missed the 1.2 s target, as in 3.5: the time goes to the model before its first token, not to retrieval.
+
+### Media storage per recorded hour (add-media-archive 4.3, partly)
+
+The 2-hour Solo grabar run kept the speech audio of every closed segment as ADPCM: 188 objects, **36 MB for 96.6 minutes of audio received**, about **22 MB per recorded hour**. That is below the 28.8 MB an hour of continuous speech takes (1.2), because the silence gate keeps only speech. The run had no frames: the clip emulator sends no photos. Battery with frames on and off is still to measure on the clip, on battery.
