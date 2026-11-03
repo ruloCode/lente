@@ -793,6 +793,9 @@ export class SupabaseSnapshots implements SnapshotStore {
   }
 }
 
+/** Rows a media listing reads per request (the API returns at most 1,000). */
+const MEDIA_PAGE = 1000;
+
 /**
  * The media archive (add-media-archive 2.1): a `media_chunks` row per segment's audio or moment's frame,
  * and the object sealed with AAD `media / <kind> / user / <ref>` in the private `media` bucket under a key
@@ -836,7 +839,13 @@ export class SupabaseMedia implements MediaStore {
   }
 
   async list(from: number, to: number): Promise<MediaRecord[]> {
-    const rows = await this.db.select<Row>(this.db.query("media_chunks").gte("at", iso(from)).lt("at", iso(to)).order("at", "asc"));
+    // A recorded hour keeps about 1,800 photos, past the API's 1,000 rows a request: read it in pages.
+    const rows: Row[] = [];
+    for (let page = 0; ; page++) {
+      const got = await this.db.select<Row>(this.db.query("media_chunks").gte("at", iso(from)).lt("at", iso(to)).order("at", "asc").order("id", "asc").limit(MEDIA_PAGE).offset(page * MEDIA_PAGE));
+      rows.push(...got);
+      if (got.length < MEDIA_PAGE) break;
+    }
     return rows.map((r) => {
       const { kind, ref, at, ms, bytes, codec } = this.record(r);
       return { kind, ref, at, ms, bytes, codec };

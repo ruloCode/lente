@@ -86,6 +86,12 @@ export class Query {
     return this;
   }
 
+  offset(n: number): this {
+    if (!Number.isInteger(n) || n < 0) throw new Error("offset must be a non-negative integer");
+    this.parts.push(`offset=${n}`);
+    return this;
+  }
+
   /** The query string, with `select` first when given. */
   search(select?: string): string {
     const head = select ? [`select=${encodeURIComponent(select)}`] : [];

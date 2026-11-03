@@ -80,7 +80,7 @@ export function fakePostgrest(): FakePostgrest & { handler: Handler } {
       const body = init.body ? (JSON.parse(init.body) as unknown) : undefined;
       requests.push({ method: init.method, table: name, search: u.searchParams, body });
       const reply = (status: number, value?: unknown) => ({ status, ok: status < 300, text: async () => (value === undefined ? "" : JSON.stringify(value)) });
-      const filters = [...u.searchParams].filter(([k]) => !["select", "order", "limit", "on_conflict"].includes(k));
+      const filters = [...u.searchParams].filter(([k]) => !["select", "order", "limit", "offset", "on_conflict"].includes(k));
       const selected = () => table(name).filter((r) => filters.every(([k, v]) => matches(r, k, v)));
       const wantRows = (init.headers.Prefer ?? "").includes("return=representation");
 
@@ -126,8 +126,9 @@ export function fakePostgrest(): FakePostgrest & { handler: Handler } {
           return dir === "desc" ? -c : c;
         });
       }
+      const offset = Number(u.searchParams.get("offset") ?? 0);
       const limit = u.searchParams.get("limit");
-      if (limit) rows = rows.slice(0, Number(limit));
+      rows = rows.slice(offset, limit ? offset + Number(limit) : undefined);
       const select = u.searchParams.get("select");
       if (select && select !== "*") rows = rows.map((r) => Object.fromEntries(select.split(",").map((c) => [c, r[c]])));
       return reply(200, rows);

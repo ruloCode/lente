@@ -60,6 +60,15 @@ test("kept media plays through the hub, the switches reach the status, and chips
   assert.equal(frame.headers.get("content-type"), "image/jpeg");
   assert.equal((await fetch(`${base}/media/audio/sm99:1`)).status, 404);
   assert.equal((await fetch(`${base}/media/audio/..%2F..%2Fetc`)).status, 404);
+  // The path a chip carries is encoded (`:` as %3A) and plays the same.
+  assert.equal((await fetch(`${base}/media/audio/sm20261103100000%3A1`)).status, 200);
+
+  // Recuerdos: the meeting as a moment whose scene plays the kept audio of its segment.
+  const memories = (await (await fetch(`${base}/memories`)).json()) as { moments: { id: string; durationS: number; scenes: { audio?: string }[]; lines: { who: string }[] }[] };
+  assert.equal(memories.moments[0]!.id, "m20261103100000");
+  assert.equal(memories.moments[0]!.scenes[0]!.audio, "/media/audio/sm20261103100000%3A1");
+  assert.equal(memories.moments[0]!.durationS, 1);
+  assert.equal((await fetch(`${base}${memories.moments[0]!.scenes[0]!.audio}`)).status, 200);
 
   assert.equal((await fetch(`${base}/media/photos/off`, { method: "POST" })).status, 204);
   const ctrl = new AbortController();

@@ -55,6 +55,7 @@ import { SegmentAudio, mediaAllowed } from "./media-tap.ts";
 import { SupabaseStorage } from "./supabase-storage.ts";
 import { decodeAdpcm, wav } from "./media-chunks.ts";
 import { KeyframePicker } from "./keyframes.ts";
+import { momentsOf } from "./memories.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
@@ -138,6 +139,12 @@ const CARD_WINDOW_TRIES = 3;
 const SNAPSHOT_EVERY_MS = 10 * 60_000;
 /** Media objects expired per nightly run at most, oldest first. */
 const MEDIA_EXPIRE_PER_RUN = 500;
+/** While listening with «Guardar fotos» on, one of the clip's photos is kept this often: the video Recuerdos plays. */
+const VIDEO_FRAME_MS = Number(process.env.LENTE_VIDEO_FRAME_MS ?? 2000);
+/** After a failed media write, media pauses this long instead of failing every segment and photo meanwhile. */
+const MEDIA_RETRY_MS = 5 * 60_000;
+/** How many meetings Recuerdos lists. */
+const MOMENTS_LIMIT = 40;
 const CARD_NOTES_TOKENS = 4_500;
 /** Briefs are checked every 5 minutes (each rewritten at most every 30); how many briefs and people cards are read, and how many meetings feed each. */
 const BRIEF_TICK_MS = 5 * 60_000;
@@ -586,22 +593,29 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   // can say their accepted terms describe media, so not yet.
   const mediaStore: MediaStore | undefined = sealed ? sealed.sealed.media : new FileMedia(join(dataDir, "media"));
   const isOwner = userId === LOCAL_OWNER || (process.env.LENTE_OWNER_USER_ID !== undefined && userId === process.env.LENTE_OWNER_USER_ID);
-  const mediaOn = (kind: "audio" | "photos") => Boolean(mediaStore) && !mediaBroken && mediaAllowed(kind, { env: process.env.LENTE_MEDIA, switches: profile.media, isOwner, acceptedMediaTerms: false });
+  const mediaOn = (kind: "audio" | "photos") => Boolean(mediaStore) && Date.now() >= mediaPausedUntil && mediaAllowed(kind, { env: process.env.LENTE_MEDIA, switches: profile.media, isOwner, acceptedMediaTerms: false });
   const segmentAudio = new SegmentAudio();
   const keyframes = new KeyframePicker();
   /** Media this runtime kept, as `kind:ref`, so chips can say what can be played. */
   const keptMedia = new Set<string>();
-  let mediaBroken = false;
+  let mediaPausedUntil = 0;
   async function keepMedia(record: MediaRecord, data: Uint8Array): Promise<void> {
     if (!mediaStore) return;
     try {
       await mediaStore.put(record, data);
       keptMedia.add(`${record.kind}:${record.ref}`);
     } catch (error) {
-      // One failure (no table yet, Storage down) stops media for this runtime instead of failing every segment.
-      mediaBroken = true;
-      console.error(`[media] keeping media failed, stopped until restart: ${(error as Error).message.slice(0, 160)}`);
+      // One failure (no table yet, Storage down) pauses media for a while instead of failing every segment and photo.
+      mediaPausedUntil = Date.now() + MEDIA_RETRY_MS;
+      console.error(`[media] keeping media failed, paused for ${MEDIA_RETRY_MS / 60_000} min: ${(error as Error).message.slice(0, 160)}`);
     }
+  }
+  /** The video Recuerdos plays: while listening, one of the clip's photos every VIDEO_FRAME_MS, named by its time. */
+  let lastVideoFrameAt = 0;
+  function keepVideoFrame(jpeg: Uint8Array, at: number): void {
+    if (!status.listening || !mediaOn("photos") || at - lastVideoFrameAt < VIDEO_FRAME_MS || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return;
+    lastVideoFrameAt = at;
+    void keepMedia({ kind: "frame", ref: `v${at}`, at, ms: 0, bytes: jpeg.length, codec: "jpeg" }, jpeg);
   }
   /** The switches, and whether audio and photos are being kept right now (Ahora: «Guardando audio · fotos»). */
   function mediaStatus() {
@@ -1896,6 +1910,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
           }
         } else if (frame.type === "J") {
           const jpeg = Buffer.from(frame.payload);
+          keepVideoFrame(jpeg, Date.now());
           if (status.live) onLiveFrame(jpeg, Date.now());
           else {
             console.log(`[clip] photo ${Math.round(jpeg.length / 1024)} KB`);
@@ -2319,6 +2334,13 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       for (const event of events) res.write(`data: ${JSON.stringify(event)}\n\n`);
       clients.add(res);
       req.on("close", () => clients.delete(res));
+    } else if (req.method === "GET" && req.url === "/memories") {
+      // Recuerdos: the latest meetings as moments to relive, with the audio and photos kept for them.
+      const recent = [...meetings.list()].sort((a, b) => b.startedAt - a.startedAt).slice(0, MOMENTS_LIMIT);
+      const from = Math.min(Date.now(), ...recent.map((m) => m.startedAt)) - 60_000;
+      const media = mediaStore ? await Promise.resolve(mediaStore.list(from, Date.now() + 60_000)).catch(() => []) : [];
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ moments: momentsOf(recent, media, MOMENTS_LIMIT) }));
     } else if (req.method === "GET" && req.url?.startsWith("/meetings/search")) {
       const q = new URL(req.url, "http://hub").searchParams.get("q") ?? "";
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -2520,10 +2542,13 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const threads = (await chats.recent(HISTORY_THREADS)).map((t) => ({ ...t, title: threadTitle(t) }));
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ threads }));
-    } else if (req.method === "GET" && /^\/media\/(audio|frame)\/[a-zA-Z0-9:._-]{1,80}$/.test(req.url ?? "")) {
+    } else if (req.method === "GET" && /^\/media\/(audio|frame)\/[a-zA-Z0-9:%._-]{1,120}$/.test(req.url ?? "")) {
       // Playback through the hub only (add-media-archive 2.3): opened here, never a signed URL, never logged.
-      const [, , kind, ref] = req.url!.split("/") as [string, string, "audio" | "frame", string];
-      const found = mediaStore ? await Promise.resolve(mediaStore.get(kind, decodeURIComponent(ref))).catch(() => undefined) : undefined;
+      // Chips send the ref encoded (`:` as %3A); the decoded ref must still be a plain id.
+      const [, , kind, raw] = req.url!.split("/") as [string, string, "audio" | "frame", string];
+      const ref = (() => { try { return decodeURIComponent(raw); } catch { return ""; } })();
+      if (!/^[a-zA-Z0-9:._-]{1,80}$/.test(ref)) return void res.writeHead(404).end();
+      const found = mediaStore ? await Promise.resolve(mediaStore.get(kind, ref)).catch(() => undefined) : undefined;
       if (!found) return void res.writeHead(404).end();
       const body = kind === "audio" ? Buffer.from(wav(decodeAdpcm(found.data))) : Buffer.from(found.data);
       const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
