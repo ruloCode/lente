@@ -133,20 +133,18 @@ scripts/        bench, eval, fake-clip                 test/fixtures/
 docs/           architecture, PROTOCOL, benchmarks, kb  firmware/, hardware/, openspec/
 ```
 
-## 7. Order of work (until 2026-11-04 21:00 ET)
+## 7. Order of work (status 2026-11-02)
 
-| Day | Changes | Why this order |
+The day-by-day plan for 28 Oct – 2 Nov is in git history; what landed each day is in README "What was built during the hackathon". From here the order is by phase. `docs/handoff.md` has the step-by-step for each.
+
+| Phase | Changes | Exit condition |
 |---|---|---|
-| Wed 28 | `harden-clip-protocol`, `apply-dilo-identity` | The emulator unlocks evals, CI and a hardware-free demo; the identity is small |
-| Thu 29 | Finish `add-app-navigation` (1.2) and `add-evals` (stage timestamps, CI) | Numbers for the video from day one; CI green early |
-| Fri 30 | `add-record-only-mode`; motor on the clip when the hardware arrives (`add-addressed-to-you` 3.3) | Small, hub-side; episodes feed the agent's memory |
-| Sat 31 | `add-closing-agent` | Agentic bonus |
-| Sun 1 | `add-phone-capture` (WebSocket ingest, HTTPS), `add-fast-reply-lane` (Baseten hackathon key set) | Lente without the clip; the ingest is reused by desktop mode |
-| Mon 2 | `add-glasses-mcp` or `add-desktop-mode`, full eval run, CI green | Extension surface or the judges' no-hardware path |
-| Tue 3 | Video, README, submission, X post | |
-| Wed 4 | Buffer | |
+| 0 · Integrate | Merge `feat/add-accounts` → `feat/web-desktop` → `feat/voice-mode` → `feat/agent-bridge` into `main`; deploy the hub from `main` | `main` = production; typecheck, tests, smoke and every change's `validate --strict` green |
+| 1 · Hackathon close (until 2026-11-04 21:00 ET) | The demo's `[human]`/`[phone]` checks, `add-accounts` 9.3 privacy note, video, README, submission, X post; archive complete changes | Submitted, with every number in the video from `scripts/` |
+| 2 · Production v1 | Rest of `add-accounts` (spend cap, capacity, backups) → `add-consent` → `add-production-ops` → `add-clip-setup` → `add-store-release` | The sign-up gate can open: terms accepted, paid model billing, alerts, backups restored once, a clip set up from the app, the app on Play |
+| 3 · Product | Finish `add-ask-lente`, `add-closing-agent`, `add-meeting-library`, `add-memory-review`; `add-memory-timeline`; `add-fast-reply-lane`; `add-glasses-mcp`; `add-desktop-mode` | Each change archived |
 
-Done: protocol, memory. Must: identity, navigation, addressing, evals, closing agent. Should: record-only mode, phone capture, fast lane, MCP. Could: cloud hub, desktop mode. Post-hackathon: native app with BLE, HUD, private mode with Muse Glimmer, team memory, Lente as an app on Meta Ray-Ban Display.
+Must (Phase 0–1): integration, sign-in working on web and phone, the privacy note, the submission. Should (Phase 2): every Phase 2 change, since no one but the owner signs up before they are done. Could: `add-memory-timeline` (Tu historia · Revivir), whose slice «Revivir» from a meeting's detail may enter the video if there is time. Post-hackathon: iOS and Sign in with Apple, payments, teams and shared meetings, more than one hub container, the blind index (`add-accounts` group 10), HUD and Meta Ray-Ban Display, the "Later" ideas in `add-memory-timeline`.
 
 ## 8. Related work
 
