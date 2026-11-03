@@ -6,7 +6,7 @@
 // model. Real Muse Spark 1.3 calls at minimal effort, not streamed (streamed Chat Completions carry no
 // usage). Synthetic PROBE- data only; prints its cost.
 //
-//   pnpm bench:ask [runs=2] [days=14] [--paths tiers,laptop] [--src <dir>] [--only budget,beta]
+//   pnpm bench:ask [runs=2] [days=14] [--paths tiers,laptop] [--src <dir>] [--only budget,beta] [--encoder-module <path>]
 //   pnpm bench:ask --index-only [days…] [--vectors]   (scripts/bench-index.ts)
 //
 // `runs` is per question. `--src` loads the answer paths from another checkout's `src/` (for a
@@ -26,6 +26,7 @@ import type { AskOutcome } from "../src/ask.ts";
 import type { TierInput } from "../src/ask-tiers.ts";
 import { type ChatMessage, completeChat, streamResponse } from "../src/chat.ts";
 import { RecallRuntime, answerRecall } from "../src/recall-runtime.ts";
+import { HubEncoder } from "../src/encoder.ts";
 import type { DayEntry } from "../src/day-log.ts";
 import type { Meeting } from "../src/meetings.ts";
 import { chatTargets } from "../src/providers.ts";
@@ -39,7 +40,7 @@ const STRUCTURED_TOKENS = 1500;
 const LAPTOP_DAYS = 7;
 const DAY_MS = 86_400_000;
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { paths: { type: "string", default: process.env.LENTE_RECALL === "fast" ? "fast,tiers" : "tiers,laptop" }, src: { type: "string" }, only: { type: "string" } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { paths: { type: "string", default: process.env.LENTE_RECALL === "fast" ? "fast,tiers" : "tiers,laptop" }, src: { type: "string" }, only: { type: "string" }, "encoder-module": { type: "string" } } });
 const scenarios = values.only ? ASK_SCENARIOS.filter((s) => values.only!.split(",").includes(s.id)) : ASK_SCENARIOS;
 const TIME_ZONE = "America/Bogota";
 const runs = Number(positionals[0] ?? 2);
@@ -120,8 +121,13 @@ let runtime: RecallRuntime | undefined;
 /** The fast path (add-memory-engine 3.4): local retrieval and one streamed Responses call; the deep path when retrieval says so. */
 async function fast(s: AskScenario, call: ReturnType<typeof caller>, run: Run): Promise<AskOutcome> {
   if (!runtime) {
-    runtime = new RecallRuntime({ meetings: () => memory.meetings, assignments: () => memory.assignments, today: () => memory.entriesOn(isoLocalDay(memory.now)), recent: () => memory.days.flatMap((d) => memory.entriesOn(d)), keptFacts: () => memory.keptFacts, digests: async () => ({ profile: memory.digests.profile, days: memory.digests.days, weeks: memory.digests.weeks }) }, TIME_ZONE, () => memory.now);
+    // With --encoder-module the fast path ranks by meaning too (add-memory-engine 8.6): every unit is embedded before timing.
+    const embedder = values["encoder-module"] ? new HubEncoder(values["encoder-module"]) : undefined;
+    runtime = new RecallRuntime({ meetings: () => memory.meetings, assignments: () => memory.assignments, today: () => memory.entriesOn(isoLocalDay(memory.now)), recent: () => memory.days.flatMap((d) => memory.entriesOn(d)), keptFacts: () => memory.keptFacts, digests: async () => ({ profile: memory.digests.profile, days: memory.digests.days, weeks: memory.digests.weeks }) }, TIME_ZONE, () => memory.now, embedder ? { embedder } : {});
     await runtime.ready;
+    const t = performance.now();
+    while (runtime.pendingVectors) await runtime.embedPending(60_000);
+    if (embedder) console.error(`embedded ${runtime.index.size} units in ${Math.round(performance.now() - t)} ms`);
   }
   const started = performance.now();
   const answer = await answerRecall({

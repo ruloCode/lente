@@ -34,10 +34,10 @@ export const PEOPLE = {
   luis: "PROBE-Luis Ortega",
 } as const;
 
-const ATLAS_TOPICS = ["el piloto en Bogotá", "la integración con el ERP", "los reportes semanales", "el contrato de soporte", "la capacitación del equipo", "el tablero de indicadores", "la migración de datos", "las pruebas de carga"];
-const ORION_TOPICS = ["the onboarding flow", "the pricing page", "the analytics dashboard", "the mobile release", "the partner program", "the referral campaign", "the help center", "the billing export"];
+export const ATLAS_TOPICS = ["el piloto en Bogotá", "la integración con el ERP", "los reportes semanales", "el contrato de soporte", "la capacitación del equipo", "el tablero de indicadores", "la migración de datos", "las pruebas de carga"];
+export const ORION_TOPICS = ["the onboarding flow", "the pricing page", "the analytics dashboard", "the mobile release", "the partner program", "the referral campaign", "the help center", "the billing export"];
 
-const ES_LINES = [
+export const ES_LINES = [
   "Revisemos {t} antes de seguir.",
   "Creo que {t} va bien, pero falta probarlo con usuarios.",
   "¿Quién se encarga de {t} esta semana?",
@@ -51,7 +51,7 @@ const ES_LINES = [
   "Hay un riesgo con {t} si no llega el proveedor.",
   "Me gustaría ver una demo de {t}.",
 ];
-const EN_LINES = [
+export const EN_LINES = [
   "Let's go over {t} first.",
   "I think {t} is on track, but we still need tests.",
   "Who owns {t} this sprint?",

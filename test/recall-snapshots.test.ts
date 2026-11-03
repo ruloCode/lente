@@ -105,7 +105,7 @@ test("older months load for a question that names them, three at most, the least
   assert.ok(found(rt, "mes202607").length > 0, "and comes back from its snapshot");
 });
 
-test("a corrupt snapshot, or one from another encoder, is rebuilt from the records and answers the same", async () => {
+test("a corrupt snapshot is rebuilt from the records; one from another encoder keeps its words and is re-embedded; both answer the same", async () => {
   const w = world();
   const dir = join(mkdtempSync(join(tmpdir(), "lente-recall-bad-")), "memory");
   const files = new FileSnapshots(dir);
@@ -119,9 +119,9 @@ test("a corrupt snapshot, or one from another encoder, is rebuilt from the recor
   const log: string[] = [];
   const b = new RecallRuntime(w.records, TZ, () => NOW, { snapshots: files, log: (l) => log.push(l) });
   await b.ready;
-  assert.deepEqual([b.opened.fromSnapshot, b.opened.rebuilt], [1, 2]);
+  assert.deepEqual([b.opened.fromSnapshot, b.opened.rebuilt], [2, 1]);
   assert.ok(log.some((l) => /rebuilding 2026-11 .*checksum/.test(l)));
-  assert.ok(log.some((l) => /rebuilding 2026-10 .*encoder an-older-encoder/.test(l)));
+  assert.ok(log.some((l) => /re-embedding 2026-10 \(built with an-older-encoder, now lexical\)/.test(l)));
   for (const word of ["noviembre", "octubre", "septiembre", "vieja"]) assert.deepEqual(found(b, word), found(a, word), word);
   assert.equal(await b.persist(), 2, "the rebuilt months are written again");
 });

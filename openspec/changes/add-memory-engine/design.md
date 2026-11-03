@@ -283,6 +283,12 @@ Each question is labelled with the segment ids that answer it.
 
 **Rebuilds.** A change of encoder rebuilds the shards in the background (decision 3). Lexical ranking answers until a shard is done.
 
+**As built in 8.5:**
+- A snapshot from another encoder is opened for its words, and its units are re-embedded in batches every 5 s.
+- A re-indexed meeting keeps the vectors of the segments whose text did not change.
+
+**Measured in 8.4** (`docs/kb/decisions.md`): B, `multilingual-e5-small` in the hub, was chosen. C is pending: SONAR's checkpoints are non-commercial and need fairseq2.
+
 ### 8. The deep path keeps today's tiers for questions retrieval cannot answer alone
 
 - **When.** Aggregates, low confidence (decision 2), and questions about the profile itself.

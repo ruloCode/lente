@@ -295,3 +295,24 @@ Laptop file store, so the times leave out the sealing and the database round tri
 - With snapshots, a runtime opens about 6–8 times faster, and no meeting needed replaying.
 - At 365 days only the 3 hot months are indexed at open. Older months load when a question names a time in them, and their snapshots are written when they are dropped.
 - Snapshot size is about 12 MB a month of all-day speech, text included. In the database that is one sealed `bytea` row per month per wearer. That figure goes to the capacity measure (`add-accounts` 6.3/6.4), next to the RSS of task 2.4.
+
+### Vectors (tasks 8.4 and 8.6)
+
+The encoder bake-off is recorded with the choice in `docs/kb/decisions.md` ("The encoder", 2026-11-03). B (`multilingual-e5-small`, int8 ONNX, in the hub) against the A baseline:
+- recall@10 0.686 against 0.524;
+- cross-lingual 0.600 against 0.400;
+- query embedding 3.9 ms p95.
+
+`scripts/bench-ask.ts 5 90 --paths fast --encoder-module @huggingface/transformers` (2026-11-03): the fast path with vectors on 90 synthetic days (5,344 units, embedded in 12.4 s before timing).
+
+| Measure | Value | Target |
+|---|---|---|
+| Right answers | 30/30 (none took the deep path; the out-of-project question was declined on the fast path) | — |
+| Leaks into project questions | 0/10 | 0 |
+| Retrieval p95 (lexical + vector + fusion; the question's embedding runs in parallel) | 10.3 ms | ≤ 30 ms at 90 days, met |
+| First text p50 / p90 | 2,451 ms / 4,280 ms | ≤ 1.2 s p50, missed (the model's first token, as in 3.5) |
+| Answer p50 / p90 | 2,907 ms / 5,551 ms | — |
+| Process peak RSS (encoder, index and the bench) | 612 MB | — |
+| Cost | US$ 0.105 for 30 answers | — |
+
+At 365 days the index microbench with 384-dimension vectors (task 2.4) gave 93 ms p95 for retrieval. Add 3.9 ms p95 for the query's embedding: about 97 ms, against the ≤ 150 ms target, met. The RSS at 365 days is in 2.4's table; only the three hot months stay loaded at once (7.5).

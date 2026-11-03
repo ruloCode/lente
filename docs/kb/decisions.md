@@ -161,3 +161,38 @@ The owner decided that Lente keeps speech audio and scene-change keyframes next 
   - Never shared, never sent back to a model.
 - **Defaults.** On by default for the owner. For any other account, only after it accepts a terms version that describes media (`add-consent`). Consent is a legal duty toward the people recorded, not a product promise, so it is not dropped with the old promise.
 - **Hardware.** The clip sends JPEG frames, not video. "Video" means a keyframe timeline.
+
+#### The encoder: a small multilingual encoder in the hub (add-memory-engine 8.1–8.4, 2026-11-03)
+
+**Candidates (8.1).**
+- The Meta Model API still lists no embedding model (`GET /v1/models`, 2026-11-03): `muse-image-1.0`, `muse-spark-1.1`, `1.2`, `1.3` (and their contributor variants), `muse-voice-transcribe-1.0`, `muse-wonder-1.0`, `sam-3.1`.
+- **C, a Meta open-weights encoder on Modal.** SONAR (facebookresearch) has MIT code, but its checkpoints on Hugging Face (`facebook/SONAR`) are **CC-BY-NC-4.0**. It gives 1024-dimension vectors for about 200 languages and needs fairseq2 with a matching PyTorch build.
+  - The non-commercial licence fails the check for a product that will ship. The fairseq2 runtime rules out measuring it from a local run on the owner's Mac.
+  - C is **pending**. `deploy/modal/encoder.py` and `ModalEncoder` are written, not deployed. The Modal function serves the hub's encoder until a Meta encoder with a fitting licence is found.
+  - LASER is the next Meta family to check (not checked here).
+- **B, the hub encoder:** `multilingual-e5-small`. MIT licence, 384 dimensions, 93 languages, run as its int8 ONNX build (`Xenova/multilingual-e5-small`) through transformers.js.
+
+**The bake-off (8.4)** ran `scripts/eval/bake-off.ts` on `scripts/eval/recall-set.ts`: 105 answerable questions, 30 of them cross-lingual. The card keys came from the real notes call (US$ 0.47, cached). recall@10 / MRR:
+
+| Configuration | All | Cross-lingual | Paraphrase | Exact | Time |
+|---|---|---|---|---|---|
+| Lexical only, no card keys | 0.362 / 0.342 | 0.133 / 0.133 | 0.267 | 0.833 | 0.067 |
+| **A** lexical + bilingual card keys (baseline) | 0.524 / 0.425 | 0.400 / 0.286 | 0.200 | 0.833 | 0.800 |
+| **B** A fused with e5-small | **0.686 / 0.554** | **0.600 / 0.463** | 0.500 | 0.833 | 0.933 |
+| e5-small vectors alone (reference) | 0.676 / 0.628 | 0.767 / 0.725 | 0.700 | 0.833 | 0.133 |
+
+B's costs, from the hub process on the owner's Mac:
+- query embedding 2.4 ms p50, 3.9 ms p95 (limit 50 ms: qualifies);
+- 8.1 ms per passage;
+- vectors 43 MB per 100k units (limit 300 MB: qualifies);
+- the encoder's runtime adds about **616 MB** of fixed RSS to the process.
+
+**The choice: B.** By decision 7's rule, B qualifies and C is not measured, so B ships, and C stays pending. Lexical search with card keys alone (A) was not enough: cross-lingual recall@10 0.40 against 0.60, paraphrases 0.20 against 0.50.
+
+- **The dependency.** `@huggingface/transformers` 3.8.1 (Apache-2.0), with the native `onnxruntime-node`.
+  - It is an `optionalDependency`, loaded only when `LENTE_ENCODER=hub`. Without it the index ranks by words, and every other path is unchanged.
+  - The Modal image installs no packages today (zero dependencies), so turning B on in production needs an install step in `deploy/modal/hub.py`. That change waits for the owner, with the deploy.
+- **Rejected zero-dependency alternative:** A alone, numbers above. Also rejected: an encoder through a model API, because no Meta API offers one and text must not leave Lente's infrastructure.
+- **Two cautions.**
+  - The 616 MB is per process, not per wearer. It must be in the capacity measure (`add-accounts` 6.4) before B is turned on in the shared container.
+  - Fusing the lists cost cross-lingual recall against vectors alone (0.60 vs 0.77) but gained time questions (0.93 vs 0.13). Weighting the lists is the next tuning. It is not tuned on this set, which is also the eval.

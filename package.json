@@ -40,5 +40,8 @@
     "@fission-ai/openspec": "1.15.0",
     "@types/node": "^22.18.0",
     "typescript": "^5.9.0"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "3.8.1"
   }
 }

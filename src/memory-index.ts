@@ -277,6 +277,15 @@ export class MemoryIndex {
     return undefined;
   }
 
+  /** A unit's vector (a copy), if it has one. */
+  vectorOf(id: string): Int8Array | undefined {
+    for (const s of this.shards.values()) {
+      const slot = s.slot(id);
+      if (slot !== undefined) return s.hasVector[slot] ? s.vectors.slice(slot * s.dim, (slot + 1) * s.dim) : undefined;
+    }
+    return undefined;
+  }
+
   setVector(id: string, vector: Int8Array): boolean {
     for (const s of this.shards.values()) {
       const slot = s.slot(id);

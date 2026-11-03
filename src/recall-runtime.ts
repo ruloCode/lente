@@ -19,6 +19,7 @@ import { MemoryIndex, type MemoryUnit, isMonthShard, shardOf } from "./memory-in
 import { localDay, localDayStart } from "./nightly.ts";
 import { RECALL_MAX_TOKENS, RECALL_TEXT_CHARS, RECALL_VOICE_CHARS, VOICE_LINES, looksLikeCommand, voiceAttachment, type RecallEvent, type RecallResult, RecallStream, dayUnits, digestUnit, factUnit, meetingUnits, memoryPrefix, notesText, parseQuestion, recallMessages, retrieve, sourceOf } from "./recall.ts";
 import type { SnapshotStore } from "./stores.ts";
+import type { Encoder } from "./encoder.ts";
 
 /** Days of what was heard and seen an older day is re-read from (a forgotten day). */
 export const HOT_DAYS = 92;
@@ -54,10 +55,14 @@ export interface RecallRecords {
 
 export interface RecallOptions {
   snapshots?: SnapshotStore;
-  /** The encoder's id the shards are built with; `lexical` while there are no vectors. */
-  encoder?: string;
+  /** The text encoder for vectors (decision 7); without one the index is lexical. */
+  embedder?: Encoder;
   log?: (line: string) => void;
 }
+
+/** Units embedded per encoder call, and the most time one background pass may take. */
+export const EMBED_BATCH = 32;
+const EMBED_PASS_MS = 2_000;
 
 /** A diarization label ("A", "B") or a placeholder is not a person. */
 export const isName = (s: string | undefined): s is string => Boolean(s && s.length >= 3 && !/^(?:alguien|tú|tu|you|speaker \w+)$/i.test(s));
@@ -77,7 +82,10 @@ const nextMonth = (key: string): number => {
 };
 
 export class RecallRuntime {
-  readonly index = new MemoryIndex();
+  readonly index: MemoryIndex;
+  /** Units waiting for their vector; word matches answer for them meanwhile. */
+  private readonly unembedded = new Set<string>();
+  private embedding = false;
   /** Names seen as speakers or owners, for parsing questions. */
   readonly people = new Set<string>();
   readonly ready: Promise<void>;
@@ -106,7 +114,8 @@ export class RecallRuntime {
     this.timeZone = timeZone;
     this.now = now;
     this.opts = opts;
-    this.encoder = opts.encoder ?? "lexical";
+    this.encoder = opts.embedder?.id ?? "lexical";
+    this.index = new MemoryIndex(opts.embedder?.dim ?? 0);
     this.ready = this.build();
   }
 
@@ -140,11 +149,19 @@ export class RecallRuntime {
   private async loadSnapshot(key: string): Promise<number | undefined> {
     const rec = await Promise.resolve(this.opts.snapshots?.get(key)).catch((error: Error) => (this.opts.log?.(`[recall] snapshot ${key} unreadable: ${error.message.slice(0, 120)}`), undefined));
     if (!rec) return this.rebuilt(key);
-    if (rec.formatVersion !== SNAPSHOT_FORMAT || rec.encoder !== this.encoder) return this.rebuilt(key, `format ${rec.formatVersion}, encoder ${rec.encoder}`);
+    if (rec.formatVersion !== SNAPSHOT_FORMAT) return this.rebuilt(key, `format ${rec.formatVersion}`);
     try {
       const { shard, meta } = decodeShard(rec.bytes);
-      shard.dirty = false;
-      this.index.shards.set(key, shard);
+      if (rec.encoder !== this.encoder) {
+        // Another encoder: the words still hold; the units are re-embedded in the background (decision 7).
+        this.opts.log?.(`[recall] re-embedding ${key} (built with ${rec.encoder.slice(0, 40)}, now ${this.encoder.slice(0, 40)})`);
+        for (const [, u] of shard.liveUnits()) this.put(u);
+        for (const [id, sig] of shard.sources) this.index.shard(key).sources.set(id, sig);
+      } else {
+        shard.dirty = false;
+        this.index.shards.set(key, shard);
+        if (this.opts.embedder) for (const [slot, u] of shard.liveUnits()) if (!shard.hasVector[slot]) this.unembedded.add(u.id);
+      }
       for (const [id, sig] of shard.sources) this.meetingSigs.set(id, sig);
       this.opened.fromSnapshot++;
       return meta.builtThrough;
@@ -280,6 +297,56 @@ export class RecallRuntime {
     shard.dirty = false;
   }
 
+  /** Adds a unit; with an encoder it waits for its vector. */
+  private put(u: MemoryUnit, shardKey?: string, saved?: ReadonlyMap<string, { text: string; vector: Int8Array }>): void {
+    const kept = saved?.get(u.id);
+    this.index.add(u, kept?.text === u.text ? kept.vector : undefined, shardKey);
+    if (this.opts.embedder && kept?.text !== u.text) this.unembedded.add(u.id);
+    else this.unembedded.delete(u.id);
+  }
+
+  /** Units still without a vector. */
+  get pendingVectors(): number {
+    return this.unembedded.size;
+  }
+
+  /**
+   * Embeds waiting units in batches for up to `EMBED_PASS_MS` (the hub runs a pass every few seconds).
+   * Returns how many got a vector. A failed encoder call leaves them waiting.
+   */
+  async embedPending(budgetMs = EMBED_PASS_MS): Promise<number> {
+    const enc = this.opts.embedder;
+    if (!enc || this.embedding || !this.unembedded.size) return 0;
+    this.embedding = true;
+    const started = Date.now();
+    let done = 0;
+    try {
+      while (this.unembedded.size && Date.now() - started < budgetMs) {
+        const batch = [...this.unembedded].slice(0, EMBED_BATCH).map((id) => this.index.get(id)).filter((u): u is MemoryUnit => Boolean(u));
+        for (const id of [...this.unembedded].slice(0, EMBED_BATCH)) if (!this.index.get(id)) this.unembedded.delete(id);
+        if (!batch.length) continue;
+        const vectors = await enc.embed(batch.map((u) => u.text), "passage");
+        batch.forEach((u, i) => {
+          // A unit replaced while its batch was out gets embedded again on the next pass.
+          if (this.index.get(u.id)?.text === u.text && this.index.setVector(u.id, vectors[i]!)) this.unembedded.delete(u.id);
+        });
+        done += batch.length;
+      }
+    } catch (error) {
+      this.opts.log?.(`[recall] embedding failed, ${this.unembedded.size} unit(s) wait: ${(error as Error).message.slice(0, 120)}`);
+    } finally {
+      this.embedding = false;
+    }
+    return done;
+  }
+
+  /** A question's vector, or undefined without an encoder or when it fails (word matches answer then). */
+  embedQuery(text: string): Promise<Int8Array | undefined> {
+    const enc = this.opts.embedder;
+    if (!enc) return Promise.resolve(undefined);
+    return enc.embed([text], "query").then(([v]) => v, () => undefined);
+  }
+
   private sigOf(m: Meeting): string {
     const cards = (m.cards ?? []).map((c) => c.facts.map((f) => `${f.id}${f.validTo ?? ""}`).join(",")).join(";");
     return `${m.turns.length}|${m.title}|${m.endedAt ?? ""}|${m.notes ? notesText(m).length : ""}|${this.projects.get(m.id) ?? ""}|${cards}`;
@@ -291,9 +358,20 @@ export class RecallRuntime {
     for (const s of this.index.shards.values()) if (s.sources.delete(id)) s.dirty = true;
   }
 
+  /** The vectors of the units a re-index is about to replace, by id and text, so unchanged units keep theirs. */
+  private vectorsOf(pick: (u: MemoryUnit) => boolean): Map<string, { text: string; vector: Int8Array }> {
+    const out = new Map<string, { text: string; vector: Int8Array }>();
+    if (!this.opts.embedder) return out;
+    for (const s of this.index.shards.values()) {
+      for (const [slot, u] of s.liveUnits()) if (s.hasVector[slot] && pick(u)) out.set(u.id, { text: u.text, vector: s.vectors.slice(slot * s.dim, (slot + 1) * s.dim) });
+    }
+    return out;
+  }
+
   private reindexMeeting(m: Meeting): void {
+    const saved = this.vectorsOf((u) => u.id === m.id || u.id.startsWith(`s${m.id}:`) || u.id.startsWith(`c${m.id}:`));
     this.forgetMeeting(m.id);
-    for (const u of [...meetingUnits(m, this.projects.get(m.id)), ...cardUnits(m, this.projects.get(m.id))]) this.index.add(u);
+    for (const u of [...meetingUnits(m, this.projects.get(m.id)), ...cardUnits(m, this.projects.get(m.id))]) this.put(u, undefined, saved);
     const sig = this.sigOf(m);
     this.meetingSigs.set(m.id, sig);
     this.index.shard(shardOf(m.startedAt)).sources.set(m.id, sig);
@@ -303,9 +381,10 @@ export class RecallRuntime {
   }
 
   private indexDay(day: string, entries: readonly DayEntry[]): void {
+    const saved = this.vectorsOf((u) => u.id.startsWith(`s${day}:`) || u.id.startsWith(`d${day}:`));
     this.index.removeWhere((u) => u.id.startsWith(`s${day}:`) || u.id.startsWith(`d${day}:`));
     const spans = this.records.meetings().map((m) => ({ startedAt: m.startedAt, ...(m.endedAt ? { endedAt: m.endedAt } : {}), ...(this.projects.get(m.id) ? { projectId: this.projects.get(m.id) } : {}) }));
-    for (const u of dayUnits(day, entries, spans, this.now())) this.index.add(u);
+    for (const u of dayUnits(day, entries, spans, this.now())) this.put(u, undefined, saved);
   }
 
   private factsSigOf(kept: readonly Fact[]): string {
@@ -315,7 +394,7 @@ export class RecallRuntime {
   private indexFacts(): void {
     const kept = this.records.keptFacts();
     this.index.removeWhere((u) => u.kind === "fact");
-    for (const f of kept) this.index.add(factUnit(f, this.projects.get(f.meetingId)), undefined, PINNED_SHARD);
+    for (const f of kept) this.put(factUnit(f, this.projects.get(f.meetingId)), PINNED_SHARD);
     this.factsSig = this.factsSigOf(kept);
   }
 
@@ -327,7 +406,7 @@ export class RecallRuntime {
     if (sig === this.digestsSig) return;
     this.digestsSig = sig;
     this.index.removeWhere((u) => u.id.startsWith("brief:") || u.id.startsWith("person:"));
-    for (const d of [...briefs, ...people]) this.index.add(digestUnit(d), undefined, PINNED_SHARD);
+    for (const d of [...briefs, ...people]) this.put(digestUnit(d), PINNED_SHARD);
   }
 
   /** The memory prefix: digests for the whole memory (accounts), else the newest meetings' notes and the kept facts; in a project only its own. */
@@ -381,11 +460,14 @@ export async function answerRecall(input: {
   queryVector?: Int8Array;
 }): Promise<FastAnswer> {
   const { runtime } = input;
+  // The question's vector is computed while the index catches up and the question is parsed (decision 2).
+  const vector = input.queryVector ? Promise.resolve(input.queryVector) : runtime.embedQuery(input.question);
   await runtime.flush();
   const parsed = parseQuestion(input.question, { now: input.now, timeZone: input.timeZone, people: [...runtime.people], projects: input.projects });
   const projectId = input.projectId ?? parsed.project;
   if (parsed.range) await runtime.ensureRange(parsed.range.from, parsed.range.to);
-  const retrieved = retrieve(runtime.index, parsed, { ...(projectId ? { projectId } : {}), now: input.now, budget: RECALL_TEXT_CHARS, ...(input.queryVector ? { queryVector: input.queryVector } : {}) });
+  const queryVector = await vector;
+  const retrieved = retrieve(runtime.index, parsed, { ...(projectId ? { projectId } : {}), now: input.now, budget: RECALL_TEXT_CHARS, ...(queryVector ? { queryVector } : {}) });
   if (!retrieved.confident || retrieved.aggregate) return { path: "deep", retrievalMs: retrieved.ms, lines: retrieved.lines.length };
   const prefixUnits = await runtime.prefix(input.projectId);
   const prefix = memoryPrefix(prefixUnits, input.timeZone);
@@ -414,11 +496,13 @@ export async function voiceRecall(input: {
   now: number;
   timeZone: string;
 }): Promise<{ attach: boolean; lines: MemoryUnit[]; text: string; citable: Map<string, AskSource>; ms: number }> {
+  const vector = input.runtime.embedQuery(input.text);
   await input.runtime.flush();
   const question = [input.text, input.when, input.person].filter(Boolean).join(" ");
   const parsed = parseQuestion(question, { now: input.now, timeZone: input.timeZone, people: [...input.runtime.people], projects: input.projects });
   if (parsed.range) await input.runtime.ensureRange(parsed.range.from, parsed.range.to);
-  const r = retrieve(input.runtime.index, parsed, { ...(input.projectId ? { projectId: input.projectId } : {}), now: input.now, budget: RECALL_VOICE_CHARS });
+  const queryVector = await vector;
+  const r = retrieve(input.runtime.index, parsed, { ...(input.projectId ? { projectId: input.projectId } : {}), now: input.now, budget: RECALL_VOICE_CHARS, ...(queryVector ? { queryVector } : {}) });
   const lines = r.lines.slice(0, VOICE_LINES);
   const att = voiceAttachment(lines, input.timeZone);
   return { attach: r.confident && !looksLikeCommand(input.text) && lines.length > 0, lines, ...att, ms: r.ms };

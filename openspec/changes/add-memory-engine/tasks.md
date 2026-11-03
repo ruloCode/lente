@@ -61,12 +61,12 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 8. Vector recall
 
-- [ ] 8.1 Candidates: confirm the Meta API still lists no embedding model; check one Meta open-weights encoder (e.g. SONAR) for licence, languages, dimension and Modal cost; pick one small multilingual CPU encoder for the hub. Write the findings under "Vectors in the memory index" in `docs/kb/decisions.md`
-- [ ] 8.2 `scripts/eval/recall-set.ts`: ~120 labelled questions over synthetic bilingual meetings (paraphrase, cross-lingual, names and numbers, time, out of memory). Verify: the set loads and every label points to a real segment (`pnpm test`)
-- [ ] 8.3 Encoder client behind one interface (`embed(texts): Int8 vectors`), with the hub encoder and the Modal encoder as two implementations; the Modal function in the hub's Modal app logs no text. Tests with a fake encoder (`pnpm test`)
-- [ ] 8.4 Run the bake-off (A baseline, B hub encoder, C Modal encoder): recall@10, MRR, cross-lingual subset, query embedding p50/p95 from the hub, RSS per 100k units; record in `docs/benchmarks.md` and apply decision 7's selection rule in `docs/kb/decisions.md` [key:MODEL_API_KEY]
-- [ ] 8.5 Vector lists in the index with the chosen encoder: batch embedding of segments every 5 s, query embedding in parallel with lexical search, bit-code prefilter and int8 rescoring, sealed vectors in snapshots, background rebuild on encoder change with lexical answers meanwhile. Tests: fusion order with fake vectors, snapshot round-trip with vectors, rebuild on encoder id change (`pnpm test`)
-- [ ] 8.6 Re-run `pnpm bench:ask 5 90` and `--index-only` at 365 days with vectors on; record retrieval p95 and RSS in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [x] 8.1 Candidates: confirm the Meta API still lists no embedding model; check one Meta open-weights encoder (e.g. SONAR) for licence, languages, dimension and Modal cost; pick one small multilingual CPU encoder for the hub. Write the findings under "Vectors in the memory index" in `docs/kb/decisions.md`
+- [x] 8.2 `scripts/eval/recall-set.ts`: ~120 labelled questions over synthetic bilingual meetings (paraphrase, cross-lingual, names and numbers, time, out of memory). Verify: the set loads and every label points to a real segment (`pnpm test`)
+- [x] 8.3 Encoder client behind one interface (`embed(texts): Int8 vectors`), with the hub encoder and the Modal encoder as two implementations; the Modal function in the hub's Modal app logs no text. Tests with a fake encoder (`pnpm test`)
+- [x] 8.4 Run the bake-off (A baseline, B hub encoder, C Modal encoder): recall@10, MRR, cross-lingual subset, query embedding p50/p95 from the hub, RSS per 100k units; record in `docs/benchmarks.md` and apply decision 7's selection rule in `docs/kb/decisions.md` [key:MODEL_API_KEY]. C pending: SONAR's checkpoints are CC-BY-NC-4.0 and need fairseq2 (not measurable from a local run); B chosen
+- [x] 8.5 Vector lists in the index with the chosen encoder: batch embedding of segments every 5 s, query embedding in parallel with lexical search, bit-code prefilter and int8 rescoring, sealed vectors in snapshots, background rebuild on encoder change with lexical answers meanwhile. Tests: fusion order with fake vectors, snapshot round-trip with vectors, rebuild on encoder id change (`pnpm test`)
+- [x] 8.6 Re-run `pnpm bench:ask 5 90` and `--index-only` at 365 days with vectors on; record retrieval p95 and RSS in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
 ## 9. Eval, default and docs
 

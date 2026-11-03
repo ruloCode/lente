@@ -58,6 +58,7 @@ import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-e
 import { askTiers, entriesInSpans, scopeTierInput } from "./ask-tiers.ts";
 import { type MemoryCard, type ShownFact, applySupersession, cardPrompt, cardedUntil, dueWindow, factCount, factsToShow, firstUncarded, validateCard, windowCardSchema, withCardFields } from "./cards.ts";
 import { terms } from "./terms.ts";
+import { type Encoder, HubEncoder, ModalEncoder } from "./encoder.ts";
 import { type FastAnswer, RecallRuntime, answerRecall, isName, voiceRecall } from "./recall-runtime.ts";
 import { type RecallEvent, memoryPrefix as recallPrefix } from "./recall.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
@@ -107,6 +108,17 @@ const LIVE_FRAME_GAP_MS = 600;
 const ASK_DAYS = 7;
 /** `fast`: retrieval in the runtime and one streamed answer (add-memory-engine); `tiers` (default) until the eval says otherwise. */
 const RECALL_MODE = process.env.LENTE_RECALL === "fast" ? "fast" : "tiers";
+/**
+ * The encoder for the memory index's vectors (add-memory-engine 8.5): `hub` runs it in this process,
+ * `modal` calls the Modal function at LENTE_ENCODER_URL; unset, the index ranks by words only.
+ */
+const EMBEDDER: Encoder | undefined =
+  process.env.LENTE_ENCODER === "hub"
+    ? new HubEncoder()
+    : process.env.LENTE_ENCODER === "modal" && process.env.LENTE_ENCODER_URL && process.env.LENTE_ENCODER_TOKEN
+    ? new ModalEncoder({ url: process.env.LENTE_ENCODER_URL, token: process.env.LENTE_ENCODER_TOKEN, id: process.env.LENTE_ENCODER_ID ?? "modal-e5-small", dim: Number(process.env.LENTE_ENCODER_DIM ?? 384) })
+    : undefined;
+const EMBED_TICK_MS = 5_000;
 const RECALL_FLUSH_MS = 5_000;
 /** How often a running episode is checked for a closed 10-minute window, and the notes call's cap when it also writes the card. */
 const CARD_TICK_MS = 15_000;
@@ -1230,7 +1242,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         },
         TIME_ZONE,
         Date.now,
-        { snapshots: sealed?.sealed.snapshots ?? new FileSnapshots(join(dataDir, "memory")), log: (line) => console.log(line) },
+        { snapshots: sealed?.sealed.snapshots ?? new FileSnapshots(join(dataDir, "memory")), log: (line) => console.log(line), ...(EMBEDDER ? { embedder: EMBEDDER } : {}) },
       )
     : undefined;
   /** Writes the index's changed months as snapshots (sealed in the cloud); lengths and counts in the log only. */
@@ -1242,6 +1254,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   };
   if (recall) {
     every(() => void persistIndex("every 10 minutes"), SNAPSHOT_EVERY_MS);
+    // New segments get their vectors in batches every few seconds (add-memory-engine 8.5).
+    if (EMBEDDER) every(() => void recall.embedPending(), EMBED_TICK_MS);
     void recall.ready.then(() => console.log(`[recall] index ready · ${recall.index.size} units · ${recall.opened.fromSnapshot} month(s) from snapshots, ${recall.opened.rebuilt} rebuilt, ${recall.opened.meetingsReplayed} meeting(s) and ${recall.opened.daysReplayed} day(s) replayed`), (error: Error) => console.error(`[recall] index build failed: ${error.message.slice(0, 200)}`));
     every(() => void recall.flush().catch((error: Error) => console.error(`[recall] index update failed: ${error.message.slice(0, 200)}`)), RECALL_FLUSH_MS);
     every(() => void cardWindow(), CARD_TICK_MS);
