@@ -5,7 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type ChatLine, FileChats, MAX_FILE_CHAT_LINES, groupThreads, plainRefs } from "../src/chat-store.ts";
+import { type ChatLine, FileChats, MAX_FILE_CHAT_LINES, THREAD_TITLE_CHARS, askLines, groupThreads, isThreadId, plainRefs, threadTitle } from "../src/chat-store.ts";
 import { newDek } from "../src/seal.ts";
 import { openUserStores } from "../src/supabase-stores.ts";
 import { fakePostgrest } from "./fake-postgrest.ts";
@@ -55,4 +55,18 @@ test("on Supabase each line is sealed with its sources; refs keep kinds and ids 
   assert.deepEqual(threads[1].lines[1].sources, lines()[1].sources);
   const bob = await openUserStores(fake.rest, BOB, newDek());
   assert.deepEqual(await bob.chats.recent(5), []);
+});
+
+test("a typed question and its answer become one text thread with a title (add-home-dock)", () => {
+  assert.equal(isThreadId(T1), true);
+  assert.equal(isThreadId("not-a-uuid"), false);
+  assert.equal(isThreadId(undefined), false);
+  const kept = askLines(T1, "PROBE-ASK ¿qué decidimos?", { answer: "PROBE-ASK el viernes", sources: [{ kind: "meeting", label: "PROBE-ASK reunión", meetingId: "m1", turnId: "t2" }] }, 1000, 1000);
+  assert.deepEqual(kept.map((l) => [l.role, l.via, l.at]), [["user", "text", 1000], ["lente", "text", 1001]]);
+  assert.deepEqual(kept[1].sources, [{ kind: "meeting", label: "PROBE-ASK reunión", meetingId: "m1", turnId: "t2" }]);
+  const [thread] = groupThreads(kept, 1);
+  assert.equal(threadTitle(thread), "PROBE-ASK ¿qué decidimos?");
+  const long = groupThreads(askLines(T2, "x ".repeat(100), { answer: "y", sources: [] }, 1, 2), 1)[0];
+  assert.equal(threadTitle(long).length, THREAD_TITLE_CHARS);
+  assert.ok(threadTitle(long).endsWith("…"));
 });

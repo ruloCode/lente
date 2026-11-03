@@ -35,7 +35,7 @@ import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
 import { VOICE_WS_PATH, type VoiceSocket, acceptVoice } from "./ws-voice.ts";
 import { serveVoiceSession } from "./voice-hub.ts";
 import type { VoiceBackend } from "./voice-tools.ts";
-import { FileChats, RECENT_THREADS, type Chats } from "./chat-store.ts";
+import { askLines, type Chats, FileChats, HISTORY_THREADS, isThreadId, RECENT_THREADS, threadTitle } from "./chat-store.ts";
 import { DeviceAuth, SESSION_COOKIE } from "./device-auth.ts";
 import { HealthTracker } from "./health.ts";
 import { PAIR_PAGE } from "./pair-page.ts";
@@ -73,7 +73,7 @@ import { TraceWriter, traceLine } from "./agent-trace.ts";
 import { TASK_OWNERS, type Task, type TaskOwner, TaskStore, meetingTools, ownerOf } from "./agent-tools.ts";
 import { type AgentApi, CallLimiter, type TaskView, agentServer } from "./agent-mcp-tools.ts";
 import { MCP_MAX_BODY_BYTES, serveMcp, unauthorizedResponse } from "./mcp.ts";
-import { AGENT_NAMES, TOOL_RUN_AGENT, type JobAgent, claim as claimJob, expireLost, finish as finishJob, jobArgs, outcomeOf, parseResult, proposedAnswer, queued as queuedJob, queuedJobs } from "./agent-jobs.ts";
+import { jobList, AGENT_NAMES, TOOL_RUN_AGENT, type JobAgent, claim as claimJob, expireLost, finish as finishJob, jobArgs, outcomeOf, parseResult, proposedAnswer, queued as queuedJob, queuedJobs } from "./agent-jobs.ts";
 import { NOT_FOUND } from "./ask.ts";
 import { EPISODE_MAX_MS, EPISODE_SILENCE_MS, type EndReason, type EpisodePolicy, type Meeting, type MeetingTurn, addTurn, applyTitleAndTopic, episodeEnd, extractionMessages, isTooShort, newMeeting, notesAsText, notesSchema, searchMeetings, silenceExpired, validateNotes } from "./meetings.ts";
 import { type AssistMode, ProfileStore } from "./profile.ts";
@@ -2060,10 +2060,21 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const threads = (await chats.recent(RECENT_THREADS)).filter((t) => t.via === "voice");
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ threads }));
+    } else if (req.method === "GET" && req.url === "/chat/threads") {
+      // The chat's history (add-home-dock): typed and voice conversations, newest first, each titled by its first question.
+      const threads = (await chats.recent(HISTORY_THREADS)).map((t) => ({ ...t, title: threadTitle(t) }));
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ threads }));
     } else if (req.method === "POST" && req.url === "/ask") {
-      const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown };
+      const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown; threadId?: unknown };
+      const askedAt = Date.now();
       const out = await answerAsk(body);
       if (out === "no_project") return void res.writeHead(404).end();
+      // A typed conversation is kept like a voice one (sealed in the cloud) when the phone names its thread.
+      if (out.ok && isThreadId(body.threadId) && typeof body.question === "string" && body.question.trim()) {
+        Promise.resolve(chats.add(askLines(body.threadId, body.question.trim().slice(0, 2000), out, askedAt, Date.now())))
+          .catch((error: Error) => console.error(`[ask] could not keep the chat lines: ${error.message.slice(0, 160)}`));
+      }
       res.writeHead(out.ok ? 200 : out.reason === "empty-question" ? 400 : 502, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
     } else if (req.method === "POST" && req.url === "/agent/jobs") {
@@ -2076,6 +2087,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const job = createJob(body);
       res.writeHead(job.ok ? 201 : job.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(job.ok ? { id: job.id, ...job.args } : { error: job.error }));
+    } else if (req.method === "GET" && req.url === "/agent/jobs") {
+      // The jobs Conexiones lists on the phone (add-home-dock): every agent job, newest first, with its stage.
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ jobs: jobList(actions.list()) }));
     } else if (req.method === "GET" && req.url === "/agents") {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ paused: agentsPaused }));
     } else if (req.method === "POST" && (req.url === "/agents/pause" || req.url === "/agents/resume")) {

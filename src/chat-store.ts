@@ -11,6 +11,10 @@ import type { VoiceSource } from "./voice-agent.ts";
 export const MAX_FILE_CHAT_LINES = 2000;
 /** Threads `GET /chat/voice` returns, newest first. */
 export const RECENT_THREADS = 5;
+/** Threads `GET /chat/threads` returns for the chat's history (add-home-dock), newest first. */
+export const HISTORY_THREADS = 30;
+/** Characters of a thread's first question kept as its title in the history. */
+export const THREAD_TITLE_CHARS = 80;
 
 export interface ChatLine {
   /** A uuid, so the same id works as `chat_messages.thread_id`. */
@@ -48,6 +52,34 @@ export function groupThreads(lines: readonly ChatLine[], limit: number): ChatThr
     .map(([threadId, list]) => ({ threadId, via: list[0].via, at: list.at(-1)!.at, lines: list }))
     .sort((a, b) => b.at - a.at)
     .slice(0, limit);
+}
+
+const THREAD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A thread id the phone sent: a uuid, so it can be `chat_messages.thread_id`; anything else is not kept. */
+export function isThreadId(v: unknown): v is string {
+  return typeof v === "string" && THREAD_ID.test(v);
+}
+
+/** A typed question and Lente's answer as two lines of one thread (add-home-dock): sources keep kind, label and ids. */
+export function askLines(
+  threadId: string,
+  question: string,
+  answer: { answer: string; sources: readonly { kind: VoiceSource["kind"]; label: string; meetingId?: string; turnId?: string }[] },
+  askedAt: number,
+  answeredAt: number,
+): ChatLine[] {
+  const sources = answer.sources.map((s): VoiceSource => ({ kind: s.kind, label: s.label, ...(s.meetingId ? { meetingId: s.meetingId } : {}), ...(s.turnId ? { turnId: s.turnId } : {}) }));
+  return [
+    { threadId, role: "user", text: question, sources: [], via: "text", at: askedAt },
+    { threadId, role: "lente", text: answer.answer, sources, via: "text", at: Math.max(answeredAt, askedAt + 1) },
+  ];
+}
+
+/** A thread for the history: its first question as the title, cut to `THREAD_TITLE_CHARS`. */
+export function threadTitle(thread: ChatThread): string {
+  const first = (thread.lines.find((l) => l.role === "user") ?? thread.lines[0])?.text.replace(/\s+/g, " ").trim() ?? "";
+  return first.length > THREAD_TITLE_CHARS ? first.slice(0, THREAD_TITLE_CHARS - 1).trimEnd() + "…" : first;
 }
 
 /** References as the database keeps them in the clear: kinds and ids only, never labels, text or URLs. */

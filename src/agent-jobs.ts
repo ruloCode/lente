@@ -72,6 +72,42 @@ export function queuedJobs(actions: PendingAction[]): JobView[] {
     .map((a) => ({ id: a.id, ...(a.args as unknown as JobArgs) }));
 }
 
+/** Where a job is, as the phone's Conexiones shows it: waiting for approval, rejected, or the bridge's own state. */
+export type JobStage = "pending" | "rejected" | JobState;
+
+/** One job for the phone (add-home-dock): its agent, what it was asked, where it is and, when finished, its summary. */
+export interface JobListItem {
+  id: string;
+  agent: JobAgent;
+  agentName: string;
+  instruction: string;
+  stage: JobStage;
+  createdAt: number;
+  finishedAt?: number;
+  summary?: string;
+}
+
+/** Jobs the phone lists, newest first. */
+export const JOBS_LISTED = 30;
+
+/** Every job, newest first, at most `limit`: the list Conexiones shows. Pure. */
+export function jobList(actions: PendingAction[], limit = JOBS_LISTED): JobListItem[] {
+  return actions
+    .filter(isJob)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, limit)
+    .map((a) => {
+      const args = a.args as unknown as JobArgs;
+      const outcome = outcomeOf(a);
+      const stage: JobStage = a.status === "pending" ? "pending" : a.status === "rejected" ? "rejected" : a.status === "failed" ? "failed" : (outcome?.state ?? "queued");
+      const agent = JOB_AGENTS.includes(args.agent) ? args.agent : "claude";
+      return {
+        id: a.id, agent, agentName: AGENT_NAMES[agent], instruction: args.instruction ?? "", stage, createdAt: a.createdAt,
+        ...(outcome?.finishedAt ? { finishedAt: outcome.finishedAt } : {}), ...(outcome?.summary ? { summary: outcome.summary } : {}),
+      };
+    });
+}
+
 /** An approved job as it is saved: queued, nothing run. */
 export const queued = (a: PendingAction): PendingAction => ({ ...a, outcome: { state: "queued" } satisfies JobOutcome });
 

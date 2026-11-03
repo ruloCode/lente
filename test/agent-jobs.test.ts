@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PendingAction } from "../src/action-store.ts";
-import { INSTRUCTION_MAX_CHARS, JOB_LOST_AFTER_MS, LOST_SUMMARY, SUMMARY_MAX_CHARS, expireLost, TOOL_RUN_AGENT, asksForAction, chatCommand, claim, finish, jobArgs, parseResult, proposedAnswer, queued, queuedJobs } from "../src/agent-jobs.ts";
+import { INSTRUCTION_MAX_CHARS, JOB_LOST_AFTER_MS, LOST_SUMMARY, SUMMARY_MAX_CHARS, expireLost, jobList, TOOL_RUN_AGENT, asksForAction, chatCommand, claim, finish, jobArgs, parseResult, proposedAnswer, queued, queuedJobs } from "../src/agent-jobs.ts";
 import { parseAsk } from "../src/ask.ts";
 
 const titles = new Map([["k1", "PROBE-task title"]]);
@@ -91,4 +91,17 @@ test("a running job the bridge never reported is failed after 20 minutes; nothin
   assert.deepEqual(lost.outcome, { state: "failed", startedAt: 1000, finishedAt: 1001 + JOB_LOST_AFTER_MS, summary: LOST_SUMMARY });
   assert.equal(expireLost(queued({ ...action(), status: "approved" }), 10 * JOB_LOST_AFTER_MS), undefined, "a queued job waits for the bridge as long as it takes");
   assert.equal(expireLost(action(), 10 * JOB_LOST_AFTER_MS), undefined);
+});
+
+test("jobList: every job newest first, with its stage, for the phone (add-home-dock)", () => {
+  const list = jobList([
+    action({ id: "p", createdAt: 5 }),
+    action({ id: "r", status: "rejected", createdAt: 4 }),
+    action({ id: "q", status: "approved", outcome: { state: "queued" }, createdAt: 3 }),
+    action({ id: "d", status: "approved", args: { agent: "codex", instruction: "PROBE-tests" }, outcome: { state: "done", finishedAt: 9, summary: "PROBE-ok" }, createdAt: 2 }),
+    { ...action({ id: "x", createdAt: 6 }), tool: "send_email" },
+  ]);
+  assert.deepEqual(list.map((j) => [j.id, j.stage]), [["p", "pending"], ["r", "rejected"], ["q", "queued"], ["d", "done"]]);
+  assert.deepEqual(list[3], { id: "d", agent: "codex", agentName: "Codex", instruction: "PROBE-tests", stage: "done", createdAt: 2, finishedAt: 9, summary: "PROBE-ok" });
+  assert.equal(jobList([action(), action({ id: "a2" })], 1).length, 1);
 });
