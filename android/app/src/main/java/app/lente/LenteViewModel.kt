@@ -1,12 +1,15 @@
 package app.lente
 
+import android.app.Activity
 import android.app.Application
+import android.net.Uri
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.lente.capture.Capture
 import app.lente.capture.CaptureService
+import app.lente.core.Account
 import app.lente.core.Briefing
 import app.lente.core.ChatJson
 import app.lente.core.ChatLine
@@ -17,26 +20,36 @@ import app.lente.core.HubEvent
 import app.lente.core.HubJson
 import app.lente.core.HubState
 import app.lente.core.MeetingDetail
+import app.lente.core.Projects
 import app.lente.core.SearchResult
 import app.lente.core.TraceStep
 import app.lente.core.Voice
 import app.lente.core.effectsOf
 import app.lente.platform.Answer
+import app.lente.platform.GoogleAccount
 import app.lente.platform.HubClient
 import app.lente.platform.Prefs
+import app.lente.platform.SignInFailed
 import app.lente.platform.Speech
 import app.lente.platform.Stream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 
 /** Where the wearer is. Reunion carries the meeting and, optionally, the turn to show. */
+/** How long the record sheet waits for the phone to connect as the device. */
+private const val PHONE_READY_MS = 8_000L
+
 sealed interface Screen {
     data object Ahora : Screen
     data object Reuniones : Screen
@@ -45,6 +58,8 @@ sealed interface Screen {
     data object Memoria : Screen
     data object Dispositivos : Screen
     data object Ajustes : Screen
+    data object Proyectos : Screen
+    data class Proyecto(val id: String) : Screen
     data class Pronto(val what: String) : Screen
 }
 
@@ -59,6 +74,11 @@ sealed interface Link {
 
 class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val prefs = Prefs(app)
+    /** The signed-in Google account, when there is one (add-accounts 7.1); a laptop hub needs none. */
+    val account = GoogleAccount.of(app)
+
+    /** A client for a hub: the pairing cookie, and the account's bearer with one refresh after a 401. */
+    private fun hubClient(base: String) = HubClient(base, { prefs.cookie }, { account.accessToken() }, { account.refreshAfter401() }, { account.signOut() })
     private var client: HubClient? = null
     private var stream: Job? = null
 
@@ -81,6 +101,9 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val theme = MutableStateFlow(prefs.theme)
     val facts = MutableStateFlow<List<Fact>>(emptyList())
     val detail = MutableStateFlow<MeetingDetail?>(null)
+    /** The wearer's projects for Inicio and the Proyectos screen, and the one open (add-projects). */
+    val projects = MutableStateFlow<List<Projects.Summary>>(emptyList())
+    val project = MutableStateFlow<Projects.Detail?>(null)
     val trace = MutableStateFlow<List<TraceStep>?>(null)
     val search = MutableStateFlow<List<SearchResult>?>(null)
     val briefing = MutableStateFlow<Briefing?>(null)
@@ -103,7 +126,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun tryHub(input: String): String? {
         val base = HubAddress.normalize(input) ?: return "Eso no parece una dirección: escribe la IP de la computadora, por ejemplo 192.168.1.20."
         if (base.startsWith("http://") && !HubAddress.isLocal(base)) return "Sin cifrar solo en tu red: para un hub en internet escribe https://."
-        val test = HubClient(base) { prefs.cookie }
+        val test = hubClient(base)
         val health = test.health()
         if (health.code == 0) return "No pude llegar al hub en $base. Revisa que esté corriendo y en la misma red Wi-Fi."
         if (health.code !in 200..503) return "En $base responde algo que no es Lente (${health.code})."
@@ -125,7 +148,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (client != null && client?.base != base) CaptureService.stop(getApplication())
         stream?.cancel()
         _hub.value = HubState()
-        val c = HubClient(base) { prefs.cookie }
+        val c = hubClient(base)
         client = c
         _link.value = Link.Connecting
         stream = viewModelScope.launch {
@@ -172,9 +195,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     // --- Navigation -------------------------------------------------------------------------
 
     fun go(screen: Screen) {
-        _screen.value = if (screen is Screen.Reunion) _screen.value + screen else listOf(screen)
+        _screen.value = if (screen is Screen.Reunion || screen is Screen.Proyecto) _screen.value + screen else listOf(screen)
         when (screen) {
             is Screen.Reunion -> openMeeting(screen.id)
+            is Screen.Proyecto -> openProject(screen.id)
+            Screen.Proyectos, Screen.Ahora -> loadProjects()
             Screen.Memoria -> loadFacts()
             else -> {}
         }
@@ -189,6 +214,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             s.size > 1 -> {
                 _screen.value = s.dropLast(1)
                 (_screen.value.last() as? Screen.Reunion)?.let { openMeeting(it.id) }
+                (_screen.value.last() as? Screen.Proyecto)?.let { openProject(it.id) }
                 true
             }
             s.last() != Screen.Ahora -> { _screen.value = listOf(Screen.Ahora); true }
@@ -218,7 +244,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         chat.value = before + asked + waiting
-        post("/ask", ChatJson.request(q, before)) { a ->
+        post("/ask", ChatJson.request(q, before).apply { chatProject.value?.let { put("project", it) } }) { a ->
             val reply = runCatching { ChatJson.answer(waiting.id, a.text) }.getOrNull()
                 ?: ChatLine(waiting.id, false, when {
                     a.code == 404 -> "Este hub todavía no tiene el chat: actualízalo para preguntarle a Lente."
@@ -272,7 +298,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun failed(a: Answer, what: String) { if (!a.ok) say("No se pudo $what (${if (a.code == 0) "sin conexión" else a.code}).") }
 
-    fun setListening(on: Boolean) = post(if (on) "/listen/on" else "/listen/off") { failed(it, if (on) "empezar a escuchar" else "pausar") }
+    fun setListening(on: Boolean) = post(if (on) "/listen/on" else "/listen/off") {
+        // A hub at its cap of people listening answers 503 with a message for the wearer.
+        val busy = if (it.code == 503) runCatching { JSONObject(it.text).optString("message") }.getOrNull() else null
+        if (!busy.isNullOrEmpty()) say(busy) else failed(it, if (on) "empezar a escuchar" else "pausar")
+    }
     fun toggleListening() = setListening(!_hub.value.status.listening)
     fun stopSession() = post("/session/stop") { failed(it, "terminar") }
     fun setAssist(mode: String) = post("/assist-mode/$mode")
@@ -299,6 +329,66 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // --- The account (add-accounts 7.3) -----------------------------------------------------------
+
+    val signedIn = MutableStateFlow(account.signedIn)
+    val accountInfo = MutableStateFlow<Account.Info?>(null)
+    val devices = MutableStateFlow<List<Account.Device>>(emptyList())
+    /** A clip token just made: shown once, then gone when the wearer leaves the screen. */
+    val newClipToken = MutableStateFlow<String?>(null)
+
+    fun signIn(activity: Activity) = viewModelScope.launch {
+        try {
+            account.signIn(activity)
+            signedIn.value = true
+            client?.base?.let(::connect)
+            loadAccount()
+        } catch (e: SignInFailed) {
+            say(e.message ?: "No se pudo iniciar sesión.")
+        }
+    }
+
+    fun loadAccount() {
+        val c = client ?: return
+        if (!account.signedIn) return
+        viewModelScope.launch {
+            c.get("/account").let { if (it.ok) accountInfo.value = runCatching { Account.info(it.text) }.getOrNull() }
+            c.get("/devices").let { if (it.ok) devices.value = runCatching { Account.devices(it.text) }.getOrDefault(emptyList()) }
+        }
+    }
+
+    fun newClip(label: String) = post("/devices", JSONObject().put("kind", "clip").put("label", label.ifBlank { "Clip" })) {
+        if (it.ok) { newClipToken.value = Account.createdToken(it.text); loadAccount() } else failed(it, "crear el token del clip")
+    }
+
+    fun forgetClipToken() { newClipToken.value = null }
+
+    fun revokeDevice(id: String) = post("/devices/revoke", JSONObject().put("id", id)) { if (it.ok) loadAccount() else failed(it, "revocar el dispositivo") }
+
+    /** Downloads everything Lente keeps about the wearer into the file they picked. */
+    fun exportTo(uri: Uri) {
+        val c = client ?: return
+        viewModelScope.launch {
+            val a = c.get("/account/export")
+            if (!a.ok) return@launch failed(a, "exportar tus datos")
+            val wrote = withContext(Dispatchers.IO) { runCatching { getApplication<Application>().contentResolver.openOutputStream(uri)?.use { it.write(a.text.toByteArray()) } != null }.getOrDefault(false) }
+            say(if (wrote) "Tus datos se guardaron." else "No se pudo guardar el archivo.")
+        }
+    }
+
+    fun deleteAccount() = post("/account/delete", JSONObject().put("confirm", true)) {
+        if (it.ok) { signOut(); say("Tu cuenta y tu memoria se borraron.") } else failed(it, "borrar tu cuenta")
+    }
+
+    fun signOut() {
+        account.signOut()
+        signedIn.value = false
+        accountInfo.value = null
+        devices.value = emptyList()
+        newClipToken.value = null
+        client?.base?.let(::connect)
+    }
+
     fun deleteAll() = post("/meetings/delete-all") { failed(it, "borrar la memoria"); if (it.ok) { facts.value = emptyList(); say("Memoria borrada.") } }
 
     fun deleteMeeting(id: String) = post("/meetings/delete", JSONObject().put("id", id)) {
@@ -311,6 +401,30 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun fact(id: String, keep: Boolean) = post(if (keep) "/facts/keep" else "/facts/discard", JSONObject().put("id", id)) { loadFacts() }
+
+    // --- Projects (add-projects) ------------------------------------------------------------------
+
+    fun loadProjects() {
+        val c = client ?: return
+        viewModelScope.launch { c.get("/projects").takeIf { it.ok }?.let { a -> runCatching { Projects.list(a.text) }.getOrNull()?.let { projects.value = it } } }
+    }
+
+    private fun openProject(id: String) {
+        val c = client ?: return
+        project.value = null
+        viewModelScope.launch { c.get("/projects/get?id=${enc(id)}").takeIf { it.ok }?.let { a -> project.value = runCatching { Projects.detail(a.text) }.getOrNull() } }
+    }
+
+    private fun afterProjectChange(id: String?) { loadProjects(); id?.let(::openProject) }
+
+    fun renameProject(id: String, name: String) = post("/projects/rename", JSONObject().put("id", id).put("name", name)) { failed(it, "renombrar el proyecto"); afterProjectChange(id) }
+
+    fun archiveProject(id: String, archived: Boolean) = post(if (archived) "/projects/archive" else "/projects/restore", JSONObject().put("id", id)) { failed(it, "archivar el proyecto"); afterProjectChange(id) }
+
+    fun mergeProject(id: String, into: String) = post("/projects/merge", JSONObject().put("id", id).put("into", into)) {
+        failed(it, "juntar los proyectos")
+        if (it.ok) { _screen.value = listOf(Screen.Proyectos); go(Screen.Proyecto(into)) } else afterProjectChange(id)
+    }
 
     private fun openMeeting(id: String) {
         val c = client ?: return
@@ -362,11 +476,38 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun taskDone(id: String, done: Boolean) = post("/tasks/done", JSONObject().put("id", id).put("done", done))
 
+    /** A task by hand, the wearer's unless they say otherwise (add-task-owners). */
+    fun addTask(title: String, who: String) = post("/tasks/add", JSONObject().put("title", title).put("who", who)) { failed(it, "agregar la tarea") }
+
+    fun setTaskOwner(id: String, who: String) = post("/tasks/update", JSONObject().put("id", id).put("who", who)) { failed(it, "cambiar quién hace la tarea"); loadProjects() }
+
+    fun deleteTask(id: String) = post("/tasks/delete", JSONObject().put("id", id)) { failed(it, "borrar la tarea"); loadProjects() }
+
     // --- The phone as the device ------------------------------------------------------------
 
-    fun startPhone() {
+    fun startPhone(camera: Boolean = true) {
         val base = client?.base ?: return
-        CaptureService.start(getApplication(), base, prefs.cookie)
+        viewModelScope.launch { CaptureService.start(getApplication(), base, prefs.cookie, account.accessToken(), camera) }
+    }
+
+    /** The project the chat asks within; null is the whole memory (add-record-sheet). */
+    val chatProject = MutableStateFlow<String?>(null)
+
+    /**
+     * Starts a recording from the sheet: the phone first when the clip is absent (and waits for the hub
+     * to see it), then a meeting in the chosen project, then listening.
+     */
+    fun record(project: String?, camera: Boolean, title: String, usePhone: Boolean) = viewModelScope.launch {
+        val c = client ?: return@launch say("No hay hub conectado: revisa Ajustes.")
+        if (usePhone) {
+            startPhone(camera)
+            if (withTimeoutOrNull(PHONE_READY_MS) { _hub.first { it.status.clip } } == null) return@launch say("El teléfono no pudo empezar a grabar. Revisa los permisos.")
+        }
+        val body = JSONObject().put("title", title.trim())
+        project?.let { body.put("project", it) }
+        val a = c.post("/meeting/start", body)
+        if (!a.ok) return@launch failed(a, "empezar a grabar")
+        setListening(true)
     }
 
     fun stopPhone() = CaptureService.stop(getApplication())

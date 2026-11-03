@@ -6,7 +6,7 @@
 //   - a tap on the listening pill starts listening on the hub,
 //   - the DILO line appears and the hub records the app's acknowledgement (the `phone` stage),
 //   - Reuniones opens the seeded meeting, Acciones approves its action, Memoria keeps its fact,
-//   - with the clip gone, "Usar el teléfono" makes the phone the device: audio reaches the hub and
+//   - with the clip gone, "Usar el teléfono" in Dispositivos makes the phone the device: audio reaches the hub and
 //     Mirar gets a photo from the phone's camera,
 //   - the clip coming back takes over and the app says so.
 //
@@ -287,8 +287,9 @@ await shots("ajustes");
 step("with the clip gone, the phone becomes the device");
 clip.kill();
 await hubSaw("the clip leaving", (e) => e.kind === "status" && e.clip === false);
-await open("Ahora");
-await tapId("use-phone");
+// Inicio leaves "Usar el teléfono" to Dispositivos, which the device pill opens (add-projects 2.2).
+await open("Dispositivos");
+await tapId("phone-toggle");
 mark = seen.length;
 await hubSaw("the phone as the device", (e) => e.kind === "status" && e.clip === true && e.device === "phone", mark);
 const before = seen.filter((e) => e.kind === "recorded").at(-1)?.ms ?? 0;

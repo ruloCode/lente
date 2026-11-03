@@ -19,9 +19,19 @@ export const REMINDER_HOUR = 9;
 /** Reminder lead time before the due date, in hours. */
 export const REMINDER_LEAD_HOURS = 24;
 
+/** Who does a task (add-task-owners): the wearer, Lente's agent, or someone else the wearer follows up with. */
+export type TaskOwner = "me" | "lente" | "other";
+export const TASK_OWNERS: readonly TaskOwner[] = ["me", "lente", "other"];
+/** Tasks stored before owners existed are the wearer's. */
+export const ownerOf = (t: { who?: TaskOwner }): TaskOwner => t.who ?? "me";
+
 export interface Task {
   id: string;
   title: string;
+  who?: TaskOwner;
+  /** Who promised it, when `who` is `other`. */
+  otherName?: string;
+  source?: "meeting" | "manual" | "agent";
   /** As the notes word it ("viernes", "2026-11-02"); a hint, not a parsed date. */
   due?: string;
   /** The meeting the task came from; the phone links back to it. */
@@ -29,6 +39,22 @@ export interface Task {
   evidence: string[];
   done: boolean;
   createdAt: number;
+}
+
+/** What the wearer may change on a task (add-task-owners). */
+export interface TaskPatch {
+  who?: TaskOwner;
+  otherName?: string;
+  title?: string;
+}
+
+/** The task with a patch applied: a new owner other than `other` drops the other person's name. */
+export function applyPatch(task: Task, patch: TaskPatch): Task {
+  const who = patch.who ?? ownerOf(task);
+  const next: Task = { ...task, who, ...(patch.title ? { title: patch.title } : {}) };
+  if (who === "other") next.otherName = patch.otherName ?? task.otherName;
+  else delete next.otherName;
+  return next;
 }
 
 /** Tasks as one JSON file (data/tasks.json, git-ignored), like the meeting files. */
@@ -64,6 +90,24 @@ export class TaskStore {
     task.done = done;
     this.write(tasks);
     return task;
+  }
+
+  /** Changes who does a task, or its title; the rest stays. */
+  update(id: string, patch: TaskPatch): Task | undefined {
+    const tasks = this.list();
+    const i = tasks.findIndex((t) => t.id === id);
+    if (i < 0) return undefined;
+    tasks[i] = applyPatch(tasks[i]!, patch);
+    this.write(tasks);
+    return tasks[i];
+  }
+
+  remove(id: string): boolean {
+    const tasks = this.list();
+    const kept = tasks.filter((t) => t.id !== id);
+    if (kept.length === tasks.length) return false;
+    this.write(kept);
+    return true;
   }
 
   private write(tasks: Task[]): void {
@@ -154,7 +198,8 @@ export function emailDraft(args: Record<string, unknown>): EmailDraft {
 
 export interface ToolContext {
   meeting: Meeting;
-  tasks: TaskStore;
+  /** The task list: the file store, or an account's cached sealed store. */
+  tasks: Pick<TaskStore, "list" | "add" | "setDone">;
   /** Where reminders accumulate as an iCalendar file. */
   remindersFile: string;
   now?: () => number;
