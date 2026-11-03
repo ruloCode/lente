@@ -22,11 +22,11 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 3. Fast recall for text
 
-- [ ] 3.1 `src/time-phrases.ts` (shared with `add-memory-timeline` 3.1, whichever lands first): «hoy», «ayer», weekdays, «la semana pasada», «hace dos semanas», months, «esta mañana/tarde», English equivalents, in the wearer's time zone. Tests in Spanish and English (`pnpm test`)
-- [ ] 3.2 `src/recall.ts` question parsing: terms, time range, people from speakers and cards (accent-folded, partial names), a named project, aggregate intent. Tests (`pnpm test`)
-- [ ] 3.3 Prompt assembly (rules, memory prefix, «RECUPERADO», history, question) within the text and voice budgets, and the streaming parser for `@answer` / `@none` / `@command` and `[[id]]` markers split across deltas. Tests with chunked fake streams, including made-up ids, a marker split in two deltas and a command (`pnpm test`)
-- [ ] 3.4 Hub wiring in `src/pilot.ts`: the runtime builds the index from its loaded records at open and adds turns, descriptions, notes and facts as they arrive; `POST /ask` with `Accept: text/event-stream` streams `delta`, `source`, `replace`, `job` and `done` events (JSON reply kept for old clients); deep path for aggregates and low confidence with a `searching` event. Hub tests with the stub Meta server (`pnpm test`, `pnpm smoke`)
-- [ ] 3.5 Run `pnpm bench:ask 5 30` with `LENTE_RECALL=fast`: record first token and total p50/p90 next to the tiers in `docs/benchmarks.md` [key:MODEL_API_KEY]
+- [x] 3.1 `src/time-phrases.ts` (shared with `add-memory-timeline` 3.1, whichever lands first): «hoy», «ayer», weekdays, «la semana pasada», «hace dos semanas», months, «esta mañana/tarde», English equivalents, in the wearer's time zone. Tests in Spanish and English (`pnpm test`)
+- [x] 3.2 `src/recall.ts` question parsing: terms, time range, people from speakers and cards (accent-folded, partial names), a named project, aggregate intent. Tests (`pnpm test`)
+- [x] 3.3 Prompt assembly (rules, memory prefix, «RECUPERADO», history, question) within the text and voice budgets, and the streaming parser for `@answer` / `@none` / `@command` and `[[id]]` markers split across deltas. Tests with chunked fake streams, including made-up ids, a marker split in two deltas and a command (`pnpm test`)
+- [x] 3.4 Hub wiring in `src/pilot.ts`: the runtime builds the index from its loaded records at open and adds turns, descriptions, notes and facts as they arrive; `POST /ask` with `Accept: text/event-stream` streams `delta`, `source`, `replace`, `job` and `done` events (JSON reply kept for old clients); deep path for aggregates and low confidence with a `searching` event. Hub tests with the stub Meta server (`pnpm test`, `pnpm smoke`)
+- [x] 3.5 Run `pnpm bench:ask 5 30` with `LENTE_RECALL=fast`: record first token and total p50/p90 next to the tiers in `docs/benchmarks.md` [key:MODEL_API_KEY]
 
 ## 4. Streamed answers on the phone and the web
 

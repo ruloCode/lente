@@ -25,7 +25,8 @@ const EVIDENCE_TOP = 3;
 const DAY_MS = 86_400_000;
 
 export interface RankedList {
-  name: "lexical" | "vector" | "people";
+  /** `time`: what a named time range holds (notes, cards, facts first). */
+  name: "lexical" | "vector" | "people" | "time";
   hits: Hit[];
 }
 
@@ -68,9 +69,9 @@ export function fuse(lists: readonly RankedList[], opts: FuseOptions): Fused[] {
   return [...byId.values()].sort((a, b) => b.score - a.score || b.unit.at - a.unit.at);
 }
 
-/** `s2026-11-03:12` → the ids of segments 11 and 13 of that day; nothing for other units. */
+/** `s2026-11-03:12` (or `sm…:12` in a meeting) → segments 11 and 13 of the same run; nothing for other units. */
 export function neighbourIds(id: string): { before?: string; after?: string } {
-  const m = /^(s\d{4}-\d{2}-\d{2}):(\d+)$/.exec(id);
+  const m = /^(s[^:]+):(\d+)$/.exec(id);
   if (!m) return {};
   const n = Number(m[2]);
   return { ...(n > 1 ? { before: `${m[1]}:${n - 1}` } : {}), after: `${m[1]}:${n + 1}` };

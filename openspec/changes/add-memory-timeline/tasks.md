@@ -24,7 +24,7 @@ Status: post-hackathon (Could). Group 2.3 (Revivir from a meeting's detail) is t
 
 ## 3. Voice
 
-- [ ] 3.1 Pure time-phrase parser («hoy», «ayer», weekdays, «esta mañana/tarde», «la reunión de/con …») with tests in Spanish and English (`pnpm test`)
+- [x] 3.1 Pure time-phrase parser («hoy», «ayer», weekdays, «esta mañana/tarde», «la reunión de/con …») with tests in Spanish and English (`pnpm test`). Built by `add-memory-engine` 3.1: `src/time-phrases.ts` (`parseTimePhrase` returns the range and `meetingAbout`), `test/time-phrases.test.ts`
 - [ ] 3.2 `relive_moment` tool in `src/voice-agent.ts`, the `relive` event and the phone opening the moment; tests with the stub that answers tool calls (`pnpm test`)
 - [ ] 3.3 «Lente, revive la reunión del martes» on the phone with test speech from the Mac's `say` [phone]
 

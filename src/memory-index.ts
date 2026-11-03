@@ -29,6 +29,8 @@ export interface MemoryUnit {
   validTo?: number;
   /** For a segment: the meeting or episode and turn ids it covers (`m…:t5–t9`). */
   refs?: string;
+  /** The meeting's title, for labels and prompt lines. */
+  title?: string;
   text: string;
 }
 

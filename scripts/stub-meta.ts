@@ -151,6 +151,13 @@ export function startStubMeta(): Promise<StubMeta> {
     req.on("end", () => {
       if (req.url === "/v1/responses" && isVoiceRequest(body)) {
         void voiceReply(res, body);
+      } else if (req.url === "/v1/responses" && body.includes("RECUPERADO:")) {
+        // Fast recall (add-memory-engine): cite the first retrieved line, with the marker split across deltas.
+        const id = /RECUPERADO:\\n\[([^\]]+)\]/.exec(body)?.[1];
+        const usage = { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 30 };
+        const text = id ? `@answer\n${STUB_ASK_ANSWER} [[${id}]]` : "@none";
+        const cut = text.length - (id ? id.length + 3 : 2);
+        sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text.slice(0, 9) }, { type: "response.output_text.delta", delta: text.slice(9, cut) }, { type: "response.output_text.delta", delta: text.slice(cut) }, { type: "response.completed", response: { usage } }]);
       } else if (req.url === "/v1/responses") {
         const usage = { input_tokens: 120, input_tokens_details: { cached_tokens: 0 }, output_tokens: 12 };
         sse(res, [

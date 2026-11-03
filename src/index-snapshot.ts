@@ -128,6 +128,7 @@ export function encodeShard(shard: Shard, meta: Omit<SnapshotMeta, "shard" | "di
     w.opt(u.validFrom === undefined ? undefined : Math.round(u.validFrom));
     w.opt(u.validTo === undefined ? undefined : Math.round(u.validTo));
     w.str(u.refs ?? "");
+    w.str(u.title ?? "");
     w.str(u.text);
     w.uint(shard.lengths[slot]!);
     const vec = shard.dim > 0 && shard.hasVector[slot];
@@ -193,6 +194,7 @@ export function decodeShard(bytes: Uint8Array): { shard: Shard; meta: SnapshotMe
     const validFrom = r.opt();
     const validTo = r.opt();
     const refs = r.str();
+    const title = r.str();
     const text = r.str();
     lengths.push(r.uint());
     const vec = r.uint() === 1;
@@ -201,7 +203,7 @@ export function decodeShard(bytes: Uint8Array): { shard: Shard; meta: SnapshotMe
       if (!vectors) throw new SnapshotError(`unit ${id} carries a vector in a shard without dimensions`);
       vectors.set(new Int8Array(r.bytes(dim).slice().buffer), i * dim);
     }
-    units.push({ id, kind, at, ...(to === undefined ? {} : { to }), ...(projectId ? { projectId } : {}), ...(speakers.length ? { speakers } : {}), ...(people.length ? { people } : {}), ...(validFrom === undefined ? {} : { validFrom }), ...(validTo === undefined ? {} : { validTo }), ...(refs ? { refs } : {}), text });
+    units.push({ id, kind, at, ...(to === undefined ? {} : { to }), ...(projectId ? { projectId } : {}), ...(speakers.length ? { speakers } : {}), ...(people.length ? { people } : {}), ...(validFrom === undefined ? {} : { validFrom }), ...(validTo === undefined ? {} : { validTo }), ...(refs ? { refs } : {}), ...(title ? { title } : {}), text });
   }
   const postings = new Map<string, Posting>();
   const termCount = r.uint();

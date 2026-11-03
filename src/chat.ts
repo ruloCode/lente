@@ -4,7 +4,8 @@ import type { ChatTarget } from "./providers.ts";
 export type ChatPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  /** `developer` is for the Responses API, where the first developer message is the cached prefix. */
+  role: "system" | "developer" | "user" | "assistant";
   content: string | ChatPart[];
 }
 
@@ -148,11 +149,13 @@ export interface ResponseEvent {
   delta?: string;
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
   error?: string;
+  /** `response.incomplete`: why it stopped early (`max_output_tokens`), with the usage so far. */
+  incomplete?: string;
 }
 
 /** What one streamed Responses event carries that the hub uses: a text delta, the final usage, or a failure. */
 export function responseEvent(payload: string): ResponseEvent {
-  let json: { type?: string; delta?: unknown; response?: { usage?: ResponseEvent["usage"]; error?: { message?: string } | null }; message?: string };
+  let json: { type?: string; delta?: unknown; response?: { usage?: ResponseEvent["usage"]; error?: { message?: string } | null; incomplete_details?: { reason?: string } | null }; message?: string };
   try {
     json = JSON.parse(payload);
   } catch {
@@ -163,8 +166,9 @@ export function responseEvent(payload: string): ResponseEvent {
       return typeof json.delta === "string" ? { delta: json.delta } : {};
     case "response.completed":
       return { usage: json.response?.usage };
-    case "response.failed":
     case "response.incomplete":
+      return { incomplete: json.response?.incomplete_details?.reason ?? "incomplete", usage: json.response?.usage };
+    case "response.failed":
       return { error: json.response?.error?.message ?? json.type };
     case "error":
       return { error: json.message ?? "error event" };
@@ -178,12 +182,21 @@ export interface StreamedCompletion extends Completion {
   ttftMs: number | undefined;
 }
 
+export interface StreamOptions {
+  maxTokens?: number;
+  firstTokenTimeoutMs?: number;
+  /** Each text delta as it arrives (the fast recall path forwards them to the phone). */
+  onDelta?: (delta: string) => void;
+  /** Keep a reply cut at the token cap (`finishReason: "length"`) instead of failing. */
+  allowIncomplete?: boolean;
+}
+
 /**
  * One streamed reply over the Responses API, for the calls where the first token matters (cue,
  * Look, live view). Chat Completions streams carry no `usage` on the Meta API even with
  * `stream_options.include_usage`; the Responses stream reports it, cache hits included, at the end.
  */
-export async function streamResponse(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number; firstTokenTimeoutMs?: number } = {}): Promise<StreamedCompletion> {
+export async function streamResponse(target: ChatTarget, messages: ChatMessage[], opts: StreamOptions = {}): Promise<StreamedCompletion> {
   if (!target.apiKey) throw new Error(`${target.keyEnv} is not set`);
   const { reasoning_effort, ...extra } = target.extra ?? {};
   const started = performance.now();
@@ -210,15 +223,21 @@ export async function streamResponse(target: ChatTarget, messages: ChatMessage[]
   let text = "";
   let ttftMs: number | undefined;
   let usage: ResponseEvent["usage"];
+  let finishReason: string | undefined;
   try {
     for await (const chunk of res.body) {
       for (const payload of parser.push(decoder.decode(chunk, { stream: true }))) {
         const event = responseEvent(payload);
         if (event.error) throw new Error(`${target.id}: ${event.error}`);
+        if (event.incomplete) {
+          if (!opts.allowIncomplete) throw new Error(`${target.id}: response.incomplete (${event.incomplete})`);
+          finishReason = event.incomplete === "max_output_tokens" ? "length" : event.incomplete;
+        }
         if (event.delta && ttftMs === undefined) ttftMs = performance.now() - started;
         if (event.delta) {
           guard.got();
           text += event.delta;
+          opts.onDelta?.(event.delta);
         }
         if (event.usage) usage = event.usage;
       }
@@ -233,12 +252,14 @@ export async function streamResponse(target: ChatTarget, messages: ChatMessage[]
     promptTokens: usage?.input_tokens,
     cachedTokens: usage?.input_tokens_details?.cached_tokens,
     completionTokens: usage?.output_tokens,
+    ...(finishReason ? { finishReason } : {}),
   };
 }
 
 /** One streamed reply on the wire format the target speaks; the cue and the other card calls use this. */
-export async function streamReply(target: ChatTarget, messages: ChatMessage[], opts: { maxTokens?: number; firstTokenTimeoutMs?: number } = {}): Promise<StreamedCompletion> {
+export async function streamReply(target: ChatTarget, messages: ChatMessage[], opts: StreamOptions = {}): Promise<StreamedCompletion> {
   if (target.api !== "chat") return streamResponse(target, messages, opts);
+  if (opts.onDelta) throw new Error(`${target.id}: streamed deltas need the Responses API`);
   const timing = await streamChat(target, messages, opts.maxTokens ?? 400, { firstTokenTimeoutMs: opts.firstTokenTimeoutMs });
   return { ...timing, promptTokens: undefined, cachedTokens: undefined, completionTokens: undefined };
 }

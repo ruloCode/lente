@@ -235,3 +235,28 @@ What this says:
 The first version missed: 90 days lexical took 55 ms p95. Three changes brought it to 12 ms: document frequencies are kept as units come and go instead of being recounted per query; scores accumulate in typed arrays instead of maps; and a top-k heap replaces sorting every candidate. Decision 3 (three hot months) stands on latency.
 
 Memory is the cost to watch. A hot quarter with vectors adds about 340 MB per listening wearer. Decision 3 estimated about 47 MB for the vectors alone; the rest is postings and the units' text. The container runs every listening runtime (`add-accounts` 6.4). Before more than a few wearers record all day at once, the hot window shrinks to one month (about 150 MB), or hot shards drop their text and reopen it from the sealed records, as cold shards already plan to. This goes to the capacity measure, not to group 3.
+
+### The fast path (task 3.5)
+
+`LENTE_RECALL=fast pnpm bench:ask 5 30` (2026-11-03): the same six questions on 30 synthetic days (43 meetings), five runs each, the fast path next to the production tiers. The fast path parses the question, retrieves in the runtime and makes one streamed Responses call (Muse Spark 1.3, minimal effort, 600-token cap). When retrieval is not confident or the question is an aggregate, it falls back to the tiers. "First text" runs from the question to the first text the phone would show; the tiers show their whole answer at once.
+
+| Path | n | First text p50 | First text p90 | Answer p50 | Answer p90 | Right | Leaks | Model calls | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Fast | 30 | 2,662 ms | 7,276 ms | 3,059 ms | 7,276 ms | 25/30 | 0/10 | 35 | US$ 0.106 |
+| Production tiers | 30 | 8,562 ms | 10,746 ms | 8,562 ms | 10,746 ms | 30/30 | 0/10 | 60 | US$ 0.255 |
+
+- Retrieval took at most 4 ms (p95 2.3 ms).
+- 5 of 30 took the deep path: all five were the out-of-project question, where nothing in PROBE-Atlas matched. Those five set the p90 (7.3–8.0 s).
+- The 5 wrong answers were «¿Qué prometí entregar esta semana?», answered «No lo encuentro» every time. Nothing in it matches the words of a commitment, and the week's range only fed retrieval when nothing else matched. Now a named time range always brings that range's meeting notes, cards and facts. On a re-run (`--only promised --paths fast`, n = 5): 5/5 right, first text 3.2 s p50, answer 4.5 s p50, US$ 0.017.
+
+**Target missed: first text ≤ 1.2 s p50.** Measured: 2.7 s. The time is the model's, not Lente's:
+- Spark 1.3 at minimal effort wrote 140–340 output tokens for answers of 9–26 words. About 150–250 of them are reasoning before the first visible word, and the model's own first token took 1.7–4.3 s.
+- A probe with rules cut to two sentences did not help: 2.1–3.1 s, against 2.1–3.3 s for the full rules (n = 6 each, US$ 0.03).
+- The reply cue reaches its first token in about 1.1 s with a 300-token prompt. The fast path's prompts are 1,100–3,700 tokens.
+
+The answer is still 2.8 times faster than the production path at the median.
+
+The next levers are outside this group:
+- the fast lane (`add-fast-reply-lane`, Muse Spark Open on Baseten);
+- a smaller «RECUPERADO» budget for short questions;
+- a voice-style preload that keeps the prefix cached (group 5).

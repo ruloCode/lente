@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { type DevicePreference, mayTakeOver, AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
-import { CutOffError, ask, askSchema } from "./ask.ts";
+import { type AskMessage, type AskOutcome, CutOffError, ask, askSchema } from "./ask.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
@@ -55,6 +55,8 @@ import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
 import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
 import { askTiers, entriesInSpans, scopeTierInput } from "./ask-tiers.ts";
+import { type FastAnswer, RecallRuntime, answerRecall } from "./recall-runtime.ts";
+import type { RecallEvent } from "./recall.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
 import { Sealer, SupabaseAccounts, SupabaseDevices, SupabaseSessions, supabaseCanaries } from "./supabase-stores.ts";
 import { AUTH_COOKIE, FileSessionStore, PkceFlows, WebSessions, authCookie, authorizeUrl, clearCookie, exchangeCode, sessionCookie } from "./web-session.ts";
@@ -100,6 +102,9 @@ const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const LIVE_FRAME_GAP_MS = 600;
 /** Days of the record (what was heard and seen outside meetings) the chat with Lente remembers. */
 const ASK_DAYS = 7;
+/** `fast`: retrieval in the runtime and one streamed answer (add-memory-engine); `tiers` (default) until the eval says otherwise. */
+const RECALL_MODE = process.env.LENTE_RECALL === "fast" ? "fast" : "tiers";
+const RECALL_FLUSH_MS = 5_000;
 const MEETING_SILENCE_MS = Number(process.env.PILOT_MEETING_SILENCE_S ?? 600) * 1000;
 /** Solo grabar's automatic episodes; the eval and the checks shorten them. */
 const EPISODES: EpisodePolicy = {
@@ -623,8 +628,11 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
    * Responses API so their first token is timed; structured calls (`extra` with a JSON schema) use
    * Chat Completions and wait for the whole answer.
    */
-  async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue" }): Promise<SparkReply> {
+  async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue"; onDelta?: (delta: string) => void; allowIncomplete?: boolean }): Promise<SparkReply> {
     let lastError: unknown;
+    // Once text reached the phone, another model would repeat it: no fallback after the first delta.
+    let streamed = false;
+    const onDelta = opts.onDelta && ((d: string) => ((streamed = true), opts.onDelta!(d)));
     const job = opts.job;
     // Cue routes keep their order and a cool-down; the other jobs reorder to stick with what answered last.
     const targets = job ? routePolicy.pick(job, cueRoutes().map((t) => Object.assign(t, { configured: Boolean(t.apiKey) }))) : sparkTargets;
@@ -634,7 +642,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         const maxTokens = opts.maxTokens ?? 400;
         // The last resort has nobody to fall back to, so it gets no first-token deadline.
         const firstTokenTimeoutMs = job && i < targets.length - 1 ? CUE_FIRST_TOKEN_TIMEOUT_MS : undefined;
-        const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
+        const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs, ...(onDelta ? { onDelta } : {}), ...(opts.allowIncomplete ? { allowIncomplete: true } : {}) }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra })), ttftMs: undefined };
         health.ok("model");
         if (job) routePolicy.succeeded(job, target.id);
         else sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
@@ -647,6 +655,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         lastError = error;
         if (job) routePolicy.failed(job, target.id);
         console.error(`[spark] ${target.id} failed: ${(error as Error).message.slice(0, 200)}`);
+        if (streamed) break;
       }
     }
     health.failed("model", lastError instanceof Error ? lastError.message : "is not set");
@@ -1123,6 +1132,46 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     );
   }
 
+  // Fast recall (add-memory-engine 3.4): the memory index in this runtime, behind LENTE_RECALL=fast.
+  const recall = RECALL_MODE === "fast"
+    ? new RecallRuntime(
+        {
+          meetings: () => meetings.list(),
+          assignments: () => projects.assignments(),
+          today: () => day.entries,
+          recent: (days) => day.recent(days),
+          keptFacts: () => keptFacts(facts.list()),
+          ...(sealed ? { digests: async () => {
+            const [[profileDigest], days, weeks] = await Promise.all([sealed.digests.latest("profile", 1), sealed.digests.latest("day", 7), sealed.digests.latest("week", 4)]);
+            return { ...(profileDigest ? { profile: profileDigest } : {}), days, weeks };
+          } } : {}),
+        },
+        TIME_ZONE,
+      )
+    : undefined;
+  if (recall) {
+    void recall.ready.then(() => console.log(`[recall] index ready · ${recall.index.size} units`), (error: Error) => console.error(`[recall] index build failed: ${error.message.slice(0, 200)}`));
+    every(() => void recall.flush().catch((error: Error) => console.error(`[recall] index update failed: ${error.message.slice(0, 200)}`)), RECALL_FLUSH_MS);
+  }
+
+  /** The fast path for one question; `deep` when retrieval is not confident or the question is an aggregate. */
+  async function askFast(question: string, history: AskMessage[], projectId: string | undefined, emit: (e: RecallEvent) => void): Promise<FastAnswer> {
+    return answerRecall({
+      runtime: recall!,
+      question,
+      history,
+      ...(projectId ? { projectId } : {}),
+      projects: (await projects.list()).map((p) => ({ id: p.id, name: p.name })),
+      now: Date.now(),
+      timeZone: TIME_ZONE,
+      emit,
+      call: async (messages, opts) => {
+        const reply = await callSpark(messages, { label: "ask", stream: true, maxTokens: opts.maxTokens, onDelta: opts.onDelta, allowIncomplete: true });
+        return reply.finishReason ? { finishReason: reply.finishReason } : {};
+      },
+    });
+  }
+
   /** A hub that stopped mid-meeting finishes it on the next start. */
   for (const m of meetings.list().filter((x) => x.status === "running" || x.status === "extracting")) {
     current = m;
@@ -1545,7 +1594,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   }
 
   /** Chat with Lente: one question with the conversation so far, answered from the memory with its sources. */
-  async function answerAsk(body: { question?: unknown; history?: unknown; project?: unknown }, commands = true) {
+  /** What `/ask` streams (add-memory-engine 3.4): the fast path's text and chips, or «Buscando más…» before the deep path. */
+  type AskStreamEvent = RecallEvent | { type: "searching" };
+
+  async function answerAsk(body: { question?: unknown; history?: unknown; project?: unknown }, commands = true, emit?: (e: AskStreamEvent) => void) {
     // Asking within a project (add-record-sheet): only that project's meetings can be opened or cited.
     const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
     if (typeof body.project === "string" && !scope) return "no_project" as const;
@@ -1559,7 +1611,26 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
     };
     const scopeIds = new Set(inScope(meetings.list()).map((m) => m.id));
-    const out = key && sealed
+    let out: (AskOutcome & { replace?: string }) | { ok: false; reason: string; message: string } | undefined;
+    if (recall && key && typeof body.question === "string" && body.question.trim()) {
+      const started = performance.now();
+      const history = Array.isArray(body.history) ? body.history.filter((m): m is AskMessage => Boolean(m) && (m.role === "user" || m.role === "lente") && typeof m.text === "string") : [];
+      let firstAt: number | undefined;
+      const fast = await askFast(body.question, history, scope?.id, (e) => {
+        if (e.type === "delta" && firstAt === undefined) firstAt = performance.now();
+        emit?.(e);
+      }).catch(failed);
+      if ("path" in fast && fast.path === "fast") {
+        const r = fast.result!;
+        out = { ok: true, answer: r.answer, sources: r.sources, found: r.found, ms: Math.round(performance.now() - started), ...(r.command ? { command: r.command } : {}), ...(r.replace ? { replace: r.replace } : {}) };
+        // Lengths and timings only: no word of the question or the answer.
+        console.log(`[ask] fast · retrieval ${fast.retrievalMs.toFixed(1)} ms · ${fast.lines} lines · first text ${firstAt === undefined ? "–" : `${Math.round(firstAt - started)} ms`} · ‹${r.answer.length} chars›${r.cut ? " · cut at length" : ""}`);
+      } else if ("path" in fast) {
+        console.log(`[ask] deep path · retrieval ${fast.retrievalMs.toFixed(1)} ms · ${fast.lines} lines`);
+        emit?.({ type: "searching" });
+      } else out = fast;
+    }
+    out ??= key && sealed
       ? await askWhole({ question, history: body.history }, inScope, Boolean(scope)).catch(failed)
       : key
       ? await ask(
@@ -2095,12 +2166,35 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     } else if (req.method === "POST" && req.url === "/ask") {
       const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown; threadId?: unknown };
       const askedAt = Date.now();
-      const out = await answerAsk(body);
-      if (out === "no_project") return void res.writeHead(404).end();
+      // add-memory-engine 3.4: a client that accepts an event stream gets the answer as it is written
+      // (delta, source, replace, job, searching, done); older clients keep the JSON reply.
+      const streaming = String(req.headers.accept ?? "").includes("text/event-stream");
+      let opened = false;
+      const send = (event: string, data: unknown) => {
+        if (!opened) {
+          res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
+          opened = true;
+        }
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+      let sentText = false;
+      const out = await answerAsk(body, true, streaming ? (e) => (e.type === "delta" ? ((sentText = true), send("delta", { text: e.text })) : e.type === "source" ? send("source", e.source) : send("searching", {})) : undefined);
+      if (out === "no_project") return void (opened ? res.end() : res.writeHead(404).end());
       // A typed conversation is kept like a voice one (sealed in the cloud) when the phone names its thread.
       if (out.ok && isThreadId(body.threadId) && typeof body.question === "string" && body.question.trim()) {
         Promise.resolve(chats.add(askLines(body.threadId, body.question.trim().slice(0, 2000), out, askedAt, Date.now())))
           .catch((error: Error) => console.error(`[ask] could not keep the chat lines: ${error.message.slice(0, 160)}`));
+      }
+      if (streaming) {
+        // The deep and tiered paths (and a proposed job) answer at once: one delta and its chips.
+        if (out.ok && !sentText) {
+          send("delta", { text: out.answer });
+          for (const source of out.sources) send("source", source);
+        }
+        if ("replace" in out && out.replace) send("replace", { text: out.replace });
+        if (out.ok && "job" in out && out.job) send("job", out.job);
+        send("done", out);
+        return void res.end();
       }
       res.writeHead(out.ok ? 200 : out.reason === "empty-question" ? 400 : 502, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));

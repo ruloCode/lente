@@ -101,7 +101,7 @@ The plan call is the slowest step and the least reliable one. The probe measured
 
 | Unit | Id | From | Text indexed |
 |---|---|---|---|
-| Segment | `s<YYYY-MM-DD>:<n>` (refs the turn ids it covers, e.g. `m…:t5–t9`) | Turns, grouped by decision 4 | The turns, with speakers |
+| Segment | `s<meeting id>:<n>` in a meeting, `s<YYYY-MM-DD>:<n>` for speech outside meetings (refs the turn ids it covers, e.g. `m…:t5–t9`); numbered per meeting or day so re-indexing one never renumbers another | Turns, grouped by decision 4 | The turns, with speakers |
 | Seen | `d<day>:<n>` (as today) | Camera descriptions | The description |
 | Notes | `m…` | Meeting notes | Summary, decisions, commitments |
 | Card | `c<episode id>:<n>` | Memory cards (decision 5) | Summary, facts, people, bilingual keys |
@@ -125,7 +125,9 @@ The plan call is the slowest step and the least reliable one. The probe measured
 - Validity: "now" questions see only facts that are currently valid.
 
 **Fusion:**
-- Reciprocal rank fusion with k = 60 across the lexical, vector and people lists.
+- Reciprocal rank fusion with k = 60 across the lexical, vector, people and time lists.
+  - The people list is the lexical ranking restricted to the named person when the question has words, so the person's relevant line leads, not just their newest one (measured in 3.4: newest-first lost the 18,000-dollar line to a newer meeting).
+  - The time list holds a named range's notes, cards and facts, where commitments and decisions are written whatever words the question used (measured in 3.5: «¿Qué prometí entregar esta semana?» went from 0/5 to 5/5).
 - A small recency prior on top: half-life 30 days, off when the question names a time.
 - Units that match a named person get a boost.
 
@@ -353,6 +355,6 @@ The benchmark numbers these projects publish are their own claims and are not qu
 
 ## Open Questions
 
-- Does the Responses API stream fast enough with a 6,000-token retrieved block? Measure before fixing the text budget.
+- Does the Responses API stream fast enough with a 6,000-token retrieved block? Measured in 3.5: with 1,100–3,700-token prompts the first text took 2.7 s p50, mostly Spark 1.3's reasoning before its first word (150–250 tokens at minimal effort); shorter rules did not help. The 1.2 s target needs a faster first step (the fast lane) or less input, not less retrieval time.
 - Can Muse Spark Open write memory cards as well as Spark 1.3? This depends on `add-fast-reply-lane`'s eval.
 - Should "now" questions prefer card facts over raw segments, or show both? The eval decides.
