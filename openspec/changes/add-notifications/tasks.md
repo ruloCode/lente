@@ -13,7 +13,7 @@ Depends on: `add-home-dock`
 - [x] 2.1 `core/Notifications.kt`: feed parsing, grouping by day, the fallback feed from the stream state, `shouldAlert`; unit tests (`./gradlew :app:testDebugUnitTest`)
 - [x] 2.2 The bell on Inicio with the unread count; `ui/Actividad.kt` with groups, actions and the «Por hacer» filter; opening marks read; screenshots on the phone [phone]
 
-Note (2026-11-03, built overnight at the owner's request): on the owner's Samsung against the production hub (still `feat/web-desktop`, so the phone derives the feed itself): the bell showed the unread count, Actividad listed the meetings by day with «Abrir notas», the Notificaciones sheet rendered, and with one item re-armed in the app's preferences a notification was posted on the «Actividad de Lente» channel; launching with its intent opened Actividad. 113 app unit tests and 632 hub tests pass. Found and fixed on the phone: scheduling the job crashed the app without `ACCESS_NETWORK_STATE`; scheduling is now guarded.
+Note (2026-11-03, built overnight at the owner's request): on the owner's Samsung against the production hub (still `feat/web-desktop`, so the phone derives the feed itself): the bell showed the unread count, Actividad listed the meetings by day with «Abrir notas», the Notificaciones sheet rendered, and with one item re-armed in the app's preferences a notification was posted on the «Actividad de Lente» channel; launching with its intent opened Actividad. 113 app unit tests and 631 hub tests pass. Found and fixed on the phone: scheduling the job crashed the app without `ACCESS_NETWORK_STATE`; scheduling is now guarded.
 
 ## 3. Alerts on the phone
 
