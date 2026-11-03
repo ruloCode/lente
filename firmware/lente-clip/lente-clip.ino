@@ -70,6 +70,9 @@ static IPAddress hubIp;               // learned by discovery
 static bool hubFound = false;         // false: use HUB_HOST
 static uint16_t hubPort = HUB_PORT;
 static SemaphoreHandle_t sendLock;
+// True once this connection's hello went out: the hub refuses a link whose first frame is not a hello,
+// and the audio sender would otherwise race it with queued frames.
+static volatile bool linkReady = false;
 static I2SClass i2s;
 static volatile bool photoRequested = false;
 static volatile bool micOn = true;    // "M" / "m" from the hub: pause listening without disconnecting
@@ -115,7 +118,7 @@ static bool wsWrite(uint8_t opcode, const uint8_t *a, size_t alen, const uint8_t
 // TLS is one mbedTLS context, not safe to read and write from two tasks at once:
 // sendLock guards every write and, on a cloud hub, every read too.
 static bool sendFrame(char type, const uint8_t *data, size_t len) {
-  if (!hub.connected()) return false;
+  if (!hub.connected() || (type != 'H' && !linkReady)) return false;
   uint8_t header[5] = {(uint8_t)type, (uint8_t)len, (uint8_t)(len >> 8), (uint8_t)(len >> 16), (uint8_t)(len >> 24)};
   xSemaphoreTake(sendLock, portMAX_DELAY);
 #if CLOUD
@@ -127,23 +130,48 @@ static bool sendFrame(char type, const uint8_t *data, size_t len) {
   return ok;
 }
 
-// Runs on its own so the microphone is drained continuously, even while a photo goes out.
 // Every audio frame carries an eight-byte header: u32 little-endian sequence number
 // followed by u32 little-endian capture time in ms since boot, then the PCM16 samples.
 // The hub uses the sequence to count lost frames and the time to place audio precisely.
-static void audioTask(void *) {
+//
+// Reading and sending are two tasks with a queue in PSRAM between them. A photo holds the link
+// for half a second or more; the reader keeps draining the microphone into the queue meanwhile, and
+// the sender catches up after. (One task did both, so the microphone's DMA overflowed during every
+// photo and that speech was lost before it was numbered: the hub saw no gap, only silence.)
+static const size_t AUDIO_PACKET_BYTES = 8 + AUDIO_FRAME_SAMPLES * 2;
+static const size_t AUDIO_QUEUE_FRAMES = 50;  // 4 s of audio
+static QueueHandle_t audioQueue;
+static StaticQueue_t audioQueueState;
+static volatile uint32_t audioDropped = 0;
+
+static void audioReadTask(void *) {
   static int16_t frame[AUDIO_FRAME_SAMPLES];
-  static uint8_t packet[8 + sizeof(frame)];
-  static uint32_t seq = 0;
+  static uint8_t packet[AUDIO_PACKET_BYTES];
+  static uint8_t oldest[AUDIO_PACKET_BYTES];
+  uint32_t seq = 0;
   for (;;) {
     size_t got = i2s.readBytes((char *)frame, sizeof(frame));  // keep draining even when paused
-    if (got == sizeof(frame) && micOn) {
-      uint32_t now = millis();
-      memcpy(packet, &seq, 4);
-      memcpy(packet + 4, &now, 4);
-      memcpy(packet + 8, frame, sizeof(frame));
-      if (sendFrame('A', packet, sizeof(packet))) seq++;
+    if (got != sizeof(frame) || !micOn) continue;
+    uint32_t now = millis();
+    memcpy(packet, &seq, 4);
+    memcpy(packet + 4, &now, 4);
+    memcpy(packet + 8, frame, sizeof(frame));
+    seq++;
+    // Full (the link is down or slower than real time): drop the oldest, so the hub hears the gap.
+    if (xQueueSend(audioQueue, packet, 0) != pdTRUE) {
+      xQueueReceive(audioQueue, oldest, 0);
+      xQueueSend(audioQueue, packet, 0);
+      audioDropped++;
     }
+  }
+}
+
+static void audioSendTask(void *) {
+  static uint8_t packet[AUDIO_PACKET_BYTES];
+  for (;;) {
+    if (xQueueReceive(audioQueue, packet, portMAX_DELAY) != pdTRUE) continue;
+    // Not connected: the frame is gone; its sequence number tells the hub when it reconnects.
+    sendFrame('A', packet, sizeof(packet));
   }
 }
 
@@ -258,6 +286,7 @@ static bool connectCloud() {
 static void ensureConnected() {
   static uint32_t lastTry = 0;
   if (hub.connected() || millis() - lastTry < 2000) return;
+  linkReady = false;
   lastTry = millis();
   if (WiFi.status() != WL_CONNECTED) {
     Serial.printf("[wifi] connecting to %s… (status %d)\n", WIFI_SSID, WiFi.status());
@@ -282,7 +311,7 @@ static void ensureConnected() {
                    "{\"proto\":\"2.0\",\"device\":\"lente-clip\",\"fw\":\"pilot-2\","
                    "\"codec\":\"pcm16\",\"rate\":16000,\"rssi\":%d,\"camera\":%s}",
                    WiFi.RSSI(), cameraOn ? "true" : "false");
-  sendFrame('H', (const uint8_t *)hello, n);
+  linkReady = sendFrame('H', (const uint8_t *)hello, n);
 #if CLOUD
   Serial.printf("[hub] connected to %s over wss (wifi %d dBm)\n", HUB_CLOUD_HOST, WiFi.RSSI());
 #else
@@ -396,7 +425,11 @@ void setup() {
   WiFi.scanDelete();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-  xTaskCreatePinnedToCore(audioTask, "audio", 8192, nullptr, 2, nullptr, 1);
+  uint8_t *queueStorage = (uint8_t *)ps_malloc(AUDIO_QUEUE_FRAMES * AUDIO_PACKET_BYTES);
+  audioQueue = queueStorage ? xQueueCreateStatic(AUDIO_QUEUE_FRAMES, AUDIO_PACKET_BYTES, queueStorage, &audioQueueState) : xQueueCreate(8, AUDIO_PACKET_BYTES);
+  if (!queueStorage) Serial.println("[mic] no PSRAM for the audio queue: 8 frames in internal RAM");
+  xTaskCreatePinnedToCore(audioReadTask, "audio-read", 4096, nullptr, 3, nullptr, 1);
+  xTaskCreatePinnedToCore(audioSendTask, "audio-send", 8192, nullptr, 2, nullptr, 1);
 }
 
 void loop() {
@@ -416,6 +449,12 @@ void loop() {
   if (photoRequested) {
     photoRequested = false;
     takePhoto();
+  }
+
+  static uint32_t reportedDropped = 0;
+  if (audioDropped != reportedDropped) {
+    reportedDropped = audioDropped;
+    Serial.printf("[mic] %u audio frame(s) dropped so far: the link was slower than real time\n", (unsigned)reportedDropped);
   }
 
   // Three quick blinks for a cue; otherwise the LED stays dark to save battery and attention.
