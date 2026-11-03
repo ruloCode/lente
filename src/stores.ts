@@ -6,7 +6,7 @@
 // glossary) stays a plain in-memory value that the Supabase store loads when the user's runtime
 // starts and writes behind.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { TraceStep, Proposal } from "./agent-loop.ts";
 import type { Task, TaskPatch } from "./agent-tools.ts";
@@ -101,6 +101,8 @@ export interface DigestStore {
   latest(scope: DigestScope, count: number): Awaitable<Digest[]>;
   /** Replaces the digest of the same scope and period. */
   put(digest: Digest): Awaitable<void>;
+  /** Removes one (a brief or person card with nothing left behind it after a forget). */
+  remove(scope: DigestScope, periodStart: string): Awaitable<void>;
 }
 
 /** Digests in one JSON file (`data/digests.json`), for the laptop hub. */
@@ -131,10 +133,17 @@ export class FileDigestStore implements DigestStore {
   }
 
   put(digest: Digest): void {
-    const rest = this.all().filter((d) => !(d.scope === digest.scope && d.periodStart === digest.periodStart));
+    this.write([...this.all().filter((d) => !(d.scope === digest.scope && d.periodStart === digest.periodStart)), digest]);
+  }
+
+  remove(scope: DigestScope, periodStart: string): void {
+    this.write(this.all().filter((d) => !(d.scope === scope && d.periodStart === periodStart)));
+  }
+
+  private write(list: Digest[]): void {
     mkdirSync(dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify([...rest, digest], null, 2) + "\n");
+    writeFileSync(tmp, JSON.stringify(list, null, 2) + "\n");
     renameSync(tmp, this.file);
   }
 }
@@ -168,5 +177,66 @@ export class FileUsageStore implements UsageStore {
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, JSON.stringify(snapshot) + "\n");
     renameSync(tmp, this.file);
+  }
+}
+
+// --- Memory index snapshots (add-memory-engine 7.1) -----------------------------------------------
+
+/** One month shard of the memory index as bytes (src/index-snapshot.ts) with what the database may see. */
+export interface SnapshotRecord {
+  shard: string;
+  formatVersion: number;
+  /** The encoder's id, or `lexical`. */
+  encoder: string;
+  builtThrough: number;
+  bytes: Uint8Array;
+}
+
+/** Snapshots by shard (`YYYY-MM`). The Supabase store seals the bytes; the laptop keeps them as 0600 files like the rest of `data/`. */
+export interface SnapshotStore {
+  get(shard: string): Awaitable<SnapshotRecord | undefined>;
+  put(record: SnapshotRecord): Awaitable<void>;
+  /** Shards it holds, without their bytes. */
+  list(): Awaitable<Omit<SnapshotRecord, "bytes">[]>;
+  remove(shard: string): Awaitable<void>;
+}
+
+/** `data/memory/<shard>.bin` with a small JSON sidecar for the plain fields. */
+export class FileSnapshots implements SnapshotStore {
+  private readonly dir: string;
+
+  constructor(dir: string) {
+    this.dir = dir;
+  }
+
+  private path(shard: string, ext: string): string {
+    if (!/^\d{4}-\d{2}$/.test(shard)) throw new Error(`memory snapshot: "${shard}" is not a YYYY-MM shard`);
+    return `${this.dir}/${shard}.${ext}`;
+  }
+
+  get(shard: string): SnapshotRecord | undefined {
+    const meta = this.path(shard, "json");
+    if (!existsSync(meta) || !existsSync(this.path(shard, "bin"))) return undefined;
+    const m = JSON.parse(readFileSync(meta, "utf8")) as Omit<SnapshotRecord, "bytes">;
+    return { ...m, bytes: new Uint8Array(readFileSync(this.path(shard, "bin"))) };
+  }
+
+  put(record: SnapshotRecord): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const { bytes, ...meta } = record;
+    for (const [ext, data] of [["bin", bytes], ["json", JSON.stringify(meta)]] as const) {
+      const tmp = `${this.path(record.shard, ext)}.tmp`;
+      writeFileSync(tmp, data, { mode: 0o600 });
+      renameSync(tmp, this.path(record.shard, ext));
+    }
+  }
+
+  list(): Omit<SnapshotRecord, "bytes">[] {
+    if (!existsSync(this.dir)) return [];
+    return readdirSync(this.dir).filter((f) => /^\d{4}-\d{2}\.json$/.test(f)).map((f) => JSON.parse(readFileSync(`${this.dir}/${f}`, "utf8")) as Omit<SnapshotRecord, "bytes">);
+  }
+
+  remove(shard: string): void {
+    for (const ext of ["bin", "json"]) rmSync(this.path(shard, ext), { force: true });
   }
 }

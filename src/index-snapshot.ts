@@ -155,6 +155,8 @@ export function encodeShard(shard: Shard, meta: Omit<SnapshotMeta, "shard" | "di
     for (const d of docs) (w.uint(d - prev), (prev = d));
     for (const tf of tfs) w.uint(tf);
   }
+  w.uint(shard.sources.size);
+  for (const [k, v] of shard.sources) (w.str(k), w.str(v));
   const body = w.done();
   const out = new Uint8Array(4 + 2 + body.length + 4);
   out.set(Buffer.from(MAGIC, "ascii"), 0);
@@ -217,6 +219,9 @@ export function decodeShard(bytes: Uint8Array): { shard: Shard; meta: SnapshotMe
     if (docs.some((d) => d >= count)) throw new SnapshotError(`term postings point past the ${count} units`);
     postings.set(term, { docs, tfs });
   }
+  const sources = new Map<string, string>();
+  const sourceCount = r.uint();
+  for (let i = 0; i < sourceCount; i++) sources.set(r.str(), r.str());
   if (!r.end) throw new SnapshotError("trailing bytes");
-  return { shard: Shard.restore(key, dim, { units, lengths, postings, vectors, hasVector }), meta: { shard: key, encoder, dim, builtThrough } };
+  return { shard: Shard.restore(key, dim, { units, lengths, postings, vectors, hasVector, sources }), meta: { shard: key, encoder, dim, builtThrough } };
 }

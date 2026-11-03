@@ -277,3 +277,21 @@ The next levers are outside this group:
 - **Target missed: first spoken answer sentence ≤ 1.5 s p50.** Measured: 3.1 s. As on the chat path, the time is Spark's own first token on the first step (2.5–3.3 s here), not retrieval.
 - **Partials in `ENDPOINTING` mode:** a third run (one round, `--fast`) counted 5–6 partial transcripts per question before `speechComplete`. Speculative recall runs on them as decision 9 says.
 - Spend: US$ 0.037 before, US$ 0.030 after, US$ 0.012 for the partials run (tokens, searches and transcription).
+
+### Opening a runtime with and without snapshots (task 7.5)
+
+`pnpm bench:ask --index-only --open` (2026-11-03). Synthetic all-day meetings: 8 a day of 450 turns, 20 Zipf words each, 6 s apart, two projects. A runtime opens on them three ways:
+- with no snapshots, indexing the hot months (this one and the two before) from the records;
+- writing the snapshots;
+- opening a second runtime from those snapshots.
+
+Laptop file store, so the times leave out the sealing and the database round trip.
+
+| Days of records | Turns | Units indexed (3 hot months) | Open without snapshots | Write snapshots | Open with snapshots | Snapshot bytes | RSS added |
+|---|---|---|---|---|---|---|---|
+| 30 | 107,550 | 18,527 | 879 ms | 104 ms | 137 ms | 16.2 MB | 111 MB |
+| 365 | 1,313,550 | 40,865 | 2,463 ms | 249 ms | 311 ms | 35.6 MB | 198 MB |
+
+- With snapshots, a runtime opens about 6–8 times faster, and no meeting needed replaying.
+- At 365 days only the 3 hot months are indexed at open. Older months load when a question names a time in them, and their snapshots are written when they are dropped.
+- Snapshot size is about 12 MB a month of all-day speech, text included. In the database that is one sealed `bytea` row per month per wearer. That figure goes to the capacity measure (`add-accounts` 6.3/6.4), next to the RSS of task 2.4.

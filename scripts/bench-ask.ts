@@ -16,7 +16,7 @@
 
 import { parseArgs } from "node:util";
 // `--index-only` is the index microbench (task 2.4): no model, no key.
-if (process.argv.includes("--index-only") || process.argv.includes("--index-child")) {
+if (process.argv.includes("--index-only") || process.argv.includes("--index-child") || process.argv.includes("--open-child")) {
   await import("./bench-index.ts");
   process.exit(0);
 }

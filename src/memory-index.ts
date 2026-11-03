@@ -53,6 +53,9 @@ export interface Hit {
   coverage?: number;
 }
 
+const MONTH_KEY = /^\d{4}-\d{2}$/;
+export const isMonthShard = (key: string): boolean => MONTH_KEY.test(key);
+
 /** `YYYY-MM` in UTC: the shard a unit lives in. */
 export const shardOf = (at: number): string => new Date(at).toISOString().slice(0, 7);
 
@@ -91,6 +94,10 @@ export class Shard {
   codes: Uint8Array;
   readonly hasVector: boolean[] = [];
   private readonly slotOf = new Map<string, number>();
+  /** What the shard was built from (meeting id → change signature), so a runtime opening a snapshot replays only what changed. */
+  readonly sources = new Map<string, string>();
+  /** Changed since it was last written to a snapshot. */
+  dirty = false;
   private live = 0;
   private totalLength = 0;
   readonly dim: number;
@@ -103,8 +110,9 @@ export class Shard {
   }
 
   /** A shard from its stored parts (the snapshot codec): slots are dense, postings already built. */
-  static restore(key: string, dim: number, parts: { units: MemoryUnit[]; lengths: number[]; postings: Map<string, Posting>; vectors?: Int8Array; hasVector: boolean[] }): Shard {
+  static restore(key: string, dim: number, parts: { units: MemoryUnit[]; lengths: number[]; postings: Map<string, Posting>; vectors?: Int8Array; hasVector: boolean[]; sources?: Map<string, string> }): Shard {
     const s = new Shard(key, dim);
+    for (const [k, v] of parts.sources ?? []) s.sources.set(k, v);
     for (const [slot, u] of parts.units.entries()) {
       s.units.push(u);
       s.lengths.push(parts.lengths[slot]!);
@@ -140,6 +148,7 @@ export class Shard {
   /** Adds or replaces a unit; `vector` must have the shard's dimension. */
   add(unit: MemoryUnit, vector?: Int8Array): void {
     if (this.slotOf.has(unit.id)) this.remove(unit.id);
+    this.dirty = true;
     const slot = this.units.length;
     const counts = new Map<string, number>();
     const words = terms(unit.text);
@@ -177,12 +186,14 @@ export class Shard {
     this.vectors.set(vector, slot * this.dim);
     this.codes.set(bitCode(vector), slot * cb);
     this.hasVector[slot] = true;
+    this.dirty = true;
   }
 
   /** Tombstones a unit; its postings are skipped and dropped at the next snapshot. */
   remove(id: string): boolean {
     const slot = this.slotOf.get(id);
     if (slot === undefined) return false;
+    this.dirty = true;
     this.slotOf.delete(id);
     for (const t of new Set(terms(this.units[slot]!.text))) this.dfs.set(t, (this.dfs.get(t) ?? 1) - 1);
     this.units[slot] = undefined;
@@ -238,10 +249,11 @@ export class MemoryIndex {
     return s;
   }
 
-  add(unit: MemoryUnit, vector?: Int8Array): void {
+  /** Adds a unit to its month's shard, or to `shardKey` (the runtime pins facts and digests to a shard of their own). */
+  add(unit: MemoryUnit, vector?: Int8Array, shardKey = shardOf(unit.at)): void {
     // A unit that moved months (an edited time) leaves its old shard.
-    for (const s of this.shards.values()) if (s.key !== shardOf(unit.at) && s.has(unit.id)) s.remove(unit.id);
-    this.shard(shardOf(unit.at)).add(unit, vector);
+    for (const s of this.shards.values()) if (s.key !== shardKey && s.has(unit.id)) s.remove(unit.id);
+    this.shard(shardKey).add(unit, vector);
   }
 
   remove(id: string): boolean {
@@ -277,7 +289,8 @@ export class MemoryIndex {
   private inRange(f: IndexFilter): Shard[] {
     const lo = f.from === undefined ? "" : shardOf(f.from - 31 * 86_400_000);
     const hi = f.to === undefined ? "\uffff" : shardOf(f.to - 1);
-    return [...this.shards.values()].filter((s) => s.key >= lo && s.key <= hi);
+    // A shard that is not a month (pinned facts and digests) is always searched; the filter still applies to its units.
+    return [...this.shards.values()].filter((s) => !MONTH_KEY.test(s.key) || (s.key >= lo && s.key <= hi));
   }
 
   /** BM25 over the query's terms (already through `terms`), filtered, best first. */

@@ -50,7 +50,7 @@ import { DatabaseHealth, dbFailing } from "./db-health.ts";
 import { SupabaseRest } from "./supabase-rest.ts";
 import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, briefsDue, personKey, recurringPeople, writeBrief, writePersonCard, writeProfile } from "./digests.ts";
-import { type DigestStore, FileDigestStore } from "./stores.ts";
+import { type DigestStore, FileDigestStore, FileSnapshots } from "./stores.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
 import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
@@ -110,6 +110,8 @@ const RECALL_MODE = process.env.LENTE_RECALL === "fast" ? "fast" : "tiers";
 const RECALL_FLUSH_MS = 5_000;
 /** How often a running episode is checked for a closed 10-minute window, and the notes call's cap when it also writes the card. */
 const CARD_TICK_MS = 15_000;
+/** The index's changed months are written behind this often, and at eviction. */
+const SNAPSHOT_EVERY_MS = 10 * 60_000;
 const CARD_NOTES_TOKENS = 4_500;
 /** Briefs are checked every 5 minutes (each rewritten at most every 30); how many briefs and people cards are read, and how many meetings feed each. */
 const BRIEF_TICK_MS = 5 * 60_000;
@@ -1220,16 +1222,27 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
           today: () => day.entries,
           recent: (days) => day.recent(days),
           keptFacts: () => keptFacts(facts.list()),
+          ...(sealed ? { between: (from: number, to: number) => sealed.sealed.day.entriesBetween(from, to) } : {}),
           ...(sealed ? { digests: async () => {
             const [[profileDigest], days, weeks] = await Promise.all([sealed.digests.latest("profile", 1), sealed.digests.latest("day", 7), sealed.digests.latest("week", 4)]);
             return { ...(profileDigest ? { profile: profileDigest } : {}), days, weeks };
           } } : {}),
         },
         TIME_ZONE,
+        Date.now,
+        { snapshots: sealed?.sealed.snapshots ?? new FileSnapshots(join(dataDir, "memory")), log: (line) => console.log(line) },
       )
     : undefined;
+  /** Writes the index's changed months as snapshots (sealed in the cloud); lengths and counts in the log only. */
+  const persistIndex = async (why: string) => {
+    if (!recall) return;
+    const started = performance.now();
+    const written = await recall.persist().catch((error: Error) => (console.error(`[recall] snapshot write failed: ${error.message.slice(0, 200)}`), 0));
+    if (written) console.log(`[recall] ${written} snapshot(s) written (${why}) in ${Math.round(performance.now() - started)} ms`);
+  };
   if (recall) {
-    void recall.ready.then(() => console.log(`[recall] index ready · ${recall.index.size} units`), (error: Error) => console.error(`[recall] index build failed: ${error.message.slice(0, 200)}`));
+    every(() => void persistIndex("every 10 minutes"), SNAPSHOT_EVERY_MS);
+    void recall.ready.then(() => console.log(`[recall] index ready · ${recall.index.size} units · ${recall.opened.fromSnapshot} month(s) from snapshots, ${recall.opened.rebuilt} rebuilt, ${recall.opened.meetingsReplayed} meeting(s) and ${recall.opened.daysReplayed} day(s) replayed`), (error: Error) => console.error(`[recall] index build failed: ${error.message.slice(0, 200)}`));
     every(() => void recall.flush().catch((error: Error) => console.error(`[recall] index update failed: ${error.message.slice(0, 200)}`)), RECALL_FLUSH_MS);
     every(() => void cardWindow(), CARD_TICK_MS);
     every(() => void writeBriefs(false), BRIEF_TICK_MS);
@@ -1272,6 +1285,36 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       if (written) console.log(`[digests] ${written} people card(s) rewritten`);
     } catch (error) {
       console.error(`[digests] people cards failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  /**
+   * After a forget (add-memory-engine 7.3): the briefs and people cards that drew on what was forgotten
+   * are rewritten from what is left, never from their previous text, or removed when nothing is left.
+   * Forget a day (add-memory-timeline 1.8) calls `forgetInMemory` with the day and its meetings.
+   */
+  async function forgetInMemory(what: { day?: string; meetings: Meeting[] }): Promise<void> {
+    if (!recall) return;
+    try {
+      const affected = await recall.forget(what);
+      const assigned = await projects.assignments();
+      const list = await projects.list();
+      const done = meetings.list().filter((m) => m.status === "done" && !what.meetings.some((x) => x.id === m.id));
+      for (const projectId of affected.projects) {
+        const left = done.filter((m) => assigned.get(m.id) === projectId && (m.cards ?? []).length > 0).slice(-BRIEF_MEETINGS);
+        const project = list.find((p) => p.id === projectId);
+        if (!left.length || !project || !key) await memoryDigests.remove("brief", projectId);
+        else await memoryDigests.put(await writeBrief({ project: { id: project.id, name: project.name }, meetings: left }, structured, Date.now()));
+      }
+      const recurring = recurringPeople(done, isName);
+      for (const name of affected.people) {
+        const seenIn = [...recurring].find(([n]) => personKey(n) === personKey(name))?.[1];
+        if (!seenIn || !key) await memoryDigests.remove("person", personKey(name));
+        else await memoryDigests.put(await writePersonCard({ person: name, meetings: seenIn.slice(-PERSON_MEETINGS) }, structured, Date.now()));
+      }
+      console.log(`[recall] forgot ${what.day ? "a day and " : ""}${what.meetings.length} meeting(s) · ${affected.projects.length} brief(s) and ${affected.people.length} people card(s) rewritten or removed`);
+    } catch (error) {
+      console.error(`[recall] forgetting failed: ${(error as Error).message.slice(0, 200)}`);
     }
   }
 
@@ -2254,7 +2297,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.end(JSON.stringify(briefing));
     } else if (req.method === "POST" && req.url === "/meetings/delete") {
       const { id } = JSON.parse((await readBody(req)) || "{}") as { id?: string };
+      const gone = meetings.list().find((m) => m.id === id);
       const removed = typeof id === "string" && id !== current?.id && meetings.delete(id);
+      if (removed && gone) void forgetInMemory({ meetings: [gone] });
       if (removed) {
         deletedMeetings.add(id as string);
         traces.delete(id as string);
@@ -2266,7 +2311,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       }
       res.writeHead(removed ? 204 : 404).end();
     } else if (req.method === "POST" && req.url === "/meetings/delete-all") {
-      for (const m of [...meetings.list(), ...(current ? [current] : [])]) deletedMeetings.add(m.id);
+      const all = [...meetings.list(), ...(current ? [current] : [])];
+      for (const m of all) deletedMeetings.add(m.id);
+      setTimeout(() => void forgetInMemory({ meetings: all }), 0);
       if (current) {
         current = undefined; // discarded, not summarized
         syncMeeting();
@@ -2407,6 +2454,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       jobClients.clear();
       for (const t of timers) clearInterval(t);
       nightly.stop(userId);
+      // The index's changed months are written while the data key is still here (add-memory-engine 7.2).
+      await persistIndex("eviction");
       if (sealed) {
         const failed = await sealed.flush();
         if (failed) console.error(`[wearers] ${failed} write(s) for an evicted runtime did not reach the database`);

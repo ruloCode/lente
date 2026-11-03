@@ -23,7 +23,7 @@ import type { AssistMode } from "./profile.ts";
 import type { ProjectStore } from "./project-store.ts";
 import type { Project } from "./projects.ts";
 import { open, seal } from "./seal.ts";
-import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Meetings, Profile, Tasks, Traces, UsageStore } from "./stores.ts";
+import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Meetings, Profile, SnapshotRecord, SnapshotStore, Tasks, Traces, UsageStore } from "./stores.ts";
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
 import { type UsageSnapshot, priceTokens } from "./usage-meter.ts";
 import { AGENT_SCOPES, type AgentScope, type DeviceRecord } from "./user-devices.ts";
@@ -53,6 +53,14 @@ export class Sealer {
 
   openJson<T>(table: string, column: string, rowId: string, value: unknown): T {
     return JSON.parse(open(this.dek, fromBytea(value), { table, column, userId: this.userId, rowId }).toString("utf8")) as T;
+  }
+
+  bytes(table: string, column: string, rowId: string, value: Uint8Array): string {
+    return toBytea(seal(this.dek, Buffer.from(value), { table, column, userId: this.userId, rowId }));
+  }
+
+  openBytes(table: string, column: string, rowId: string, value: unknown): Uint8Array {
+    return new Uint8Array(open(this.dek, fromBytea(value), { table, column, userId: this.userId, rowId }));
   }
 }
 
@@ -658,10 +666,11 @@ export class SupabaseLanguage implements Language {
 // Digests -------------------------------------------------------------------------------------------
 
 /**
- * Scopes `memory_digests` cannot hold yet: a brief is keyed by project and a person card by a name,
- * which needs the subject column of add-memory-engine 7.1's migration (a name is never a plain column).
+ * Digests keyed by a subject instead of a period (add-memory-engine 6.5, migration 20261103000000): a
+ * brief's subject is its project; a person card's is a random id, and the person's key (a folded name)
+ * is sealed in the body, never a plain column.
  */
-const NOT_YET_IN_DB: ReadonlySet<DigestScope> = new Set(["brief", "person"]);
+const BY_SUBJECT: ReadonlySet<DigestScope> = new Set(["brief", "person"]);
 
 export class SupabaseDigests implements DigestStore {
   private readonly db: Db;
@@ -677,23 +686,84 @@ export class SupabaseDigests implements DigestStore {
     return { scope: r.scope as DigestScope, periodStart: String(r.period_start), text: body.text, sources: body.sources, createdAt: msOf(r.created_at) };
   }
 
+  /** Every brief or person row, opened, with its row id. */
+  private async bySubject(scope: DigestScope): Promise<{ id: string; digest: Digest }[]> {
+    const rows = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).order("created_at", "desc"));
+    return rows.map((r) => {
+      const body = this.s.openJson<{ text: string; sources: string[]; key: string }>("memory_digests", "body_enc", String(r.id), r.body_enc);
+      return { id: String(r.id), digest: { scope, periodStart: body.key, text: body.text, sources: body.sources, createdAt: msOf(r.created_at) } };
+    });
+  }
+
   async get(scope: DigestScope, periodStart: string): Promise<Digest | undefined> {
-    if (NOT_YET_IN_DB.has(scope)) return undefined;
+    if (BY_SUBJECT.has(scope)) return (await this.bySubject(scope)).find((x) => x.digest.periodStart === periodStart)?.digest;
     const [row] = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).eq("period_start", periodStart).limit(1));
     return row && this.open(row);
   }
 
   async latest(scope: DigestScope, count: number): Promise<Digest[]> {
-    if (NOT_YET_IN_DB.has(scope)) return [];
+    if (BY_SUBJECT.has(scope)) return (await this.bySubject(scope)).slice(0, count).map((x) => x.digest);
     const rows = await this.db.select<Row>(this.db.query("memory_digests").eq("scope", scope).order("period_start", "desc").limit(count));
     return rows.map((r) => this.open(r));
   }
 
+  async remove(scope: DigestScope, periodStart: string): Promise<void> {
+    if (BY_SUBJECT.has(scope)) {
+      const hit = (await this.bySubject(scope)).find((x) => x.digest.periodStart === periodStart);
+      if (hit) await this.db.remove(this.db.query("memory_digests").eq("id", hit.id));
+      return;
+    }
+    await this.db.remove(this.db.query("memory_digests").eq("scope", scope).eq("period_start", periodStart));
+  }
+
   async put(d: Digest): Promise<void> {
-    if (NOT_YET_IN_DB.has(d.scope)) throw new Error(`memory_digests cannot keep a ${d.scope} digest before add-memory-engine 7.1's migration`);
+    if (BY_SUBJECT.has(d.scope)) {
+      const existing = (await this.bySubject(d.scope)).find((x) => x.digest.periodStart === d.periodStart);
+      const id = existing?.id ?? randomUUID();
+      // A brief's subject is its project (already a plain id); a person's is a random id kept with the row.
+      const subject = d.scope === "brief" ? d.periodStart : ((await this.db.select<Row>(this.db.query("memory_digests").eq("id", id).limit(1), "subject"))[0]?.subject as string | undefined) ?? randomUUID();
+      await this.db.insert("memory_digests", [{ id, scope: d.scope, period_start: new Date(d.createdAt).toISOString().slice(0, 10), subject, body_enc: this.s.json("memory_digests", "body_enc", id, { text: d.text, sources: d.sources, key: d.periodStart }), source_count: d.sources.length, model: null, created_at: iso(d.createdAt) }], { upsertOn: "id" });
+      return;
+    }
     const [existing] = await this.db.select<{ id: string }>(this.db.query("memory_digests").eq("scope", d.scope).eq("period_start", d.periodStart).limit(1), "id");
     const id = existing?.id ?? randomUUID();
     await this.db.insert("memory_digests", [{ id, scope: d.scope, period_start: d.periodStart, body_enc: this.s.json("memory_digests", "body_enc", id, { text: d.text, sources: d.sources }), source_count: d.sources.length, model: null, created_at: iso(d.createdAt) }], { upsertOn: "id" });
+  }
+}
+
+/**
+ * Memory index snapshots (add-memory-engine 7.1): one row per month shard, the bytes sealed with AAD
+ * `memory_snapshots / blob_enc / user / shard`. The plain columns say only which month, which format and
+ * encoder, and up to when it was built.
+ */
+export class SupabaseSnapshots implements SnapshotStore {
+  private readonly db: Db;
+  private readonly s: Sealer;
+
+  constructor(db: Db, sealer: Sealer) {
+    this.db = db;
+    this.s = sealer;
+  }
+
+  private meta(r: Row): Omit<SnapshotRecord, "bytes"> {
+    return { shard: String(r.shard), formatVersion: Number(r.format_version), encoder: String(r.encoder), builtThrough: msOf(r.built_through) };
+  }
+
+  async get(shard: string): Promise<SnapshotRecord | undefined> {
+    const [row] = await this.db.select<Row>(this.db.query("memory_snapshots").eq("shard", shard).limit(1));
+    return row && { ...this.meta(row), bytes: this.s.openBytes("memory_snapshots", "blob_enc", shard, row.blob_enc) };
+  }
+
+  async put(r: SnapshotRecord): Promise<void> {
+    await this.db.insert("memory_snapshots", [{ shard: r.shard, format_version: r.formatVersion, encoder: r.encoder, built_through: iso(r.builtThrough), blob_enc: this.s.bytes("memory_snapshots", "blob_enc", r.shard, r.bytes), updated_at: iso(Date.now()) }], { upsertOn: "user_id,shard" });
+  }
+
+  async list(): Promise<Omit<SnapshotRecord, "bytes">[]> {
+    return (await this.db.select<Row>(this.db.query("memory_snapshots").order("shard", "desc"), "shard,format_version,encoder,built_through")).map((r) => this.meta(r));
+  }
+
+  async remove(shard: string): Promise<void> {
+    await this.db.remove(this.db.query("memory_snapshots").eq("shard", shard));
   }
 }
 
@@ -931,6 +1001,7 @@ export async function openUserStores(rest: SupabaseRest, userId: string, dek: Bu
     digests: new SupabaseDigests(db, sealer),
     projects: new SupabaseProjects(db, sealer, index),
     chats: new SupabaseChats(db, sealer),
+    snapshots: new SupabaseSnapshots(db, sealer),
     /** Waits for the written-behind settings (eviction flushes before dropping the key). */
     flush: async () => {
       await Promise.all([profile.flush(), language.flush()]);

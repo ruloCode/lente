@@ -313,3 +313,40 @@ export function* allDayUnits(days: number, segmentsPerDay = SEGMENTS_PER_DAY): G
     }
   }
 }
+
+/**
+ * All-day recording as meetings, for timing a runtime's open (add-memory-engine 7.5): each day eight
+ * 45-minute meetings of 450 turns of about 20 Zipf words, 6 s apart, alternating projects. Deterministic.
+ */
+export function allDayMeetings(days: number): { meetings: Meeting[]; assignments: Map<string, ProjectId> } {
+  const r = rng(31_337);
+  const cdf = new Float64Array(VOCABULARY);
+  let sum = 0;
+  for (let i = 0; i < VOCABULARY; i++) cdf[i] = sum += 1 / (i + 1);
+  const word = () => {
+    const x = r() * sum;
+    let lo = 0;
+    let hi = VOCABULARY - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cdf[mid]! < x) lo = mid + 1;
+      else hi = mid;
+    }
+    return `w${lo.toString(36)}`;
+  };
+  const people = Object.values(PEOPLE);
+  const meetings: Meeting[] = [];
+  const assignments = new Map<string, ProjectId>();
+  const today = localDayStart(MEMORY_NOW);
+  for (let back = days - 1; back >= 0; back--) {
+    for (let h = 0; h < 8; h++) {
+      const at = today - back * DAY_MS + (8 + h) * 3_600_000;
+      if (at >= MEMORY_NOW) continue;
+      const id = meetingId(at);
+      const turns = Array.from({ length: 450 }, (_, i) => ({ id: `t${i + 1}`, at: at + i * 6_000, speaker: pick(r, people), text: Array.from({ length: 20 }, () => (r() < 0.4 ? pick(r, FUNCTION_WORDS) : word())).join(" ") }));
+      meetings.push({ id, title: `PROBE all-day ${id}`, startedAt: at, endedAt: at + 3_600_000, status: "done", turns });
+      assignments.set(id, h % 2 ? "p-orion" : "p-atlas");
+    }
+  }
+  return { meetings, assignments };
+}

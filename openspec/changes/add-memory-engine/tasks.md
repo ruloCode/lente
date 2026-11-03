@@ -53,11 +53,11 @@ Fast path ships behind `LENTE_RECALL=fast` until group 9's eval shows it is at l
 
 ## 7. Persistence
 
-- [ ] 7.1 Migration `memory_snapshots` (user_id, shard, format_version, encoder, built_through, blob sealed), and `memory_digests` gaining the `brief` and `person` scopes with a `subject` column (cards live in the sealed meeting record, design decision 5), with RLS and no policy for `anon`/`authenticated`; stores in `src/supabase-stores.ts` and file stores in `src/stores.ts` (`data/memory/`). Tests with the fake PostgREST that no plain column carries content (`pnpm test`)
-- [ ] 7.2 Runtime open: load hot snapshots, replay records after `built_through`, write behind every 10 minutes when dirty and at eviction before the key is dropped; cold shards loaded lazily (LRU 3). Tests for open, replay, eviction order and a corrupt snapshot falling back to a rebuild (`pnpm test`)
-- [ ] 7.3 Forget a day and delete a meeting remove units, cards and facts from the index and storage and queue brief and people rewrites. Tests (`pnpm test`)
+- [x] 7.1 Migration `memory_snapshots` (user_id, shard, format_version, encoder, built_through, blob sealed), and `memory_digests` gaining the `brief` and `person` scopes with a `subject` column (cards live in the sealed meeting record, design decision 5), with RLS and no policy for `anon`/`authenticated`; stores in `src/supabase-stores.ts` and file stores in `src/stores.ts` (`data/memory/`). Tests with the fake PostgREST that no plain column carries content (`pnpm test`)
+- [x] 7.2 Runtime open: load hot snapshots, replay records after `built_through`, write behind every 10 minutes when dirty and at eviction before the key is dropped; cold shards loaded lazily (LRU 3). Tests for open, replay, eviction order and a corrupt snapshot falling back to a rebuild (`pnpm test`)
+- [x] 7.3 Forget a day and delete a meeting remove units, cards and facts from the index and storage and queue brief and people rewrites. Tests (`pnpm test`). The memory side is `RecallRuntime.forget` and the hub's `forgetInMemory`, used by `/meetings/delete` now; the forget-a-day route itself is `add-memory-timeline` 1.8, which calls it
 - [ ] 7.4 Apply the migration on the project, run the security advisors, check with the publishable key that it returns no rows [key:SUPABASE_SECRET_KEY]
-- [ ] 7.5 Measure runtime open with 30 and 365 synthetic days, with and without snapshots; record in `docs/benchmarks.md`
+- [x] 7.5 Measure runtime open with 30 and 365 synthetic days, with and without snapshots; record in `docs/benchmarks.md`
 
 ## 8. Vector recall
 

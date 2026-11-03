@@ -10,13 +10,18 @@ import { parseArgs } from "node:util";
 import { MemoryIndex } from "../src/memory-index.ts";
 import { expand, fuse } from "../src/recall-fusion.ts";
 import { fold, terms } from "../src/terms.ts";
-import { MEMORY_NOW, PEOPLE, SEGMENTS_PER_DAY, allDayUnits } from "./eval/memory-set.ts";
+import { MEMORY_NOW, PEOPLE, SEGMENTS_PER_DAY, allDayMeetings, allDayUnits } from "./eval/memory-set.ts";
+import { mkdtempSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { RecallRuntime } from "../src/recall-runtime.ts";
+import { FileSnapshots } from "../src/stores.ts";
 
 export const VECTOR_DIM = 384;
 const DAY_MS = 86_400_000;
 const RECALL_LINES = 24;
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { "index-only": { type: "boolean" }, "index-child": { type: "string" }, vectors: { type: "boolean", default: false }, queries: { type: "string", default: "300" } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { "index-only": { type: "boolean" }, "index-child": { type: "string" }, "open-child": { type: "string" }, open: { type: "boolean", default: false }, vectors: { type: "boolean", default: false }, queries: { type: "string", default: "300" } } });
 
 const pct = (list: number[], p: number) => {
   const sorted = [...list].sort((a, b) => a - b);
@@ -27,7 +32,29 @@ const rss = () => {
   return process.memoryUsage().rss;
 };
 
-if (values["index-child"]) {
+if (values["open-child"]) {
+  // add-memory-engine 7.5: a runtime opening on all-day synthetic meetings, without and then with snapshots.
+  const days = Number(values["open-child"]);
+  const { meetings, assignments } = allDayMeetings(days);
+  const records = { meetings: () => meetings, assignments: () => assignments, today: () => [], recent: () => [], keptFacts: () => [] };
+  const dir = mkdtempSync(join(tmpdir(), "lente-bench-open-"));
+  const store = new FileSnapshots(dir);
+  const before = rss();
+  let t = performance.now();
+  const cold = new RecallRuntime(records, "America/Bogota", () => MEMORY_NOW, { snapshots: store });
+  await cold.ready;
+  const coldMs = performance.now() - t;
+  const coldRss = rss() - before;
+  t = performance.now();
+  await cold.persist();
+  const persistMs = performance.now() - t;
+  const bytes = store.list().map((m) => statSync(join(dir, `${m.shard}.bin`)).size);
+  t = performance.now();
+  const warm = new RecallRuntime(records, "America/Bogota", () => MEMORY_NOW, { snapshots: store });
+  await warm.ready;
+  const warmMs = performance.now() - t;
+  console.log(JSON.stringify({ bench: "open", days, meetings: meetings.length, turns: meetings.length * 450, units: cold.index.size, withoutSnapshotsMs: Math.round(coldMs), writeSnapshotsMs: Math.round(persistMs), withSnapshotsMs: Math.round(warmMs), fromSnapshot: warm.opened.fromSnapshot, replayed: warm.opened.meetingsReplayed, snapshotMB: Number((bytes.reduce((a, b) => a + b, 0) / 1e6).toFixed(1)), rssAddedMB: Math.round(coldRss / 1e6) }));
+} else if (values["index-child"]) {
   const days = Number(values["index-child"]);
   const withVectors = values.vectors!;
   let seed = 99;
@@ -63,6 +90,10 @@ if (values["index-child"]) {
     times.push(performance.now() - t0);
   }
   console.log(JSON.stringify({ bench: "index", days, units: idx.size, vectors: withVectors ? VECTOR_DIM : 0, buildMs: Math.round(buildMs), queryP50Ms: Number(pct(times, 50).toFixed(2)), queryP95Ms: Number(pct(times, 95).toFixed(2)), queries: n, rssAddedMB: Math.round(added / 1e6), rssPer100kUnitsMB: Math.round((added / 1e6) * (100_000 / idx.size)) }));
+} else if (values.open) {
+  const sizes = positionals.length ? positionals.map(Number) : [30, 365];
+  console.error(`runtime open: ${sizes.join(", ")} days of all-day meetings (8 a day, 450 turns each), hot window ${3} months`);
+  for (const days of sizes) process.stdout.write(execFileSync(process.execPath, ["--expose-gc", "--max-old-space-size=8192", new URL(import.meta.url).pathname, "--open-child", String(days)], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }));
 } else {
   const sizes = positionals.length ? positionals.map(Number) : [30, 90, 365];
   console.error(`index microbench: ${SEGMENTS_PER_DAY} segments a day, sizes ${sizes.join(", ")} days, ${values.queries} queries each${values.vectors ? `, ${VECTOR_DIM}-dim int8 vectors` : ", lexical only"}`);

@@ -157,7 +157,9 @@ The plan call is the slowest step and the least reliable one. The probe measured
 
 **Rebuilds.** A change of format or encoder rebuilds the shard in the background from the sealed records. Until the rebuild finishes, queries use lexical ranking only.
 
-**Laptop mode** writes the same sealed format to `data/memory/<shard>.bin`, with the local key.
+**Laptop mode** writes the same format to `data/memory/<shard>.bin`, with a JSON sidecar for the plain fields. The laptop has no data key, so the files are 0600 like the rest of `data/`. (The first plan said "with the local key"; there is none.)
+
+**What a snapshot also carries** (decided in 7.2): each shard keeps the change signature of every meeting it holds. On open, only meetings whose signature differs are re-indexed, and the day record is replayed from the start of the day the snapshot was built through. Kept facts, briefs and people cards are few, live in a pinned shard and are rebuilt at every open. Measured in 7.5: opening from snapshots took 0.14 s at 30 days and 0.31 s at 365 days, against 0.9 s and 2.5 s from the records.
 
 **Measured in 2.4** (`docs/benchmarks.md`): 90 days query in 12 ms p95 lexical and 21 ms with 384-dimension vectors; 365 days in 48 ms and 93 ms. A hot quarter with vectors adds about 340 MB of RSS, mostly postings and text. So the three hot months stand on latency, and memory is what may shrink the window to one month (see Risks).
 
