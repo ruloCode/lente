@@ -111,7 +111,21 @@ The wearer leaves home with the clip and the phone, and the phone stays in a poc
 
 The app signs in with the system's Google account picker, not a browser redirect: AndroidX Credential Manager (`androidx.credentials` and `credentials-play-services-auth` 1.6.0) with Google's ID token type (`googleid` 1.2.1), the three runtime dependencies the accounts design names. The picker gets the Web client ID and the SHA-256 of a random nonce; Supabase Auth gets the ID token with the raw nonce over OkHttp, which the app already ships, so no Supabase SDK. The session is sealed with AES-GCM under a key that stays in the Android Keystore. The release APK grows from 2.75 MB to 3.72 MB, measured after R8, almost all of it Play Services Auth. Lint's `InvalidFragmentVersionForActivityResult` is turned off because it reads the fragment version that library declares (1.1.0) rather than the one the build resolves (1.5.7).
 
-
 ### 2026-11-02 · The desktop web app is plain ES modules served by the hub, with no build
 
 Lente on a computer needs every function of the Android app in a browser, against the laptop hub and the cloud hub with accounts. The app (`web/app/`, add-web-desktop) is JavaScript modules the browser loads as they are, one stylesheet, and no framework: the hub has no bundler, the deadline leaves no room for a toolchain, and judges can read the code as it runs. The pure parts (`web/app/lib/`) carry `// @ts-check` and are typechecked through `allowJs` and tested with `node --test`; the views build DOM with a small element helper. What the browser shares with the hub is generated, not copied: `src/web-app.ts` serves the `/desktop` capture pipeline, the transcript reducer and the theme as modules built from the hub's own tested code. The page holds no token (only the hub's `HttpOnly` cookie) and runs under a CSP with no inline script or style, so the mark and the AudioWorklet are served as files. Rejected: React or Preact (a dependency and a build), and TypeScript served through Node's `stripTypeScriptTypes` (still experimental in Node 22, and it warns at start).
+
+### 2026-11-02 · Voice mode: endpointing, a Spark tool loop on the Responses API, the phone's own voice
+
+Talking with Lente is a separate session (`/voice`), not the meeting pipeline.
+
+- **Transcription.** Meta documents `DIARIZATION` as "not tuned for low-latency voice commands", so the session runs its own transcription in `ENDPOINTING` mode. Measured: the turn is ready 323 ms (p50) after the wearer stops.
+- **The agent.** One Muse Spark 1.3 tool loop over the Responses API, because web search exists only there (not on Chat Completions) and can share a request with function tools.
+  - It is stateless (`store: false`), so Meta keeps no copy of the conversation.
+  - Its instructions go as a `developer` message: the top-level `instructions` field was never served from the prompt cache when measured.
+- **Speaking.** Replies reach the phone one sentence at a time, and the phone speaks them with its own text-to-speech, as everywhere else in Lente. It needs no network, and ElevenLabs is not Meta's.
+  - The model's commentary before a tool ("Lo anoto en tu lista") is spoken too, so the first sound comes about a second before the answer.
+- **Confirmation is code, not prompt.** Completing or deleting leaves one pending action that only a spoken yes runs, checked before any model call. Delegating, without an agent bridge, leaves a task for Lente.
+- **Barge-in runs on the hub.** A partial of two or more words that is not an echo of what Lente just said (`NarrationGuard`) cancels the turn's request. The phone records with `VOICE_COMMUNICATION` for the platform's echo canceller.
+- **Measured** (`scripts/bench-voice.ts`, 10 turns): first sentence 2.15 s and first answer sentence 3.21 s at p50, US$ 0.0044 per turn.
+- **Next.** The 1.5 s target is met only without tools. The next lever is the first step on the fast lane, once Spark Open's function calling is verified.

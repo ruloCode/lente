@@ -112,14 +112,15 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     val link by vm.link.collectAsState()
     val live by vm.liveOpen.collectAsState()
     val camera by vm.cameraOpen.collectAsState()
+    val voice by vm.voiceOpen.collectAsState()
     val toast by vm.toast.collectAsState()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val screen = stack.last()
     val s = hub.status
 
-    BackHandler(enabled = drawer.isOpen || live || camera || stack.size > 1 || screen != Screen.Ahora) {
-        if (drawer.isOpen) scope.launch { drawer.close() } else vm.back()
+    BackHandler(enabled = drawer.isOpen || live || camera || voice || stack.size > 1 || screen != Screen.Ahora) {
+        if (drawer.isOpen) scope.launch { drawer.close() } else if (voice) vm.closeVoice() else vm.back()
     }
 
     val usePhone: () -> Unit = { askMicrophone { ok -> if (ok) vm.startPhone() } }
@@ -127,7 +128,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     ModalNavigationDrawer(
         drawerState = drawer,
         scrimColor = c.scrim,
-        gesturesEnabled = !live && !camera,
+        gesturesEnabled = !live && !camera && !voice,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = c.surface, drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp), modifier = Modifier.width(304.dp)) {
                 Drawer(vm, screen) { target -> vm.go(target); scope.launch { drawer.close() } }
@@ -138,7 +139,10 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
             if (screen == Screen.Ahora) Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
                 if (link is Link.Reconnecting) Notice("Reconectando con la computadora…", Modifier.statusBarsPadding().padding(horizontal = Lente.gutter, vertical = 4.dp), tag = "reconnecting")
-                Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } }, record = { project, camera, title ->
+                Home(vm, hub, usePhone, onMenu = { scope.launch { drawer.open() } }, talk = {
+                    // Hablar con Lente hears the phone when the clip is not connected, so it asks for the microphone first.
+                    askMicrophone { ok -> if (ok) vm.openVoice() else vm.say("Lente necesita el micrófono para hablar contigo.") }
+                }, record = { project, camera, title ->
                     // The phone records whenever the clip is absent; it needs the microphone (and the camera) first.
                     if (!RecordChoice.usePhone(hub.status.clip, hub.status.clip && !hub.status.clipIsDevice)) vm.record(project, camera, title, usePhone = false)
                     else askMicrophone { ok -> if (ok) vm.record(project, camera, title, usePhone = !hub.status.clip) else vm.say("Lente necesita el micrófono para grabar con el teléfono.") }
@@ -173,6 +177,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
             }
             AnimatedVisibility(camera, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
                 Camera(vm, hub)
+            }
+            AnimatedVisibility(voice, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
+                VoiceScreen(vm)
             }
         }
     }

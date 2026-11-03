@@ -32,6 +32,10 @@ import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
 import { PILOT_PAGE } from "./pilot-page.ts";
 import { DEVICE_WS_PATH, acceptDevice } from "./ws-device.ts";
+import { VOICE_WS_PATH, type VoiceSocket, acceptVoice } from "./ws-voice.ts";
+import { serveVoiceSession } from "./voice-hub.ts";
+import type { VoiceBackend } from "./voice-tools.ts";
+import { FileChats, RECENT_THREADS, type Chats } from "./chat-store.ts";
 import { DeviceAuth, SESSION_COOKIE } from "./device-auth.ts";
 import { HealthTracker } from "./health.ts";
 import { PAIR_PAGE } from "./pair-page.ts";
@@ -48,7 +52,7 @@ import { type CachedStores, openCachedStores } from "./cached-stores.ts";
 import { type DigestCall, writeProfile } from "./digests.ts";
 import { NightlyDigests, catchUp, localDay, localDayStart } from "./nightly.ts";
 import { FileProjects, type ProjectStore } from "./project-store.ts";
-import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects } from "./projects.ts";
+import { assignMessages, assignSchema, cleanName, parseAssignment, scopeMeetings, summarize as summarizeProjects, taskInProject } from "./projects.ts";
 import { MAX_TASK_CHARS, parseTasks, tasksMessages, tasksSchema } from "./task-extract.ts";
 import { askTiers } from "./ask-tiers.ts";
 import { accountSummary, deleteAccount, deleteAuthUser, exportAccount } from "./account-rights.ts";
@@ -79,7 +83,7 @@ import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
 import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
 import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
 import { NarrationGuard } from "./self-voice.ts";
-import { type UsageSnapshot, UsageMeter } from "./usage-meter.ts";
+import { type UsageSnapshot, UsageMeter, WEB_SEARCH_MODEL } from "./usage-meter.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
 const WEB_PORT = Number(process.env.PILOT_WEB_PORT ?? 8080);
@@ -428,6 +432,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   const taskStore = sealed?.tasks ?? new TaskStore(join(dataDir, "tasks.json"));
   const projects: ProjectStore = sealed?.sealed.projects ?? new FileProjects(join(dataDir, "projects.json"));
   const traces = sealed?.traces ?? new TraceWriter(join(dataDir, "traces"));
+  /** The chat with Lente; voice sessions are kept here as threads (add-voice-mode). */
+  const chats: Chats = sealed?.sealed.chats ?? new FileChats(join(dataDir, "chat.json"));
   // An account's reminders file lives only while its runtime does, never on the volume in the clear.
   const REMINDERS_FILE = sealed ? join(mkdtempSync(join(tmpdir(), "lente-reminders-")), "reminders.ics") : join(dataDir, "reminders.ics");
   const language = sealed?.language ?? new LanguageStore(join(dataDir, "language.json"));
@@ -834,7 +840,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       kind: "actions",
       pending: actions.list().filter((a) => a.status === "pending").map((a) => ({ ...a, meetingTitle: titles.get(a.meetingId) ?? "", quotes: a.evidence.map((id) => turnText(a.meetingId, id)) })),
       decided: actions.list().filter((a) => a.status !== "pending").slice(-10).reverse().map((a) => ({ id: a.id, tool: a.tool, status: a.status, meetingId: a.meetingId })),
-      tasks: taskStore.list().map((t) => ({ ...t, who: ownerOf(t), meetingTitle: titles.get(t.meetingId) ?? "", projectName: taskProjects.get(t.meetingId) ?? "" })),
+      tasks: taskStore.list().map((t) => ({ ...t, who: ownerOf(t), meetingTitle: titles.get(t.meetingId) ?? "", projectName: (t.projectId ? projectNames.get(t.projectId) : taskProjects.get(t.meetingId)) ?? "" })),
     };
   }
 
@@ -842,10 +848,13 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   /** Each meeting's project name, for the tasks on the phone; refreshed when projects change. */
   let taskProjects = new Map<string, string>();
+  /** Project names by id, for tasks that carry their own project (added by hand or by voice). */
+  let projectNames = new Map<string, string>();
   async function refreshTaskProjects(): Promise<void> {
     try {
       const [list, assigned] = await Promise.all([projects.list(), projects.assignments()]);
       const names = new Map(list.map((p) => [p.id, p.name]));
+      projectNames = names;
       taskProjects = new Map([...assigned].map(([meetingId, projectId]) => [meetingId, names.get(projectId) ?? ""]));
       broadcastActions();
     } catch (error) {
@@ -1278,6 +1287,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   // --- The clip ------------------------------------------------------------------------------------
 
   let device: Duplex | undefined;
+  /** A voice session hearing the clip (add-voice-mode) gets its conditioned audio here. */
+  let voiceTap: ((pcm: Buffer) => void) | undefined;
   /** Devices that came in over the WebSocket door (the phone page, the desktop app). */
   const webDevices = new WeakSet<Duplex>();
   let asr: AsrSession | undefined;
@@ -1455,6 +1466,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
           if (timeline.late > lateBefore) console.log(`[audio] late or duplicate frame seq ${audio.seq} dropped · total lost ${timeline.lost}, late ${timeline.late}`);
           if (lost || timeline.late > lateBefore) setStatus({ audioLost: timeline.lost, audioLate: timeline.late });
           const clean = conditioner.process(aligned);
+          voiceTap?.(clean);
           jitter.push(clean);
           loudness.push(rms(clean));
           const now = Date.now();
@@ -1514,6 +1526,121 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     for (const res of clients) res.write(": keep-alive\n\n");
   }, 15_000);
 
+  // --- Talking with Lente (add-voice-mode) -------------------------------------------------------
+
+  let voiceSession: { close(): void } | undefined;
+
+  /** The voice tools on this runtime's stores. */
+  const voiceBackend = (openSheet: VoiceBackend["openRecordSheet"]): VoiceBackend => ({
+    ask: async (question, projectId) => {
+      const out = await answer({ question, ...(projectId ? { project: projectId } : {}) });
+      if (out === "no-project") return { ok: false, message: "unknown project" };
+      return out.ok ? { ok: true, answer: out.answer, found: out.found, sources: out.sources } : { ok: false, message: out.message };
+    },
+    projects: async () => (await projectSummaries()).filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, openTasks: p.openTasks })),
+    tasks: async () => {
+      const assigned = await projects.assignments();
+      return (await taskStore.list()).map((t) => ({ ...t, projectIdResolved: t.projectId ?? assigned.get(t.meetingId) }));
+    },
+    addTask: async (t) => {
+      const task = await taskStore.add({ ...t, meetingId: "", evidence: [] }, Date.now());
+      broadcastActions();
+      return task;
+    },
+    setDone: async (id) => {
+      const ok = Boolean(await taskStore.setDone(id, true));
+      if (ok) broadcastActions();
+      return ok;
+    },
+    remove: async (id) => {
+      const ok = await taskStore.remove(id);
+      if (ok) broadcastActions();
+      return ok;
+    },
+    reassign: async (id, who, otherName) => {
+      const ok = Boolean(await taskStore.update(id, { who, ...(otherName ? { otherName } : {}) }));
+      if (ok) broadcastActions();
+      return ok;
+    },
+    openRecordSheet: openSheet,
+  });
+
+  /** A phone on `/voice`: one session at a time per wearer; a new one replaces the old. */
+  function serveVoice(ws: VoiceSocket): void {
+    if (!key) {
+      ws.send({ type: "error", message: "Lente no tiene un modelo configurado." });
+      return void ws.close();
+    }
+    voiceSession?.close();
+    const target = chatTargets().find((t) => t.id === "spark-1.3-minimal")!;
+    const session = serveVoiceSession(ws, {
+      key,
+      target,
+      backend: voiceBackend,
+      narration,
+      chats,
+      names: () => profile.names,
+      timeZone: TIME_ZONE,
+      clip: () => {
+        if (!device || status.device !== "clip") return undefined;
+        return {
+          take(listener) {
+            const wasListening = status.listening;
+            if (wasListening) setListening(false, { reason: "manual" });
+            voiceTap = listener;
+            device?.write("M");
+            return () => {
+              voiceTap = undefined;
+              if (wasListening) setListening(true);
+              else device?.write("m");
+            };
+          },
+        };
+      },
+      onUsage: (turn, audioSeconds) => {
+        if (audioSeconds) usage.addAudio(audioSeconds);
+        if (turn) {
+          usage.addCall(target.model, { input: turn.input, cached: turn.cached, output: turn.output });
+          for (let i = 0; i < turn.searches; i++) usage.addCall(WEB_SEARCH_MODEL, {});
+          broadcast(spendEvent());
+        }
+        usageChanged = true;
+      },
+      log: (line) => console.log(line),
+    });
+    voiceSession = session;
+    ws.onClose(() => {
+      if (voiceSession === session) voiceSession = undefined;
+    });
+  }
+
+  /**
+   * One question to the memory with the conversation so far (`POST /ask`, and the voice agent's
+   * ask_memory). Within a project (add-record-sheet) only that project's meetings can be opened or cited.
+   */
+  async function answer(body: { question?: unknown; history?: unknown; project?: unknown }) {
+    const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
+    if (typeof body.project === "string" && !scope) return "no-project" as const;
+    const assigned = scope ? await projects.assignments() : new Map<string, string>();
+    const inScope = (list: Meeting[]) => scopeMeetings(list, assigned, scope?.id);
+    if (scope && typeof body.question === "string") body.question = `(Sobre el proyecto «${scope.name}») ${body.question}`;
+    const out = key && sealed
+      ? await askWhole(body, inScope).catch((error: Error) => {
+          console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
+          return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
+        })
+      : key
+      ? await ask(
+          { question: body.question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
+          async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
+        ).catch((error: Error) => {
+          console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
+          return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
+        })
+      : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
+    return out;
+  }
+
   /** The routes that act on this wearer's state; answers 404 for anything else. */
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.method === "POST" && req.url === "/listen/on" && !status.listening && !mayListen()) {
@@ -1570,7 +1697,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const assigned = await projects.assignments();
       const own = meetings.list().filter((m) => assigned.get(m.id) === id).sort((a, b) => b.startedAt - a.startedAt);
       const ids = new Set(own.map((m) => m.id));
-      const tasks = (await taskStore.list()).filter((t) => !t.done && ids.has(t.meetingId));
+      const tasks = (await taskStore.list()).filter((t) => !t.done && taskInProject(t, id, ids));
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ project, meetings: own.map((m) => ({ id: m.id, title: m.title, startedAt: m.startedAt, endedAt: m.endedAt ?? null })), tasks: tasks.map((t) => ({ id: t.id, title: t.title, due: t.due ?? null, meetingId: t.meetingId })) }));
     } else if (req.method === "POST" && (req.url === "/projects/rename" || req.url === "/projects/archive" || req.url === "/projects/restore" || req.url === "/projects/merge")) {
@@ -1719,29 +1846,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const code = out.ok ? 200 : out.reason === "unknown-kind" ? 400 : out.reason === "record-only" || out.reason === "no-turns" ? 409 : 502;
       res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
+    } else if (req.method === "GET" && req.url === "/chat/voice") {
+      // The latest voice sessions, for Inicio's chat (add-voice-mode).
+      const threads = (await chats.recent(RECENT_THREADS)).filter((t) => t.via === "voice");
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ threads }));
     } else if (req.method === "POST" && req.url === "/ask") {
       // Chat with Lente: one question with the conversation so far, answered from the memory with its sources.
       const body = JSON.parse((await readBody(req)) || "{}") as { question?: unknown; history?: unknown; project?: unknown };
-      // Asking within a project (add-record-sheet): only that project's meetings can be opened or cited.
-      const scope = typeof body.project === "string" ? (await projects.list()).find((p) => p.id === body.project) : undefined;
-      if (typeof body.project === "string" && !scope) return void res.writeHead(404).end();
-      const assigned = scope ? await projects.assignments() : new Map<string, string>();
-      const inScope = (list: Meeting[]) => scopeMeetings(list, assigned, scope?.id);
-      if (scope && typeof body.question === "string") body.question = `(Sobre el proyecto «${scope.name}») ${body.question}`;
-      const out = key && sealed
-        ? await askWhole(body, inScope).catch((error: Error) => {
-            console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
-            return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
-          })
-        : key
-        ? await ask(
-            { question: body.question, history: body.history, meetings: inScope(meetings.list()), day: scope ? [] : await day.recent(ASK_DAYS), facts: keptFacts(facts.list()), now: Date.now() },
-            async (messages) => (await callSpark(messages, { label: "ask", maxTokens: 500, extra: { response_format: { type: "json_schema", json_schema: { name: "ask", strict: true, schema: askSchema } } } })).text,
-          ).catch((error: Error) => {
-            console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
-            return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
-          })
-        : { ok: false as const, reason: "no-key", message: "Lente no tiene un modelo configurado." };
+      const out = await answer(body);
+      if (out === "no-project") return void res.writeHead(404).end();
       if (out.ok) console.log(`[ask] ${out.ms} ms · ${out.found ? out.sources.length + " fuentes" : "no encontrado"}`);
       res.writeHead(out.ok ? 200 : out.reason === "empty-question" ? 400 : 502, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(out));
@@ -1769,14 +1883,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       webDevices.add(socket);
       serveDevice(socket, remote);
     },
+    serveVoice,
     pushStatus: (): void => broadcast(statusEvent()),
     listening: (): boolean => status.listening,
     /** Waits for this account's pending writes (before an export). */
     flush: async (): Promise<void> => void (await sealed?.flush()),
-    /** A phone follows, a device is connected, listening is on, or a meeting is open. */
-    busy: (): boolean => clients.size > 0 || device !== undefined || status.listening || current !== undefined,
+    /** A phone follows, a device is connected, listening is on, a meeting is open, or a voice session runs. */
+    busy: (): boolean => clients.size > 0 || device !== undefined || status.listening || current !== undefined || voiceSession !== undefined,
     /** Eviction: stop transcribing, flush usage and recorded time, end the streams, clear the timers. */
     async close(): Promise<void> {
+      voiceSession?.close();
       stopAsr();
       device?.destroy();
       saveUsage();
@@ -1800,6 +1916,7 @@ type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" 
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
   serveDevice(socket: Duplex, remote: string | undefined): void;
   serveWebDevice(socket: Duplex, remote: string): void;
+  serveVoice(socket: VoiceSocket): void;
 };
 
 /**
@@ -1821,6 +1938,7 @@ function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
     handle: async (req, res) => (await ready).handle(req, res),
     serveDevice: (socket, remote) => void ready.then((rt) => rt.serveDevice(socket, remote), () => socket.destroy()),
     serveWebDevice: (socket, remote) => void ready.then((rt) => rt.serveWebDevice(socket, remote), () => socket.destroy()),
+    serveVoice: (socket) => void ready.then((rt) => rt.serveVoice(socket), () => socket.close()),
     pushStatus: () => open?.pushStatus(),
     listening: () => open?.listening() ?? false,
     busy: () => (open ? open.busy() : true),
@@ -1903,9 +2021,16 @@ web.on("upgrade", async (req, raw, head) => {
   }
   if (await refusal(who).catch(() => "unavailable")) return void raw.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
   if (who) requestIdentity.set(req, who);
-  const status = decideUpgrade({ path: req.url?.split("?")[0], plainHttp: plainHttp(req), identified: Boolean(who) }, DEVICE_WS_PATH, AUTH_MODE);
+  const path = req.url?.split("?")[0];
+  // A voice session (add-voice-mode) is admitted exactly like a device, and runs in the caller's own runtime.
+  const status = decideUpgrade({ path, plainHttp: plainHttp(req), identified: Boolean(who) }, path === VOICE_WS_PATH ? VOICE_WS_PATH : DEVICE_WS_PATH, AUTH_MODE);
   const refusals: Record<number, string> = { 401: "Unauthorized", 404: "Not Found", 426: "Upgrade Required" };
   if (status !== 200) return void raw.end(`HTTP/1.1 ${status} ${refusals[status]}\r\nConnection: close\r\n\r\n`);
+  if (path === VOICE_WS_PATH) {
+    const voice = acceptVoice(req, raw, head);
+    if (voice) wearers.get(who?.userId ?? LOCAL_OWNER).serveVoice(voice);
+    return;
+  }
   const socket = acceptDevice(req, raw, head);
   if (!socket) return;
   wearers.get(who?.userId ?? LOCAL_OWNER).serveWebDevice(socket, `${req.socket.remoteAddress} (WebSocket)`);

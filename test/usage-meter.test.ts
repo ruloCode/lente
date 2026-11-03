@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { dayKey } from "../src/day-log.ts";
-import { TRANSCRIBE_USD_PER_HOUR, UsageMeter, priceTokens } from "../src/usage-meter.ts";
+import { TRANSCRIBE_USD_PER_HOUR, UsageMeter, WEB_SEARCH_MODEL, priceTokens } from "../src/usage-meter.ts";
 
 const MORNING = new Date(2026, 9, 28, 9, 0).getTime();
 const NEXT_DAY = new Date(2026, 9, 29, 0, 5).getTime();
@@ -41,6 +41,7 @@ test("usage: a model with no list price is counted, not priced", () => {
   assert.equal(today.usd, 0);
   assert.deepEqual(today.unpriced, ["meta-models/muse-spark-open-1026"]);
   assert.equal(priceTokens("unknown", { calls: 1, input: 1, cached: 0, output: 1 }), undefined);
+  assert.equal(priceTokens(WEB_SEARCH_MODEL, { calls: 4, input: 0, cached: 0, output: 0 }), 0.01, "web searches: US$ 2.50 per 1,000 queries");
 });
 
 test("usage: missing or bad counts add nothing", () => {

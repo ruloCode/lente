@@ -1,4 +1,5 @@
-// One live Muse Voice Transcribe stream in DIARIZATION mode. Reconnects on its
+// One live Muse Voice Transcribe stream, in DIARIZATION mode for meetings or ENDPOINTING for the
+// voice session (add-voice-mode), which Meta documents as the mode for voice commands. Reconnects on its
 // own until stopped, since sessions end at 60 minutes or on backend hiccups. A session
 // the service closes after a quiet spell (the silence gate sent nothing) stays closed
 // until `resume()`, so silence doesn't keep reopening it.
@@ -27,6 +28,8 @@ export interface AsrHandlers {
   onSessionStart?(): void;
   /** The service closed the session after nothing was sent for a while; it reopens on `resume()`. */
   onIdleClose?(): void;
+  /** The end of speech, before the cleaned-up text of `speechComplete`. */
+  onSpeechEnd?(turnId: string): void;
 }
 
 interface ServerMessage {
@@ -48,13 +51,16 @@ const IDLE_CLOSE_MS = 1000;
 /** Spanish first: the wearer's language. A bias is only a hint, so English meetings stay English. */
 export const DEFAULT_LANGUAGE_BIAS = ["Spanish", "English"];
 
+/** Meetings need who spoke; a voice session needs the fastest end of turn. */
+export type AsrMode = "DIARIZATION" | "ENDPOINTING";
+
 /** The first text frame of a session: auth goes here, not in an HTTP header. */
-export function sessionRequest(key: string, languages: string[] = DEFAULT_LANGUAGE_BIAS) {
+export function sessionRequest(key: string, languages: string[] = DEFAULT_LANGUAGE_BIAS, mode: AsrMode = "DIARIZATION") {
   return {
     authorization: { accessToken: `Bearer ${key}` },
     audioEncoding: "PCM_16KHZ",
     model: TRANSCRIBE_MODEL,
-    mode: "DIARIZATION",
+    mode,
     languageBias: languages,
     keywords: ["Lente", "Muse Spark", "Meta"],
   };
@@ -79,11 +85,13 @@ export class AsrSession {
   private key: string;
   private handlers: AsrHandlers;
   private languages: string[];
+  private mode: AsrMode;
 
-  constructor(key: string, handlers: AsrHandlers, languages = DEFAULT_LANGUAGE_BIAS) {
+  constructor(key: string, handlers: AsrHandlers, languages = DEFAULT_LANGUAGE_BIAS, mode: AsrMode = "DIARIZATION") {
     this.key = key;
     this.handlers = handlers;
     this.languages = languages;
+    this.mode = mode;
   }
 
   start(): void {
@@ -97,7 +105,7 @@ export class AsrSession {
     const ws = new WebSocket(META_REALTIME_URL);
     this.ws = ws;
     ws.addEventListener("open", () => {
-      ws.send(JSON.stringify(sessionRequest(this.key, this.languages)));
+      ws.send(JSON.stringify(sessionRequest(this.key, this.languages, this.mode)));
     });
     ws.addEventListener("message", (event) => this.onMessage(String(event.data)));
     ws.addEventListener("close", (event) => {
@@ -181,6 +189,9 @@ export class AsrSession {
         this.handlers.onSpeaker(forTurn, msg.label);
         break;
       }
+      case "speechEnd":
+        if (turnId !== undefined) this.handlers.onSpeechEnd?.(turnId);
+        break;
       case "speechComplete":
         if (turnId !== undefined && msg.transcript?.trim()) {
           const from = this.startedAt.get(turnId);

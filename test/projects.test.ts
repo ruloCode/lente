@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Project, assignMessages, cleanName, parseAssignment, sameName, summarize } from "../src/projects.ts";
+import { type Project, assignMessages, cleanName, parseAssignment, sameName, summarize, taskInProject } from "../src/projects.ts";
 
 const p = (id: string, name: string, status: Project["status"] = "active", createdAt = 1): Project => ({ id, name, status, createdAt });
 const projects = [p("a", "Lente"), p("b", "Careways Sintético"), p("c", "Viejo", "archived")];
@@ -55,4 +55,15 @@ test("asking within a project opens only that project's meetings (add-record-she
   assert.deepEqual(scopeMeetings(meetings, assignments, "a").map((m) => m.id), ["m1", "m3"]);
   assert.deepEqual(scopeMeetings(meetings, assignments, undefined).map((m) => m.id), ["m1", "m2", "m3"]);
   assert.deepEqual(scopeMeetings(meetings, assignments, "none"), []);
+});
+
+test("a task's own project wins over its meeting's (add-voice-mode: tasks added by voice in a project)", () => {
+  const projects = [{ id: "pa", name: "PROBE A", status: "active" as const, createdAt: 0 }, { id: "pb", name: "PROBE B", status: "active" as const, createdAt: 0 }];
+  const tasks = [
+    { title: "PROBE por voz", who: "me" as const, meetingId: "", projectId: "pb", done: false, createdAt: 1 },
+    { title: "PROBE de reunión", who: "me" as const, meetingId: "m1", done: false, createdAt: 2 },
+  ];
+  const out = summarize(projects, new Map([["m1", "pa"]]), [{ id: "m1", startedAt: 0 }], tasks, 10);
+  assert.deepEqual(out.map((p) => [p.name, p.openTasks, p.next]), [["PROBE A", 1, "PROBE de reunión"], ["PROBE B", 1, "PROBE por voz"]]);
+  assert.equal(taskInProject({ meetingId: "m1", projectId: "pb" }, "pa", new Set(["m1"])), false);
 });

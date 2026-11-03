@@ -24,6 +24,12 @@ import app.lente.core.Projects
 import app.lente.core.SearchResult
 import app.lente.core.TraceStep
 import app.lente.core.Voice
+import app.lente.core.RecordSheetRequest
+import app.lente.core.VoiceEffect
+import app.lente.core.VoiceEvents
+import app.lente.core.VoicePhase
+import app.lente.core.VoiceView
+import app.lente.platform.VoiceClient
 import app.lente.core.effectsOf
 import app.lente.platform.Answer
 import app.lente.platform.GoogleAccount
@@ -512,7 +518,77 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopPhone() = CaptureService.stop(getApplication())
 
+    // --- Hablar con Lente (add-voice-mode) -------------------------------------------------------
+
+    val voiceOpen = MutableStateFlow(false)
+    val voice = MutableStateFlow(VoiceView())
+    /** Hands-free by default; off means hold the button to talk. */
+    val voiceHandsFree = MutableStateFlow(true)
+    /** The voice agent asked to open the record sheet with these choices; Inicio shows it. */
+    val recordRequest = MutableStateFlow<RecordSheetRequest?>(null)
+    private var voiceClient: VoiceClient? = null
+
+    fun openVoice() {
+        val c = client ?: return say("No hay hub conectado: revisa Ajustes.")
+        voiceClient?.shutdown()
+        speech.stop()
+        voice.value = VoiceView()
+        voiceOpen.value = true
+        viewModelScope.launch {
+            val token = account.accessToken()
+            if (!voiceOpen.value) return@launch
+            voiceClient = VoiceClient(getApplication(), c.base, prefs.cookie, token, ::onVoiceEvent) { why ->
+                voice.value = voice.value.copy(phase = VoicePhase.Ended, error = why ?: voice.value.error)
+            }.also { it.handsFree = voiceHandsFree.value }
+        }
+    }
+
+    private fun onVoiceEvent(raw: String) {
+        val before = voice.value
+        val (next, effects) = VoiceEvents.reduce(before, raw)
+        if (next.source != before.source) voiceClient?.useMicrophone(next.source == "phone")
+        voice.value = next
+        for (e in effects) when (e) {
+            is VoiceEffect.Speak -> voiceClient?.speak(e.turn, e.text)
+            VoiceEffect.StopSpeaking -> voiceClient?.stopSpeaking()
+            is VoiceEffect.OpenRecordSheet -> {
+                closeVoice()
+                recordRequest.value = e.request
+            }
+        }
+    }
+
+    /** Terminar: ends the session and leaves what was said and answered in Inicio's chat. */
+    fun closeVoice() {
+        val view = voice.value
+        voiceClient?.shutdown()
+        voiceClient = null
+        voiceOpen.value = false
+        val lines = VoiceEvents.chatLines(view) { ++chatIds }
+        if (lines.isNotEmpty()) chat.value = chat.value.filterNot { it.pending } + lines
+    }
+
+    fun voicePause() {
+        val pause = voice.value.phase != VoicePhase.Paused
+        voiceClient?.pause(pause)
+    }
+
+    fun setVoiceHandsFree(on: Boolean) {
+        voiceHandsFree.value = on
+        voiceClient?.handsFree = on
+    }
+
+    /** Hold-to-talk: pressing while Lente thinks or speaks interrupts it. */
+    fun voiceHold(down: Boolean) {
+        val c = voiceClient ?: return
+        if (down) {
+            if (voice.value.phase == VoicePhase.Speaking || voice.value.phase == VoicePhase.Thinking) c.bargeIn()
+            c.holding = true
+        } else c.release()
+    }
+
     override fun onCleared() {
+        voiceClient?.shutdown()
         speech.shutdown()
         super.onCleared()
     }

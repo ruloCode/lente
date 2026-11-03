@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** Where one of Lente's answers comes from: a meeting turn, something heard or seen, a kept fact. */
-data class AskSource(val kind: String, val label: String, val meetingId: String?, val turnId: String?)
+data class AskSource(val kind: String, val label: String, val meetingId: String?, val turnId: String?, val url: String? = null)
 
 /** One message of the chat with Lente; `pending` while the hub thinks, `found` false when the memory had nothing. */
 data class ChatLine(val id: Long, val fromWearer: Boolean, val text: String, val sources: List<AskSource> = emptyList(), val found: Boolean = true, val pending: Boolean = false)
