@@ -3,9 +3,9 @@
 // conversation, and dictation where the browser has speech recognition. The conversation stays in
 // this page's memory only.
 
-import { post } from "../api.js";
+import { postStream } from "../api.js";
 import { button, h, icon, iconButton } from "../dom.js";
-import { SUGGESTIONS, askBody } from "../lib/chat.js";
+import { SUGGESTIONS, applyAskEvent, askBody } from "../lib/chat.js";
 import { hhmm } from "../lib/format.js";
 import { meetingPath, pathFor } from "../lib/routes.js";
 import { app } from "../app.js";
@@ -42,13 +42,14 @@ export function chatPanel() {
     chat.busy = true;
     changed();
     try {
-      const res = await post("/ask", body);
+      // The answer streams in as the hub writes it (add-memory-engine 4.2); an older hub answers JSON at once.
+      const res = await postStream("/ask", body, (event, data) => (applyAskEvent(waiting, event, data), changed()));
       const out = res.body ?? {};
       Object.assign(waiting, res.ok && out.ok ? { text: out.answer, sources: out.sources ?? [], found: out.found, ms: out.ms } : { text: out.message ?? (res.status === 404 ? "Ese proyecto ya no existe." : "No pude responder ahora; prueba otra vez."), error: true });
     } catch {
       Object.assign(waiting, { text: "No hay conexión con el hub.", error: true });
     }
-    waiting.pending = false;
+    Object.assign(waiting, { pending: false, streaming: false, searching: false });
     chat.busy = false;
     changed();
   }
@@ -92,10 +93,10 @@ export function chatPanel() {
 
 function message(m) {
   if (m.role === "user") return h("li", { class: "msg user" }, h("p", {}, m.text), h("span", { class: "msg-time" }, hhmm(m.at)));
-  if (m.pending) return h("li", { class: "msg lente pending", "aria-busy": "true" }, h("span", { class: "who" }, icon("sparkle"), "Lente"), h("p", { class: "muted" }, "Buscando en tus reuniones…"));
+  if (m.pending) return h("li", { class: "msg lente pending", "aria-busy": "true" }, h("span", { class: "who" }, icon("sparkle"), "Lente"), h("p", { class: "muted" }, m.searching ? "Buscando más…" : "Buscando en tus reuniones…"));
   return h(
     "li",
-    { class: `msg lente${m.error ? " error" : ""}` },
+    { class: `msg lente${m.error ? " error" : ""}`, ...(m.streaming ? { "aria-busy": "true" } : {}) },
     h("span", { class: "who" }, icon("sparkle"), "Lente"),
     h("p", {}, m.text),
     m.sources?.length ? h("div", { class: "sources", "aria-label": "Fuentes" }, m.sources.map(sourceChip)) : null,

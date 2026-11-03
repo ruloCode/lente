@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import app.lente.capture.Capture
 import app.lente.capture.CaptureService
 import app.lente.core.Account
+import app.lente.core.AskStream
 import app.lente.core.Briefing
 import app.lente.core.ChatJson
 import app.lente.core.ChatHistory
@@ -246,7 +247,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     /** A question to Lente: shown at once, answered from the memory with its sources when the hub replies. */
     fun askLente(question: String) {
         val q = question.trim()
-        if (q.isEmpty() || chat.value.lastOrNull()?.pending == true) return
+        if (q.isEmpty() || chat.value.lastOrNull()?.busy == true) return
         val before = chat.value
         val asked = ChatLine(++chatIds, true, q)
         val waiting = ChatLine(++chatIds, false, "", pending = true)
@@ -255,7 +256,12 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         chat.value = before + asked + waiting
-        post("/ask", ChatJson.request(q, before, chatThread.value).apply { chatProject.value?.let { put("project", it) } }) { a ->
+        val c = client ?: return
+        viewModelScope.launch {
+            // The answer streams in as the hub writes it (add-memory-engine 4.1); an older hub answers JSON at once.
+            val a = c.postStream("/ask", ChatJson.request(q, before, chatThread.value).apply { chatProject.value?.let { put("project", it) } }) { event, data ->
+                withContext(Dispatchers.Main) { chat.value = chat.value.map { if (it.id == waiting.id) AskStream.apply(it, event, data) else it } }
+            }
             val reply = runCatching { ChatJson.answer(waiting.id, a.text) }.getOrNull()
                 ?: ChatLine(waiting.id, false, when {
                     a.code == 404 -> "Este hub todavía no tiene el chat: actualízalo para preguntarle a Lente."

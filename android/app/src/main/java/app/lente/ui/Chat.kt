@@ -93,7 +93,7 @@ fun Answer(vm: LenteViewModel, line: ChatLine, onRetry: (() -> Unit)? = null) {
     val c = Lente.c
     val context = LocalContext.current
     Column(Modifier.fillMaxWidth().testTag(if (line.pending) "chat-thinking" else "chat-answer")) {
-        if (line.pending) Thinking()
+        if (line.pending) Thinking(line.searching)
         else {
             Text(line.text, style = Type.body, color = if (line.found) c.ink else c.muted, modifier = Modifier.testTag("chat-answer-text"))
             if (line.sources.isNotEmpty()) {
@@ -102,7 +102,8 @@ fun Answer(vm: LenteViewModel, line: ChatLine, onRetry: (() -> Unit)? = null) {
                     for (s in line.sources) SourceChip(s) { s.meetingId?.let { vm.go(Screen.Reunion(it, s.turnId)) } }
                 }
             }
-            Row(Modifier.padding(top = 8.dp).offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            // While the answer is still being written, no copy, share or read aloud of half a sentence.
+            if (!line.streaming) Row(Modifier.padding(top = 8.dp).offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 SmallAction(Glyph.Copy, "Copiar") {
                     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Lente", line.text))
                     vm.say("Copiado.")
@@ -119,7 +120,7 @@ fun Answer(vm: LenteViewModel, line: ChatLine, onRetry: (() -> Unit)? = null) {
 }
 
 @Composable
-private fun Thinking() {
+private fun Thinking(searching: Boolean = false) {
     val c = Lente.c
     val t = rememberInfiniteTransition(label = "thinking")
     Row(Modifier.padding(vertical = 8.dp).semantics { contentDescription = "Lente está buscando en tu memoria" }, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -128,7 +129,7 @@ private fun Thinking() {
             Box(Modifier.size(8.dp).alpha(a).clip(CircleShape).background(c.ink))
         }
         Spacer(Modifier.width(6.dp))
-        Text("Buscando en lo que viste y escuchaste…", style = Type.callout, color = c.muted)
+        Text(if (searching) "Buscando más…" else "Buscando en lo que viste y escuchaste…", style = Type.callout, color = c.muted)
     }
 }
 

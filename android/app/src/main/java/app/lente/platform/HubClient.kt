@@ -61,6 +61,36 @@ class HubClient(
     suspend fun post(path: String, body: JSONObject? = null): Answer =
         AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).post((body?.toString() ?: "").toRequestBody(json)).build()) }, signedOut)
 
+    /**
+     * `POST` that accepts an event stream (add-memory-engine 4.1): each named event goes to `onEvent` as
+     * it arrives, and the answer's text is the `done` event's data. A hub that answers JSON (an older
+     * one) comes back as a plain answer, as `post` would.
+     */
+    suspend fun postStream(path: String, body: JSONObject?, onEvent: suspend (String?, String) -> Unit): Answer =
+        AuthRetry.run(bearer, refresh, Answer::code, { token ->
+            withContext(Dispatchers.IO) {
+                val req = request(path, token).header("Accept", "text/event-stream").post((body?.toString() ?: "").toRequestBody(json)).build()
+                try {
+                    stream.newCall(req).execute().use { res ->
+                        if (res.header("Content-Type")?.startsWith("text/event-stream") != true) return@use Answer(res.code, res.body.string())
+                        val parser = SseParser()
+                        val source = res.body.source()
+                        var done = ""
+                        while (true) {
+                            val line = source.readUtf8Line() ?: break
+                            for ((name, data) in parser.pushNamed(line + "\n")) {
+                                if (name == "done") done = data
+                                onEvent(name, data)
+                            }
+                        }
+                        Answer(if (done.isEmpty()) 0 else res.code, done.ifEmpty { "the hub closed the answer before it ended" })
+                    }
+                } catch (e: IOException) {
+                    Answer(0, e.message ?: "no connection")
+                }
+            }
+        }, signedOut)
+
     private suspend fun call(req: Request): Answer = withContext(Dispatchers.IO) {
         try {
             http.newCall(req).execute().use { Answer(it.code, it.body.string()) }

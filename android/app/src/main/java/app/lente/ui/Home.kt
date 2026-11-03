@@ -398,10 +398,10 @@ private fun ChatSheet(vm: LenteViewModel, clip: Boolean, talk: () -> Unit, onDis
     val coroutines = androidx.compose.runtime.rememberCoroutineScope()
     val close: () -> Unit = { coroutines.launch { state.hide() }.invokeOnCompletion { onDismiss() } }
     val list = rememberLazyListState()
-    val busy = lines.lastOrNull()?.pending == true
+    val busy = lines.lastOrNull()?.busy == true
     val scopeLabel = RecordChoice.scopeLabel(scope, projects)
     val lastQuestion = lines.lastOrNull { it.fromWearer }?.text
-    val lastAnswer = lines.lastOrNull { !it.fromWearer && !it.pending }?.id
+    val lastAnswer = lines.lastOrNull { !it.fromWearer && !it.busy }?.id
     LaunchedEffect(lines.size, busy) { if (lines.isNotEmpty()) list.animateScrollToItem(lines.size) }
     if (picking) ScopeSheet(vm, scope, onDismiss = { picking = false })
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.bg, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {

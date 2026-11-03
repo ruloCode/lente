@@ -9,8 +9,14 @@ import java.util.Locale
 /** Where one of Lente's answers comes from: a meeting turn, something heard or seen, a kept fact. */
 data class AskSource(val kind: String, val label: String, val meetingId: String?, val turnId: String?, val url: String? = null)
 
-/** One message of the chat with Lente; `pending` while the hub thinks, `found` false when the memory had nothing. */
-data class ChatLine(val id: Long, val fromWearer: Boolean, val text: String, val sources: List<AskSource> = emptyList(), val found: Boolean = true, val pending: Boolean = false)
+/**
+ * One message of the chat with Lente; `pending` while the hub thinks (`searching` once it said it looks
+ * deeper), `streaming` while the answer is being written, `found` false when the memory had nothing.
+ */
+data class ChatLine(val id: Long, val fromWearer: Boolean, val text: String, val sources: List<AskSource> = emptyList(), val found: Boolean = true, val pending: Boolean = false, val streaming: Boolean = false, val searching: Boolean = false) {
+    /** Waiting for the hub or still writing: no new question until it ends. */
+    val busy get() = pending || streaming
+}
 
 object ChatJson {
     /** Earlier messages the hub sees with a question; it keeps the newest it needs. */
@@ -33,6 +39,28 @@ object ChatJson {
             AskSource(it.optString("kind"), it.optString("label"), it.optString("meetingId").ifBlank { null }, it.optString("turnId").ifBlank { null })
         }
         return ChatLine(id, false, o.optString("answer"), sources, found = o.optBoolean("found"))
+    }
+}
+
+/**
+ * A streamed answer (add-memory-engine 4.1): the hub's `delta`, `source`, `searching`, `replace` and
+ * `done` events applied to the pending line, in order. `done` carries the whole answer and wins. Pure.
+ */
+object AskStream {
+    fun apply(line: ChatLine, event: String?, data: String): ChatLine {
+        val o = runCatching { JSONObject(data) }.getOrNull() ?: return line
+        return when (event) {
+            "delta" -> line.copy(text = line.text + o.optString("text"), pending = false, streaming = true, searching = false)
+            "source" -> {
+                val s = AskSource(o.optString("kind"), o.optString("label"), o.optString("meetingId").ifBlank { null }, o.optString("turnId").ifBlank { null })
+                if (line.sources.any { it.label == s.label }) line else line.copy(sources = line.sources + s)
+            }
+            "searching" -> line.copy(searching = true)
+            // Made-up citations: the streamed text is not trusted.
+            "replace" -> line.copy(text = o.optString("text"), sources = emptyList(), found = false)
+            "done" -> ChatJson.answer(line.id, data)
+            else -> line
+        }
     }
 }
 
