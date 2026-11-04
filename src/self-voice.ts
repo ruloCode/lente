@@ -7,6 +7,8 @@ export const NARRATION_WINDOW_MS = 30_000;
 const ECHO_SHARE = 0.75;
 /** Shorter turns are echoes only when they are the narration's words in the same order, in full. */
 const MIN_FUZZY_WORDS = 3;
+/** A heard stretch may run across this many sentences said one after another (a reply is sent a sentence at a time). */
+const SPAN_LINES = 3;
 
 /** Lowercase words without accents or punctuation, so ASR spelling differences don't matter. */
 export function words(text: string): string[] {
@@ -38,12 +40,12 @@ export class NarrationGuard {
     this.lines = this.lines.filter((l) => at - l.at <= this.windowMs);
     const t = words(text);
     if (!t.length) return false;
-    return this.lines.some((l) => {
-      const joined = ` ${l.words.join(" ")} `;
+    return spans(this.lines.map((l) => l.words)).some((l) => {
+      const joined = ` ${l.join(" ")} `;
       if (joined.includes(` ${t.join(" ")} `)) return true;
       if (t.length < MIN_FUZZY_WORDS) return false;
       const pool = new Map<string, number>();
-      for (const w of l.words) pool.set(w, (pool.get(w) ?? 0) + 1);
+      for (const w of l) pool.set(w, (pool.get(w) ?? 0) + 1);
       let hit = 0;
       for (const w of t) {
         const n = pool.get(w) ?? 0;
@@ -52,4 +54,18 @@ export class NarrationGuard {
       return hit / t.length >= ECHO_SHARE;
     });
   }
+}
+
+/**
+ * Each line said, and each run of up to [SPAN_LINES] consecutive lines joined, so a stretch heard across
+ * a sentence boundary is matched too. A line said twice in a row (the hub and the phone both report a
+ * reply's sentence) counts once.
+ */
+function spans(lines: string[][]): string[][] {
+  const distinct = lines.filter((l, i) => i === 0 || l.join(" ") !== lines[i - 1]!.join(" "));
+  const out: string[][] = [];
+  for (let i = 0; i < distinct.length; i++) {
+    for (let n = 1; n <= SPAN_LINES && i + n <= distinct.length; n++) out.push(distinct.slice(i, i + n).flat());
+  }
+  return out;
 }

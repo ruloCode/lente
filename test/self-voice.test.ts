@@ -47,3 +47,18 @@ test("empty text and no narration are never echoes", () => {
   g.narrated("hola a todos", 0);
   assert.equal(g.repeats("...", 0), false);
 });
+
+test("a stretch heard across two sentences of a reply is still Lente's own voice", () => {
+  const g = new NarrationGuard();
+  // Ver's reply goes out a sentence at a time, and the hub and the phone both report each one.
+  for (const line of ["Ya guardé tus datos, Ana.", "Soy una cámara en tus gafas que te cuenta lo que ve."]) {
+    g.narrated(line, 0);
+    g.narrated(line, 10);
+  }
+  assert.equal(g.repeats("datos Ana soy una cámara en tus", 2000), true);
+  assert.equal(g.repeats("tus datos ana soy", 2000), true);
+  // The wearer's own answer still passes.
+  assert.equal(g.repeats("¿Qué tengo en la mano?", 2000), false);
+  assert.equal(g.repeats("Me llamo Ana y tengo treinta años", 2000), false);
+});
+
