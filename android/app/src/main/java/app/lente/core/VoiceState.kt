@@ -47,8 +47,6 @@ data class VoiceView(
 sealed interface VoiceEffect {
     /** One reply sentence; `lang` is its language when the hub tagged it (the coach), else Spanish. */
     data class Speak(val turn: Int, val text: String, val lang: String? = null) : VoiceEffect
-    /** The coach's `pronounce`: the phone says the phrase once in its language (add-language-coach). */
-    data class SayPhrase(val phrase: Pronounce) : VoiceEffect
     data object StopSpeaking : VoiceEffect
     data class OpenRecordSheet(val request: RecordSheetRequest) : VoiceEffect
     /** Ver's companion turned the live narration on or off (add-sight-mode). */
@@ -117,7 +115,8 @@ object VoiceEvents {
                 val text = e.optString("text").trim()
                 if (text.isEmpty()) return view to emptyList()
                 val p = Pronounce(text, e.optString("meaning").trim(), e.optString("lang").ifBlank { view.lang ?: "" }, turn.takeIf { it >= 0 })
-                view.copy(pronounce = p) to listOf(VoiceEffect.SayPhrase(p))
+                // Only the card: the hub says the phrase in the `reply` sentence that follows (decision 13).
+                view.copy(pronounce = p) to emptyList()
             }
             "tool" -> view.withTurn(turn) { t -> t.copy(tools = t.tools + VoiceTool(e.optString("name"), e.optString("label"))) } to emptyList()
             "sources" -> view.withTurn(turn) { t -> t.copy(sources = (t.sources + sources(e.optJSONArray("sources"))).distinct()) } to emptyList()

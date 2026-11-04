@@ -40,15 +40,16 @@ class CoachTest {
         assertEquals(listOf(VoiceEffect.Speak(1, "Se dice así.", "es"), VoiceEffect.Speak(1, "Eu uso o garfo.", "pt"), VoiceEffect.Speak(1, "Muy bien.")), fx)
     }
 
-    @Test fun pronounceShowsThePhraseAndSaysItOnce() {
+    @Test fun pronounceShowsThePhraseAndTheReplyAfterItSaysIt() {
         val (view, fx) = run(
             VoiceView(lang = "pt"),
             """{"type":"heard","turn":2,"text":"¿Cómo se dice tenedor?"}""",
             """{"type":"pronounce","turn":2,"text":" o garfo ","meaning":"el tenedor","lang":"pt"}""",
+            """{"type":"reply","turn":2,"text":"O garfo.","commentary":false,"lang":"pt"}""",
         )
-        val p = Pronounce("o garfo", "el tenedor", "pt", 2)
-        assertEquals(p, view.pronounce)
-        assertEquals(listOf(VoiceEffect.SayPhrase(p)), fx)
+        assertEquals(Pronounce("o garfo", "el tenedor", "pt", 2), view.pronounce)
+        // The card says nothing itself; the sentence after it is spoken in Portuguese, once.
+        assertEquals(listOf(VoiceEffect.Speak(2, "O garfo.", "pt")), fx)
         // A newer phrase replaces the card; without lang it is the session's target; without turn or meaning it still shows.
         val (next, _) = run(view, """{"type":"pronounce","text":"a xícara"}""")
         assertEquals(Pronounce("a xícara", "", "pt", null), next.pronounce)

@@ -379,7 +379,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     private fun speaker(): SightSpeaker = sightSpeaker ?: SightSpeaker(
         getApplication(), viewModelScope,
         // Ver's Colombian voice, or the coach's voice for a sentence in its language (add-language-coach).
-        fetch = { text, lang -> client?.postAudio("/tts", JSONObject().put("text", text).put("voice", Coach.hubVoice(lang)), TTS_CALL_MS) ?: (0 to null) },
+        // A Spanish sentence of the coach keeps the voice session's own voice, the phone's (decision 13).
+        fetch = { text, lang ->
+            if (coach.value != null && Coach.target(lang) == null) 0 to null
+            else client?.postAudio("/tts", JSONObject().put("text", text).put("voice", Coach.hubVoice(lang)), TTS_CALL_MS) ?: (0 to null)
+        },
         rate = { speechRate.value },
         narrated = { text -> sightSaid = Sight.remember(sightSaid, text); post("/narrated", JSONObject().put("text", text)) },
         screenReader = { speech.screenReader },
@@ -1051,6 +1055,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         val (next, effects) = VoiceEvents.reduce(before, raw)
         if (next.source != before.source) voiceClient?.useMicrophone(next.source == "phone")
         voice.value = next
+        // A new phrase on the coach's card answers the look the wearer asked for.
+        if (next.pronounce != before.pronounce) coachLookEnded()
         val inSight = sightOpen.value && !voiceOpen.value
         if (inSight) sight.value = Sight.talk(sight.value, next, sightSaid)
         for (e in effects) when (e) {
@@ -1069,10 +1075,6 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             is VoiceEffect.Narration -> if (sightOpen.value) setSightNarration(e.on, byAgent = true)
             is VoiceEffect.Quiet -> if (inSight) { if (e.on) sightQuiet() else sightTalkAgain(byAgent = true) }
             is VoiceEffect.Locate -> answerLocate(e.id)
-            is VoiceEffect.SayPhrase -> if (coach.value != null) {
-                coachLookEnded()
-                speaker().say(e.phrase.text, LineKind.Look, e.phrase.lang.ifBlank { coach.value?.code })
-            }
         }
     }
 
