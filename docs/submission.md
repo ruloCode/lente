@@ -59,26 +59,29 @@ Everything in the repository was written during the event, from **2026-10-26** t
 - a sealed memory per user with its own search index;
 - an MCP server and an agent bridge;
 - Ver for people who are blind or have low vision;
+- open sign-up for judges, with spend caps, preview terms and a synthetic sample to ask about;
+- the project website and a zero-dependency QR code to the APK;
 - the evals and benchmarks behind every number.
-<!-- TODO(orch): add "Practicar at the piano" if it lands, and "open sign-up for judges, the website and the Android release" after 18:00. -->
+<!-- TODO(orch): add "Practicar at the piano" if it lands, and "the Android release" after 18:00. -->
 
 Prior work, declared: the author once prototyped a meeting copilot in his personal assistant project, on non-Meta models. No code, prompts or assets from it are in this repository.
 
 ## Try it
 
-- **Web:** sign in with Google at <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app>. <!-- TODO(orch): confirm open sign-up is live (L2 + deploy) before keeping this line. -->
-- **Android:** <https://github.com/ruloCode/lente/releases/latest/download/lente.apk>, Android 10 or newer. <!-- TODO(orch): after the 18:00 release. -->
-- No clip needed: the phone is the camera and the microphone. A new account starts with a small synthetic sample project, so you can ask «¿Qué se decidió sobre la beta?» in the first minute. <!-- TODO(orch): keep only if L2 2.4 (the sample) shipped. -->
+- **Web:** sign in with any Google account at <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app>, open through 2026-11-16. Accept the short preview terms once.
+- **Android:** <https://github.com/ruloCode/lente/releases/latest/download/lente.apk>, Android 10 or newer; it opens on «Iniciar sesión con Google». <!-- TODO(orch): the link 404s until the 18:00 release. -->
+- No clip needed: the phone is the camera and the microphone. A new account starts with a small synthetic sample («PROBE · Proyecto de ejemplo»), so you can ask «¿Qué se decidió sobre la beta?» in the first minute; «Borrar ejemplo» in Ajustes removes it.
+- **Limits:** each account has US$ 1.00 a day of model use and the whole demo US$ 6.00; past a cap Lente says so and you can come back the next day. Audio and photos are never kept for test accounts, only text.
 
 ## Links
 
 | Field | Value |
 |---|---|
 | Repository | <https://github.com/ruloCode/lente> |
-| Website | TODO(orch): the Pages URL (L5) |
+| Website | <https://rulocode.github.io/lente/> |
 | Video (3 min, public or unlisted, plays without login) | TODO(orch): from the owner at 18:30 |
 | Live product | <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app> |
-| Android APK | <https://github.com/ruloCode/lente/releases/latest/download/lente.apk> |
+| Android APK | <https://github.com/ruloCode/lente/releases/latest/download/lente.apk> <!-- TODO(orch): live after the 18:00 release --> |
 | X post | TODO(orch): after the 20:00 post |
 | Team | Rulo (solo) |
 | Meta models | Muse Voice Transcribe 1.0, Muse Spark 1.3, Muse Spark Open |
@@ -96,19 +99,21 @@ Prior work, declared: the author once prototyped a meeting copilot in his person
 
 ### X (Spanish)
 
-> Trabajo en inglés todos los días. En una reunión, cuando me preguntan algo, el momento se va mientras traduzco en la cabeza.
+Under 280 characters with the video attached (a link counts as 23).
+
+> Trabajo en inglés. Cuando me preguntan algo en una reunión, el momento se va mientras traduzco.
 >
-> Hice Lente: un clip para cualquier gafa que escucha, ve y me da una línea para decir. Y con la misma cámara, le describe el mundo a quien no ve.
+> Hice Lente: un clip para cualquier gafa que escucha, ve y me da una línea para decir. Con la misma cámara, describe el mundo a quien no ve.
 >
-> #MetaHackathon TODO(orch): video, link
+> #MetaHackathon rulocode.github.io/lente TODO(orch): video
 
 ### X (English)
 
-> I work in English every day. In a meeting, when someone asks me something, the moment is gone while I translate in my head.
+> I work in my second language. When I'm asked something in a meeting, the moment is gone while I translate.
 >
-> So I built Lente: a clip for any glasses that hears, sees and gives me one line to say. The same camera describes the world to people who can't see it.
+> So I built Lente: a clip for any glasses that gives me one line to say. Its camera also describes the world to those who can't see.
 >
-> #MetaHackathon TODO(orch): video, link
+> #MetaHackathon rulocode.github.io/lente TODO(orch): video
 
 ### LinkedIn (Spanish)
 
@@ -120,7 +125,7 @@ Prior work, declared: the author once prototyped a meeting copilot in his person
 >
 > Cada número que muestro sale de un script en el repositorio. Código abierto: github.com/ruloCode/lente
 >
-> TODO(orch): video, sitio, APK
+> Pruébalo: rulocode.github.io/lente TODO(orch): video, APK
 
 ### LinkedIn (English)
 
@@ -132,7 +137,7 @@ Prior work, declared: the author once prototyped a meeting copilot in his person
 >
 > Every number I show comes from a script in the repository. Open source: github.com/ruloCode/lente
 >
-> TODO(orch): video, website, APK
+> Try it: rulocode.github.io/lente TODO(orch): video, APK
 
 ## Gallery blurb
 
