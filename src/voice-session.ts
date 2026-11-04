@@ -24,6 +24,8 @@ export type VoiceEvent =
   | { type: "bargeIn"; turn: number }
   | { type: "done"; turn: number; stopped: string; firstTextMs?: number; firstSentenceMs?: number; usage?: VoiceTurnResult["usage"] }
   | { type: "recordSheet"; projectId?: string; projectName?: string; camera: boolean }
+  /** Ver (add-sight-mode): the agent turned the live narration on or off. */
+  | { type: "narration"; on: boolean }
   | { type: "error"; message: string }
   | { type: "end" };
 
@@ -34,6 +36,8 @@ export type PhoneMessage =
   | { type: "bargeIn" }
   | { type: "pause" }
   | { type: "resume" }
+  /** Ver (add-sight-mode): who Lente is in this session, and whether it speaks first (the welcome). */
+  | { type: "start"; persona: "sight" | "default"; intro: boolean }
   | { type: "end" };
 
 export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
@@ -51,6 +55,10 @@ export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
     case "resume":
     case "end":
       return { type: m.type };
+    case "start": {
+      const s = m as { persona?: unknown; intro?: unknown };
+      return { type: "start", persona: s.persona === "sight" ? "sight" : "default", intro: s.intro === true };
+    }
     default:
       return undefined;
   }
@@ -163,19 +171,28 @@ export class VoiceSession {
     this.deps.send({ type: "end" });
   }
 
-  private async startTurn(text: string): Promise<void> {
+  /**
+   * A turn Lente starts itself (the welcome in Ver): `cue` reaches the model as the person's turn, but is
+   * not shown, heard or kept as something they said.
+   */
+  begin(cue: string): void {
+    if (this.state === "paused" || this.busy) return;
+    this.running = this.startTurn(cue, true);
+  }
+
+  private async startTurn(text: string, hidden = false): Promise<void> {
     const turn = ++this.turn;
     this.sent = 0;
     this.spoken = 0;
     const controller = new AbortController();
     this.active = { turn, controller };
     const live = () => this.active?.turn === turn && !controller.signal.aborted;
-    this.deps.send({ type: "heard", turn, text });
+    if (!hidden) this.deps.send({ type: "heard", turn, text });
     this.deps.send({ type: "thinking", turn });
     // The wearer's words are kept at once, so the chat stays in order even if this turn is cancelled.
     const prior = [...this.history];
     this.history.push({ type: "message", role: "user", text });
-    this.deps.save([{ role: "user", text, sources: [] }]);
+    if (!hidden) this.deps.save([{ role: "user", text, sources: [] }]);
     this.setState("thinking");
 
     const speak = (line: string, commentary: boolean) => {

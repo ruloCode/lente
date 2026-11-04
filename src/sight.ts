@@ -34,6 +34,7 @@ export const SIGHT_LIVE_PROMPT =
   "3) people: how many and where, nothing about who they are; " +
   "4) the rest of the scene in a few words. " +
   "Say where things are from their point of view: «al frente», «a tu izquierda», «a tu derecha», «cerca», «lejos». " +
+  "Skip any step that has nothing: never say what is absent («no veo texto», «no hay personas»); start with the first thing that is there. " +
   `If the view shows nothing new compared with the previous description, answer exactly ${UNCHANGED} and nothing else. ` +
   RULES;
 

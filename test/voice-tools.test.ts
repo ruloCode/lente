@@ -119,3 +119,19 @@ test("look: describe and read reach the backend; no camera on the hub is an erro
   delete b.look;
   assert.deepEqual((await new VoiceTools(b).handlers().look({ question: "¿qué ves?" })).result, { error: "no camera on this hub" });
 });
+
+test("Ver's companion tools: remember the person, turn narration on and off", async () => {
+  const { b } = backend();
+  const met: unknown[] = [];
+  const narration: boolean[] = [];
+  b.rememberPerson = (p) => void met.push(p);
+  b.setNarration = (on) => void narration.push(on);
+  const h = new VoiceTools(b).handlers();
+  const r = await h.remember_person({ name: " PROBE Ana ", age: "40", wants: "leer cartas" });
+  assert.deepEqual(met, [{ name: "PROBE Ana", age: "40", wants: "leer cartas" }]);
+  assert.equal(r.label, "Ya te conozco, PROBE Ana");
+  assert.deepEqual((await h.remember_person({ name: "" })).result, { error: "name is empty" });
+  await h.narrate({ on: true });
+  await h.narrate({ on: false });
+  assert.deepEqual(narration, [true, false]);
+});

@@ -247,6 +247,7 @@ function voiceDecision(input: VoiceInput): { commentary?: string; call?: { name:
     if (name === "look") return { text: [String(out.seen ?? out.error ?? "No pude ver.")] };
     return { text: ["Listo."] };
   }
+  if (/empieza la bienvenida/.test(user)) return { text: ["Hola, soy Lente. ¿Cómo te llamas?"] };
   if (/en la mano|leeme|que hay frente/.test(user)) return { commentary: "Déjame ver.", call: { name: "look", args: { question: user, mode: /leeme/.test(user) ? "read" : "describe" } } };
   if (/agrega|anota/.test(user)) {
     const args = /llame a ana/.test(user) ? { title: "Llamar a Ana", who: "me", due: "viernes" } : { title: user.replace(/^.*?(agrega|anota)( que)?\s*/, "").slice(0, 60) || "PROBE tarea", who: "me" };

@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { AsrSession, DEFAULT_LANGUAGE_BIAS } from "./asr-session.ts";
 import type { ChatLine, Chats } from "./chat-store.ts";
 import type { ChatTarget } from "./providers.ts";
-import { type AttachedMemory, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
+import { type AttachedMemory, type Companion, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
 import { type VoiceLine, VoiceSession, parsePhoneMessage } from "./voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "./voice-tools.ts";
 import { SpeculativeRecall } from "./voice-recall.ts";
@@ -22,7 +22,9 @@ export interface VoiceHubDeps {
   key: string;
   target: ChatTarget;
   /** The tools' backend; `openSheet` sends the record sheet to this session's phone. */
-  backend(openSheet: (choice: { projectId?: string; projectName?: string; camera: boolean }) => void): VoiceBackend;
+  backend(openSheet: (choice: { projectId?: string; projectName?: string; camera: boolean }) => void, send: (event: { type: "narration"; on: boolean }) => void): VoiceBackend;
+  /** Ver (add-sight-mode): what the companion already knows about the person. */
+  companion?(): Companion | undefined;
   narration: { narrated(text: string, at: number): void; repeats(text: string, at: number): boolean };
   chats: Chats;
   names(): string[];
@@ -44,7 +46,10 @@ export interface VoiceHubDeps {
 
 export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(): void } {
   const threadId = randomUUID();
-  const tools = new VoiceTools(deps.backend((choice) => ws.send({ type: "recordSheet", ...choice })));
+  const tools = new VoiceTools(deps.backend((choice) => ws.send({ type: "recordSheet", ...choice }), (event) => ws.send(event)));
+  /** Ver's companion (add-sight-mode) once the phone says so; the default Lente otherwise. */
+  let persona: "sight" | "default" = "default";
+  let intro = false;
   let turns = 0;
   const save = (lines: VoiceLine[]) => {
     const at = Date.now();
@@ -57,10 +62,12 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   // (5.1): it is the cached prefix, so questions about who and what is current need no lookup.
   const instructionsOnce = () =>
     (instructions ??= Promise.all([
-      tools.projectRefs().then(
-        (projects) => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, projects }),
-        () => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone }),
-      ),
+      persona === "sight"
+        ? Promise.resolve(voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, persona, intro, ...(deps.companion?.() ? { companion: deps.companion()! } : {}) }))
+        : tools.projectRefs().then(
+            (projects) => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, projects }),
+            () => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone }),
+          ),
       deps.recall?.prefix().catch(() => "") ?? Promise.resolve(""),
     ]).then(([rules, prefix]) => withMemoryPrefix(rules, prefix)));
   void instructionsOnce();
@@ -79,7 +86,7 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     log: deps.log,
     runTurn: async (utterance, history, signal, emit) => {
       const [rules, attached] = await Promise.all([instructionsOnce(), attachFor(utterance)]);
-      const model = responsesVoiceModel(deps.target, { instructions: rules, functions: VOICE_FUNCTIONS, webSearch: true });
+      const model = responsesVoiceModel(deps.target, { instructions: rules, functions: persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS, webSearch: true });
       const result = await runVoiceTurn({ model, tools: tools.handlers(), history, utterance, signal, emit, ...(attached ? { attached } : {}) });
       turns++;
       deps.onUsage(result.usage, 0);
@@ -144,6 +151,16 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     const message = parsePhoneMessage(text);
     if (!message) return;
     if (message.type === "end") return close();
+    if (message.type === "start") {
+      // Ver's companion: new instructions for the session, and with the welcome Lente speaks first.
+      persona = message.persona;
+      intro = message.intro;
+      instructions = undefined;
+      void instructionsOnce();
+      deps.log(`[voice] persona ${persona}${intro ? " · welcome" : ""}`);
+      if (intro) session.begin(SIGHT_INTRO_CUE);
+      return;
+    }
     session.phone(message);
   });
   ws.onClose(close);

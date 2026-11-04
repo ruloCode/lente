@@ -43,6 +43,10 @@ export interface VoiceBackend {
   openRecordSheet(choice: { projectId?: string; projectName?: string; camera: boolean }): void;
   /** Ver (add-sight-mode): a fresh frame from the glasses or the phone, and the answer to the question about it. */
   look?(question: string, mode: "describe" | "read"): Promise<{ ok: boolean; text: string }>;
+  /** Ver: what the person told Lente in the welcome (runtime memory only). */
+  rememberPerson?(person: { name: string; age?: string; wants?: string }): void;
+  /** Ver: the live narration on or off. */
+  setNarration?(on: boolean): void;
 }
 
 export interface PendingAction {
@@ -203,6 +207,20 @@ export class VoiceTools {
         if (!this.backend.look) return { result: { error: "no camera on this hub" }, label: "Mirando" };
         const seen = await this.backend.look(question, mode);
         return { result: seen.ok ? { ok: true, seen: seen.text } : { error: seen.text }, label: mode === "read" ? "Leyendo lo que ves" : "Mirando por la cámara" };
+      },
+      remember_person: async (args) => {
+        const name = str(args.name, 60);
+        if (!name) return { result: { error: "name is empty" }, label: "Recordando" };
+        const age = str(args.age, 20) || undefined;
+        const wants = str(args.wants, 160) || undefined;
+        this.backend.rememberPerson?.({ name, ...(age ? { age } : {}), ...(wants ? { wants } : {}) });
+        return { result: { ok: true, name, kept: "while Lente is on; not in the database" }, label: `Ya te conozco, ${name}` };
+      },
+      narrate: async (args) => {
+        const on = args.on === true;
+        if (!this.backend.setNarration) return { result: { error: "no narration on this hub" }, label: "Narración" };
+        this.backend.setNarration(on);
+        return { result: { ok: true, narrating: on }, label: on ? "Narración encendida" : "Narración apagada" };
       },
       delegate: async (args) => {
         const instruction = str(args.instruction, MAX_TITLE_CHARS - 20);

@@ -164,3 +164,24 @@ test("phone messages are parsed strictly", () => {
   assert.equal(parsePhoneMessage("nope"), undefined);
   assert.equal(parsePhoneMessage('{"type":"rm -rf"}'), undefined);
 });
+
+test("Ver's welcome: a turn Lente starts itself is not shown or kept as the person's words", async () => {
+  const seen: string[] = [];
+  const { s, sent, saved } = session(async (u, _sig, emit) => {
+    seen.push(u);
+    emit({ kind: "sentence", text: "Hola, soy Lente. ¿Cómo te llamas?", commentary: false });
+    return done("Hola, soy Lente. ¿Cómo te llamas?");
+  });
+  s.begin("(PROBE: empieza la bienvenida)");
+  await s.running;
+  assert.deepEqual(seen, ["(PROBE: empieza la bienvenida)"], "the model gets the cue");
+  assert.ok(!sent.some((e) => e.type === "heard"), "the phone never shows the cue as heard");
+  assert.deepEqual(saved.map((l) => l.role), ["lente"], "the chat keeps only Lente's welcome");
+  assert.ok(sent.some((e) => e.type === "reply"));
+});
+
+test("the start message: persona and welcome, with safe defaults", () => {
+  assert.deepEqual(parsePhoneMessage('{"type":"start","persona":"sight","intro":true}'), { type: "start", persona: "sight", intro: true });
+  assert.deepEqual(parsePhoneMessage('{"type":"start"}'), { type: "start", persona: "default", intro: false });
+  assert.deepEqual(parsePhoneMessage('{"type":"start","persona":"other","intro":"yes"}'), { type: "start", persona: "default", intro: false });
+});

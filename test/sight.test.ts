@@ -65,4 +65,5 @@ test("every sight prompt forbids movement guidance and naming people", () => {
     assert.match(p, /never name a person/);
   }
   assert.match(SIGHT_LIVE_PROMPT, /answer exactly = and nothing else/);
+  assert.match(SIGHT_LIVE_PROMPT, /never say what is absent/);
 });

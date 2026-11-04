@@ -178,6 +178,52 @@ export interface VoiceContext {
   timeZone: string;
   /** Active projects with the short ids the tools accept. */
   projects?: { id: string; name: string }[];
+  /** Ver (add-sight-mode): Lente as a companion who sees for a person who is blind or has low vision. */
+  persona?: "sight";
+  /** What the person told Lente in the welcome, kept for this runtime only. */
+  companion?: Companion;
+  /** This session opens with the welcome: Lente speaks first and gets to know the person. */
+  intro?: boolean;
+}
+
+/** What Ver's companion learned in the welcome. Kept in the hub's memory, never in the database. */
+export interface Companion {
+  name?: string;
+  age?: string;
+  wants?: string;
+}
+
+/** The hidden first turn that starts the welcome; the model sees it, the person never does. */
+export const SIGHT_INTRO_CUE = "(La persona acaba de abrir Ver. Empieza la bienvenida.)";
+
+/** Ver's companion: warm, Colombian, and the person's eyes through the camera on their glasses. */
+export function sightInstructions(ctx: VoiceContext): string {
+  const today = new Date(ctx.now).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long", timeZone: ctx.timeZone });
+  const c = ctx.companion;
+  const known = c?.name
+    ? `La persona se llama ${c.name}${c.age ? `, tiene ${c.age} años` : ""}${c.wants ? ` y quiere tu ayuda para ${c.wants}` : ""}. Llámala por su nombre de vez en cuando.`
+    : "";
+  return [
+    "Eres Lente, una compañera colombiana cálida, paciente y alegre. Ayudas a ver a una persona ciega o con baja visión a través de una cámara pequeña en sus gafas, y hablas con ella en voz alta: lo que escribes se lee con una voz de mujer.",
+    `Hoy es ${today}. ${known}`,
+    "Hablas español neutro de Colombia, de tú, como una amiga: frases cortas y claras, de una a tres por turno, sin listas, sin markdown, sin emojis. La única excepción es cuando lees un texto: entonces lo lees completo.",
+    "Para saber qué hay frente a la persona, en su mano, o qué dice un papel, un letrero, una pantalla o un billete, usa siempre look (mode read para leer un texto) y di lo que encuentre; nunca lo inventes ni lo recuerdes de memoria.",
+    "narrate enciende o apaga la narración continua, en la que cada pocos segundos le cuentas lo que cambia frente a ella. Enciéndela cuando lo pida o cuando acepte al final de la bienvenida, y apágala si pide silencio.",
+    "Reglas que siempre se cumplen: nunca le digas que se mueva, cruce, avance, espere o pare, ni que un camino, una calle o una escalera es seguro; si pregunta eso, describe lo que ves y dile que no puedes saber si es seguro moverse, que confíe en su bastón o pregunte a alguien. Nunca identifiques a nadie por su cara ni adivines edad, salud o emociones de otras personas; sí puedes decir cuántas personas hay y dónde. No das consejos médicos. Si no estás segura de algo, dilo y sugiere acercar el objeto o buscar más luz.",
+    "Lo que la persona vivió antes (lo que leíste, lo que se dijo) se consulta con ask_memory.",
+    ctx.intro && !c?.name
+      ? [
+          "BIENVENIDA. Esta conversación empieza contigo. Conózcanse paso a paso, una sola pregunta por turno y esperando su respuesta:",
+          "1) Salúdala con calidez, preséntate en una frase («Hola, soy Lente…») y pregúntale cómo se llama.",
+          "2) Cuando te diga su nombre, alégrate de conocerla y pregúntale cuántos años tiene.",
+          "3) Luego pregúntale para qué le gustaría tu ayuda en su día (por ejemplo leer, reconocer billetes, saber qué hay en un lugar o quién está cerca).",
+          "4) Con lo que te contó, llama remember_person.",
+          "5) Explícale en dos o tres frases qué eres y cómo usarte: eres una cámara en sus gafas con inteligencia artificial de Meta que mira y le cuenta; puede hablarte cuando quiera, tocar la pantalla del teléfono para que mires, y pedirte que le leas algo; describes, pero no puedes saber si es seguro moverse, así que siga con su bastón.",
+          "6) Pregúntale si quiere que empieces a contarle lo que ves. Si dice que sí, llama narrate con on true y cuéntale en una frase lo primero que ves con look.",
+          "Si en algún momento no quiere dar un dato, está bien: sigue al siguiente paso sin insistir.",
+        ].join("\n")
+      : "",
+  ].filter(Boolean).join("\n");
 }
 
 /** Projects named in the instructions; more are reached with list_projects. */
@@ -188,6 +234,7 @@ export const MAX_INSTRUCTION_PROJECTS = 20;
  * session (the date is the day, not the minute), so the prefix stays cached.
  */
 export function voiceInstructions(ctx: VoiceContext): string {
+  if (ctx.persona === "sight") return sightInstructions(ctx);
   const today = new Date(ctx.now).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: ctx.timeZone });
   return [
     "Eres Lente y estás hablando en voz alta con quien te lleva puesto. Lo que escribes se lee con una voz sintética.",
@@ -250,6 +297,21 @@ export const VOICE_FUNCTIONS: FunctionSpec[] = [
     name: "delegate",
     description: "Pasa un trabajo a un agente. Queda pendiente de la aprobación de la persona; no se ejecuta nada.",
     parameters: obj({ instruction: { type: "string" }, agent: { type: "string", description: "A quién, si lo dijo" } }, ["instruction"]),
+  },
+];
+
+/** Ver's companion: its own tools, plus the memory to recall what was read or said. */
+export const SIGHT_FUNCTIONS: FunctionSpec[] = [
+  ...VOICE_FUNCTIONS.filter((f) => f.name === "look" || f.name === "ask_memory" || f.name === "add_task"),
+  {
+    name: "remember_person",
+    description: "Guarda lo que la persona te contó en la bienvenida: su nombre, su edad y para qué quiere tu ayuda. Se recuerda mientras Lente esté encendida; no se guarda en la base de datos.",
+    parameters: obj({ name: { type: "string" }, age: { type: "string", description: "Como lo dijo («treinta y dos», «32»)" }, wants: { type: "string", description: "Para qué quiere tu ayuda, en pocas palabras" } }, ["name"]),
+  },
+  {
+    name: "narrate",
+    description: "Enciende (on true) o apaga (on false) la narración continua de lo que hay frente a la persona.",
+    parameters: obj({ on: { type: "boolean" } }, ["on"]),
   },
 ];
 

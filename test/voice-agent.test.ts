@@ -205,3 +205,21 @@ test("look is a voice tool, and the instructions say to look, read whole, and ne
   assert.match(text, /Nunca le digas a la persona que se mueva/);
   assert.match(text, /nunca identifiques a nadie/);
 });
+
+test("Ver's companion: the welcome steps until it knows the person, then their name; its own tools", async () => {
+  const { voiceInstructions: instr, SIGHT_FUNCTIONS } = await import("../src/voice-agent.ts");
+  const base = { now: Date.UTC(2026, 10, 4), names: ["PROBE dueño"], timeZone: "America/Bogota", persona: "sight" as const };
+  const welcome = instr({ ...base, intro: true });
+  assert.match(welcome, /compañera colombiana/);
+  assert.match(welcome, /BIENVENIDA/);
+  assert.match(welcome, /pregúntale cómo se llama/);
+  assert.match(welcome, /cuántos años tiene/);
+  assert.match(welcome, /remember_person/);
+  assert.match(welcome, /narrate con on true/);
+  assert.match(welcome, /no puedes saber si es seguro moverse/);
+  assert.doesNotMatch(welcome, /PROBE dueño/, "the owner's name is not the guest's");
+  const known = instr({ ...base, intro: true, companion: { name: "PROBE Ana", age: "40", wants: "leer cartas" } });
+  assert.doesNotMatch(known, /BIENVENIDA/);
+  assert.match(known, /se llama PROBE Ana, tiene 40 años y quiere tu ayuda para leer cartas/);
+  assert.deepEqual(SIGHT_FUNCTIONS.map((f) => f.name).sort(), ["add_task", "ask_memory", "look", "narrate", "remember_person"]);
+});

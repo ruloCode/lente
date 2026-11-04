@@ -99,6 +99,7 @@ import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
 import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
 import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
 import { NarrationGuard } from "./self-voice.ts";
+import type { Companion } from "./voice-agent.ts";
 import { DEFAULT_LOOK_QUESTION, LOOK_DESCRIBE_MAX_CHARS, LOOK_READ_MAX_CHARS, parseSight, SIGHT_LIVE_PROMPT, SIGHT_READ_PROMPT, SIGHT_STALE_MS, sightLookPrompt } from "./sight.ts";
 import { type UsageSnapshot, UsageMeter, WEB_SEARCH_MODEL } from "./usage-meter.ts";
 
@@ -170,6 +171,11 @@ const DATA_DIR = process.env.PILOT_DATA_DIR ?? fileURLToPath(new URL("../data/",
 const key = process.env.MODEL_API_KEY;
 const elevenKey = process.env.ELEVENLABS_API_KEY;
 const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
+/**
+ * Ver's voice (add-sight-mode): a warm Colombian woman with a neutral accent, from ElevenLabs' shared library
+ * («Nathalia - Neutral, Sweet and Friendly»), chosen by the owner's ear over paisa-accented voices.
+ */
+const elevenSightVoice = process.env.ELEVENLABS_SIGHT_VOICE_ID ?? "tTQzD8U9VSnJgfwC6HbY";
 
 const ON_SCREEN_PROMPT =
   "You are the eyes of someone in a meeting, seeing through a small camera on their glasses. " +
@@ -365,9 +371,10 @@ function readBody(req: IncomingMessage, max = 10_000): Promise<string> {
   });
 }
 
-async function speak(res: ServerResponse, text: string): Promise<void> {
+async function speak(res: ServerResponse, text: string, voice?: string): Promise<void> {
   if (!elevenKey) return void res.writeHead(404).end();
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${elevenVoice}?output_format=mp3_44100_64`, {
+  const voiceId = voice === "sight" ? elevenSightVoice : elevenVoice;
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`, {
     method: "POST",
     headers: { "xi-api-key": elevenKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
     body: JSON.stringify({ text: text.slice(0, 500), model_id: "eleven_flash_v2_5" }),
@@ -1703,6 +1710,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   function setGuest(on: boolean): void {
     guestUntil = on ? Date.now() + GUEST_MS : 0;
+    // A guest's name and age go when the guest does.
+    if (!on) companion = undefined;
     setStatus({ guest: on });
     console.log(`[guest] ${on ? "on: nothing is kept" : "off"}`);
   }
@@ -2314,7 +2323,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   let voiceSession: { close(): void } | undefined;
 
   /** The voice tools on this runtime's stores. */
-  const voiceBackend = (openSheet: VoiceBackend["openRecordSheet"]): VoiceBackend => ({
+  /** Ver's companion (add-sight-mode): what the person said in the welcome, in this runtime only. */
+  let companion: Companion | undefined;
+
+  const voiceBackend = (openSheet: VoiceBackend["openRecordSheet"], send?: (event: { type: "narration"; on: boolean }) => void): VoiceBackend => ({
     ask: async (question, projectId) => {
       // Voice only answers from the memory: a request to have something done is not queued as a job here.
       const out = await answerAsk({ question, ...(projectId ? { project: projectId } : {}) }, false);
@@ -2348,6 +2360,15 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     },
     openRecordSheet: openSheet,
     look: (question, mode) => look(question, mode),
+    rememberPerson: (person) => {
+      companion = person;
+      console.log(`[sight] the companion met someone (${person.age ? "name and age" : "name"}${person.wants ? ", what they want" : ""})`);
+    },
+    setNarration: (on) => {
+      if (on && !sightOn) setAssistMode("sight");
+      setLive(on);
+      send?.({ type: "narration", on });
+    },
     // Fast recall (add-memory-engine 5.3): ask_memory returns lines the voice model answers from.
     ...(recall ? { lines: async (question: string, projectId: string | undefined, filters: { when?: string; person?: string }) => {
       const found = await voiceRecall({ runtime: recall, text: question, ...filters, ...(projectId ? { projectId } : {}), projects: (await projects.list()).map((p) => ({ id: p.id, name: p.name })), now: Date.now(), timeZone: TIME_ZONE });
@@ -2383,6 +2404,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       // A guest session keeps no chat lines either (add-sight-mode).
       chats: { add: (lines) => (guest() ? undefined : chats.add(lines)), recent: (limit, maxLines) => chats.recent(limit, maxLines) },
       names: () => profile.names,
+      companion: () => companion,
       timeZone: TIME_ZONE,
       clip: () => {
         if (!device || status.device !== "clip") return undefined;
@@ -2761,8 +2783,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       if (typeof text === "string") narration.narrated(text, Date.now());
       res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/tts") {
-      const { text } = JSON.parse((await readBody(req)) || "{}") as { text?: string };
-      await speak(res, text ?? "");
+      const { text, voice } = JSON.parse((await readBody(req)) || "{}") as { text?: string; voice?: string };
+      await speak(res, text ?? "", voice);
     } else if (req.method === "POST" && req.url && ACTIONS[req.url]) {
       ACTIONS[req.url]();
       res.writeHead(204).end();

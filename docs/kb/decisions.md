@@ -196,3 +196,20 @@ B's costs, from the hub process on the owner's Mac:
 - **Two cautions.**
   - The 616 MB is per process, not per wearer. It must be in the capacity measure (`add-accounts` 6.4) before B is turned on in the shared container.
   - Fusing the lists cost cross-lingual recall against vectors alone (0.60 vs 0.77) but gained time questions (0.93 vs 0.13). Weighting the lists is the next tuning. It is not tuned on this set, which is also the eval.
+
+### 2026-11-04 · Ver describes and never guides movement (add-sight-mode)
+
+Ver lets a person who is blind or has low vision use the clip's camera as eyes. It reads text, says what is held up, how many people are where, and the rest of the scene. It never tells the wearer to move, cross, wait or go, never says a path is safe, and never names or profiles a person from a face. Asked «¿puedo cruzar?», it describes what it sees and says it cannot know whether moving is safe.
+
+- **Why:** a vision model at 2–7 s per frame (baseline in `docs/benchmarks.md`) cannot keep up with a street, and a wrong "go" can hurt someone. Describing is useful even when it is a few seconds late; guiding is not. Naming people from faces is out for consent and for the hackathon's rules.
+- **Where it holds:** in every sight prompt (`src/sight.ts`), in a guard that adds the safety sentence to questions about moving (`movementGuard`), in the voice agent's instructions, and in tests for all three.
+- **Rejected:** obstacle warnings and walking directions (too slow and too risky at this latency); face recognition («es Ana») (consent, and a profile of people who never agreed).
+
+### 2026-11-04 · Sight is an assist mode, not a pipeline (add-sight-mode)
+
+Ver is `assistMode: "sight"` beside Asistir and Solo grabar. It reuses the device link, the frame pacing and the live reads, and only swaps the prompt, turns cues off, and adds `look()` for taps and for the voice agent's `look` tool.
+
+- **Silence is an answer.** The sight prompt answers `=` when nothing changed, and nothing is spoken. The meeting prompt never stayed silent in the baseline (0 of 36).
+- **Late is dropped.** A description that arrives more than 6 s after its frame (`SIGHT_STALE_MS`) is not said: the wearer has moved on.
+- **A failed look is said too,** as a `VER` card («No hay cámara conectada»), since the wearer can't see the screen.
+- **Rejected:** a separate `/sight` endpoint (it would duplicate the device link and the runtime), and sending the frame to the voice agent's own call (one focused vision call is simpler to test and shows its own time).
