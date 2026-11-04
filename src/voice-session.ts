@@ -3,7 +3,8 @@
 // only Lente's own voice coming back (the runtime's NarrationGuard). A pending "¿lo marco?" is
 // answered here, before any model call. Pure: the agent turn, the clock and the transport are injected.
 
-import type { CoachMode, SpokenLang } from "./coach.ts";
+import type { Band, CoachMode, SpokenLang } from "./coach.ts";
+import type { Fluency } from "./placement.ts";
 import { words } from "./self-voice.ts";
 import { type VoiceItem, type VoiceSource, type VoiceTurnEvent, type VoiceTurnResult, confirmation } from "./voice-agent.ts";
 
@@ -37,6 +38,8 @@ export type VoiceEvent =
   | { type: "narration"; on: boolean }
   /** Ver: record quietly (audio and memories, nothing spoken) until the person talks again. */
   | { type: "quiet"; on: boolean }
+  /** The coach's placement (add-language-coach 2.3): the estimate with its evidence, or no band; `line` is what Lente says. */
+  | { type: "placement"; lang: string; line: string; fluency: Fluency; band?: Band; confidence?: string; vocabulary?: { note: string; quotes: string[] }; grammar?: { note: string; quotes: string[]; patterns: string[] }; plan?: string[] }
   /** Ver: the hub asks the phone where it is, for «¿dónde estoy?». */
   | { type: "locate"; id: string }
   | { type: "error"; message: string }
@@ -223,10 +226,10 @@ export class VoiceSession {
    * A turn the phone asked for with a tap (the coach's look): `text` is the wearer's question, answered by
    * `runner` instead of the agent. It interrupts whatever Lente was saying.
    */
-  ask(text: string, runner: VoiceSessionDeps["runTurn"]): void {
+  ask(text: string, runner: VoiceSessionDeps["runTurn"], hidden = false): void {
     if (this.state === "paused") return;
-    if (this.busy) this.bargeIn("a tap");
-    this.running = this.startTurn(text, false, runner);
+    if (this.busy) this.bargeIn(hidden ? "the hub's clock" : "a tap");
+    this.running = this.startTurn(text, hidden, runner);
   }
 
   private async startTurn(text: string, hidden = false, runner: VoiceSessionDeps["runTurn"] = this.deps.runTurn): Promise<void> {

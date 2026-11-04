@@ -7,8 +7,9 @@ import { randomUUID } from "node:crypto";
 import { AsrSession, DEFAULT_LANGUAGE_BIAS } from "./asr-session.ts";
 import type { ChatLine, Chats } from "./chat-store.ts";
 import { COACH_INTRO_CUE, type CoachLanguage, type CoachMode, DEFAULT_BAND, checkRepeat, coachInstructions, coachLanguage, coachLanguageBias, sentenceLanguage } from "./coach.ts";
+import { type Estimate, ESTIMATE_SCHEMA, PLACEMENT_MAX_MS, type PlacementTurn, checkEvidence, closingLine, enoughForBand, estimateInput, estimatePrompt, fluency, parseEstimate } from "./placement.ts";
 import type { ChatTarget } from "./providers.ts";
-import { type AttachedMemory, COACH_FUNCTIONS, COACH_TAP_QUESTION, type Companion, coachTapModel, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
+import { type AttachedMemory, COACH_FUNCTIONS, COACH_TAP_QUESTION, type Companion, coachTapModel, scriptedCallModel, type VoiceModel, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
 import { type PhoneMessage, type VoiceLine, VoiceSession, type VoiceSessionDeps, parsePhoneMessage } from "./voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "./voice-tools.ts";
 import { SpeculativeRecall } from "./voice-recall.ts";
@@ -76,6 +77,34 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   /** What the wearer said in the turn being answered, and the phrase the coach last said, for check_repeat. */
   let heardNow = "";
   let lastPhrase = "";
+  /** The placement (2.3): the wearer's answers with their audio spans, the tutor's questions, and the clock. */
+  type Placement = { turns: PlacementTurn[]; questions: string[]; done: boolean; timer?: ReturnType<typeof setTimeout> };
+  let placement: Placement | undefined;
+  /** Session audio ms when the phone last finished speaking: the end of the tutor's question. */
+  let promptEndMs: number | undefined;
+
+  const finishPlacement = async (): Promise<string> => {
+    const on = coach!;
+    const p = placement ?? { turns: [], questions: [], done: false };
+    p.done = true;
+    clearTimeout(p.timer);
+    // The turn that asked to stop («para») is not an answer.
+    const answers = p.turns.at(-1)?.text === heardNow.trim() ? p.turns.slice(0, -1) : p.turns;
+    const measured = fluency(answers);
+    let estimate: Estimate | undefined;
+    if (enoughForBand(measured) && backend.estimate) {
+      try {
+        const parsed = parseEstimate(await backend.estimate(estimatePrompt(on.lang), estimateInput(p.questions, answers, measured), ESTIMATE_SCHEMA));
+        if (parsed) estimate = checkEvidence(parsed, answers);
+      } catch (error) {
+        deps.log(`[voice] placement estimate failed: ${(error as Error).message.slice(0, 160)}`);
+      }
+    }
+    const line = closingLine(estimate, on.lang);
+    ws.send({ type: "placement", lang: on.lang.code, line, fluency: measured, ...(estimate ?? {}) });
+    deps.log(`[voice] placement · ${answers.length} answers · ${measured.words} words · ${estimate ? `${estimate.band} (${estimate.confidence})` : "no band"}`);
+    return line;
+  };
   let turns = 0;
   const save = (lines: VoiceLine[]) => {
     const at = Date.now();
@@ -106,31 +135,35 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   const attachFor = (utterance: string): Promise<AttachedMemory | undefined> => speculative?.final(utterance) ?? Promise.resolve(undefined);
 
   const session = new VoiceSession({
-    send: (e) => ws.send(e),
+    send: (e) => {
+      if (e.type === "state" && e.state === "listening") promptEndMs = sessionMs;
+      ws.send(e);
+    },
     confirmations: tools,
     narration: deps.narration,
     save,
     now: Date.now,
     log: deps.log,
     repeatOf: (text) => Boolean(coach && lastPhrase && checkRepeat(lastPhrase, text, coach.lang.code).result === "understood"),
-    runTurn: (utterance, history, signal, emit) => runTurn(utterance, history, signal, emit, false),
+    runTurn: (utterance, history, signal, emit) => runTurn(utterance, history, signal, emit),
   });
 
   /**
-   * One turn. `tap`: the coach's look surface was tapped (add-language-coach 2.1, design decision 13), so the
-   * look runs at once without a model step to decide it, and its names come back as `pronounce` cards and lines.
+   * One turn. `scripted`: the hub acts without a model step to decide it, for a tap on the coach's look surface
+   * (add-language-coach 2.1, design decision 13) or the placement's clock (2.3).
    */
-  async function runTurn(...[utterance, history, signal, emit, tap]: [...Parameters<VoiceSessionDeps["runTurn"]>, boolean]) {
-    const [rules, attached] = await Promise.all([instructionsOnce(), tap ? Promise.resolve(undefined) : attachFor(utterance)]);
+  async function runTurn(...[utterance, history, signal, emit, scripted]: [...Parameters<VoiceSessionDeps["runTurn"]>, VoiceModel?]) {
+    const [rules, attached] = await Promise.all([instructionsOnce(), scripted ? Promise.resolve(undefined) : attachFor(utterance)]);
     const on = coach;
     heardNow = utterance;
     const functions = on ? COACH_FUNCTIONS : persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS;
     // The coach's sentences carry the language they are spoken in; its own tools tag theirs.
     const tagged: typeof emit = on ? (e) => emit(e.kind === "sentence" && !e.lang ? { ...e, lang: sentenceLanguage(e.text, on.lang.code) } : e) : emit;
-    const handlers = on ? tools.coachHandlers({ lang: on.lang.code, band: DEFAULT_BAND, heard: () => heardNow, pronounced: (text) => (lastPhrase = text) }) : tools.handlers();
-    const model = tap && on ? coachTapModel(utterance) : responsesVoiceModel(deps.target, { instructions: rules, functions, webSearch: !on });
+    const handlers = on ? tools.coachHandlers({ lang: on.lang.code, band: DEFAULT_BAND, heard: () => heardNow, pronounced: (text) => (lastPhrase = text), ...(placement && !placement.done ? { finishPlacement } : {}) }) : tools.handlers();
+    const model = scripted && on ? scripted : responsesVoiceModel(deps.target, { instructions: rules, functions, webSearch: !on });
     const result = await runVoiceTurn({ model, tools: handlers, history, utterance, signal, emit: tagged, ...(attached ? { attached } : {}), ...(persona === "sight" ? { speakAll: true } : {}) });
     turns++;
+    if (placement && !placement.done && result.text) placement.questions.push(result.text);
     deps.onUsage(result.usage, 0);
     deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · ${attached ? `${attached.citable.size} memory lines attached · ` : ""} first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›${result.error ? ` · ${result.error.slice(0, 160)}` : ""}`);
     return result;
@@ -139,7 +172,10 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   const asr = new AsrSession(
     deps.key,
     {
-      onTurn: (turn) => session.heardTurn(turn.text),
+      onTurn: (turn) => {
+        if (coach && placement && !placement.done) placement.turns.push({ text: turn.text, ...(turn.startMs !== undefined ? { startMs: turn.startMs } : {}), ...(turn.endMs !== undefined ? { endMs: turn.endMs } : {}), ...(promptEndMs !== undefined ? { promptEndMs } : {}) });
+        session.heardTurn(turn.text);
+      },
       onPartial: (text) => {
         session.heardPartial(text);
         speculative?.partial(text);
@@ -182,6 +218,7 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   const close = () => {
     if (closed) return;
     closed = true;
+    if (placement) clearTimeout(placement.timer);
     session.close();
     asr.stop();
     release?.();
@@ -195,12 +232,14 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     if (message.type === "location") return void locating.get(message.id)?.(message);
     if (message.type === "look") {
       if (!coach) return deps.log("[voice] a look tap outside the coach is ignored");
-      return session.ask(COACH_TAP_QUESTION, (utterance, history, signal, emit) => runTurn(utterance, history, signal, emit, true));
+      return session.ask(COACH_TAP_QUESTION, (utterance, history, signal, emit) => runTurn(utterance, history, signal, emit, coachTapModel(utterance)));
     }
     if (message.type === "start") {
       // Ver's companion or the language coach: new instructions for the session, and with `intro` Lente speaks first.
       intro = message.intro;
       coach = undefined;
+      if (placement) clearTimeout(placement.timer);
+      placement = undefined;
       persona = message.persona === "sight" ? "sight" : "default";
       if (message.persona === "coach") {
         const lang = coachLanguage(message.lang);
@@ -208,6 +247,14 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
           coach = { lang, mode: message.mode ?? "tutor" };
           persona = "coach";
         } else deps.log(`[voice] coach refused: language «${message.lang ?? "none"}» has not passed its check; the default Lente answers`);
+      }
+      // The placement (2.3): at PLACEMENT_MAX_MS the hub closes it and the estimate is said.
+      if (coach?.mode === "placement") {
+        const p: Placement = { turns: [], questions: [], done: false };
+        p.timer = setTimeout(() => {
+          if (!p.done && placement === p) session.ask("(Se acabó el tiempo de la conversación de nivel.)", (u, h, s, e) => runTurn(u, h, s, e, scriptedCallModel("finish_placement")), true);
+        }, PLACEMENT_MAX_MS);
+        placement = p;
       }
       // The transcription bias is fixed per session, so a new one restarts it (add-language-coach 2.1).
       asr.setLanguages(coach ? coachLanguageBias(coach.lang) : DEFAULT_LANGUAGE_BIAS);

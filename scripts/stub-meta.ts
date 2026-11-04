@@ -222,6 +222,7 @@ function chatReply(body: string): string {
   } catch {
     return "no";
   }
+  if (req.response_format?.json_schema?.name === "placement") return JSON.stringify(STUB_PLACEMENT);
   if (req.response_format?.json_schema?.name !== "ask") return "no";
   const id = String(req.messages?.[0]?.content ?? "").match(/\n\[([A-Z]\d+(?:\.t\d+)?)\]/)?.[1];
   return JSON.stringify(id ? { found: true, answer: STUB_ASK_ANSWER, sources: [id] } : { found: false, answer: "", sources: [] });
@@ -295,6 +296,15 @@ function voiceDecision(input: VoiceInput): { commentary?: string; call?: { name:
 
 export const STUB_COACH_NAMES = "o garfo = el tenedor\na xícara = la taza";
 
+/** The placement's estimate (add-language-coach 2.3): one real quote of the stub's answers and one never said. */
+export const STUB_PLACEMENT = {
+  band: "A2",
+  confidence: "medium",
+  vocabulary: { note: "Usas palabras del día a día", quotes: ["comprei frutas", "PROBE frase que nunca dijo"] },
+  grammar: { note: "Usas el pasado simple", quotes: ["eu fui ao mercado"], patterns: ["pretérito perfeito"] },
+  plan: ["Practica el pasado", "Aprende diez verbos nuevos", "Habla dos minutos al día"],
+};
+
 /** The language coach (add-language-coach): «¿cómo se dice tenedor?», a look, and a repeat of «o garfo». */
 function coachDecision(input: VoiceInput): ReturnType<typeof voiceDecision> {
   const last = input.at(-1);
@@ -305,8 +315,11 @@ function coachDecision(input: VoiceInput): ReturnType<typeof voiceDecision> {
     if (name === "pronounce") return { text: ["Repítelo conmigo, despacio."] };
     if (name === "look") return { text: [out.names?.length ? "Son el tenedor y la taza; repite el primero." : "No veo nada claro."] };
     if (name === "check_repeat") return { text: [out.result === "understood" ? "¡Muy bien, te entendí perfecto!" : "No te alcancé a entender; ¿lo digo más despacio?"] };
+    if (name === "finish_placement") return {};
     return { text: ["Listo, sigamos practicando."] };
   }
+  if (/^para\b/.test(user)) return { call: { name: "finish_placement", args: {} } };
+  if (/^(eu|meu|ontem)\b/.test(user)) return { text: ["Que legal! E o que você fez ontem?"] };
   if (/abrir idiomas/.test(user)) return { text: ["¡Hola! Soy tu tutor de portugués. ¿Qué quieres practicar hoy?"] };
   if (/como se dice tenedor/.test(user)) return { call: { name: "pronounce", args: { text: "o garfo", meaning: "el tenedor" } } };
   if (/que es esto/.test(user)) return { call: { name: "look", args: { question: "¿Qué es esto?" } } };

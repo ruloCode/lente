@@ -96,6 +96,10 @@ Tools (`COACH_FUNCTIONS`):
   - Each name comes back as a `pronounce` and its `reply` with `lang: "pt"`. With nothing named, one Spanish `reply` says why.
   - Outside the coach it is ignored.
 - **`/tts` also takes an optional `speed`**, which goes to ElevenLabs as `voice_settings.speed`, clamped to 0.7–1.2. On 2026-11-04 `0.7` was accepted and gave longer audio. «Más despacio» may use it.
+- **The placement** (`mode: "placement"`, task 2.3) ends with one event, `{ type: "placement", lang, line, fluency: { words, turns, wordsPerTurn, wordsPerMinute?, medianStartMs? }, band?, confidence?, vocabulary?: { note, quotes }, grammar?: { note, quotes, patterns }, plan? }`.
+  - Without `band`, too little was said, and `line` says a longer conversation is needed.
+  - `line` always ends «No es un examen oficial.». It also arrives as a Spanish `reply`, which is what is spoken.
+  - The hub closes the placement itself at `PLACEMENT_MAX_MS`. `PLACEMENT_MIN_MS` is the tutor's instruction («unos cuatro minutos»), not a gate, so «para» can stop it at any time.
 - **`check_repeat`** needs no event. The tutor says whether it understood. A repeat of the phrase just pronounced is not dropped as Lente's own echo once the phone has finished speaking it (`REPEAT_ECHO_TAIL_MS`).
 
 ### 4. Placement and the estimate (`src/placement.ts`, pure)

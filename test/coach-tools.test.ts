@@ -28,8 +28,8 @@ const session = (heard = "") => {
   return { said, coach: { lang: "pt" as const, band: "A1" as const, heard: () => heard, pronounced: (t: string) => void said.push(t) } };
 };
 
-test("the coach's functions are pronounce, look, check_repeat and ask_memory", () => {
-  assert.deepEqual(COACH_FUNCTIONS.map((f) => f.name), ["pronounce", "look", "check_repeat", "ask_memory"]);
+test("the coach's functions are pronounce, look, check_repeat, finish_placement and ask_memory", () => {
+  assert.deepEqual(COACH_FUNCTIONS.map((f) => f.name), ["pronounce", "look", "check_repeat", "finish_placement", "ask_memory"]);
 });
 
 test("start with persona coach keeps its language and mode; anything else stays as before", () => {

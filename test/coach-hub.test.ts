@@ -124,3 +124,36 @@ test("a language that has not passed its check opens the default Lente, with no 
   assert.ok(replies.length > 0 && replies.every((e) => !("lang" in e)));
   p.send({ type: "end" });
 });
+
+test("a placement: answers with their audio spans, «para», and an estimate with only the wearer's own quotes", { timeout: 90_000 }, async () => {
+  const base = await startHub();
+  const p = await phone(base);
+  await p.until(() => p.events.some((e) => e.type === "listening"));
+  p.send({ type: "start", persona: "coach", lang: "pt", mode: "placement" });
+  const answers = [
+    "Meu nome é Rulo, eu sou da Colômbia e moro em Bogotá com a minha família há muitos anos já, e gosto muito daqui.",
+    "Eu trabalho com software todos os dias, começo cedo, tomo um café e depois falo com a minha equipe.",
+    "Ontem eu fui ao mercado de manhã, comprei frutas e pão, e depois eu cozinhei o almoço para todos nós.",
+  ];
+  for (const [i, text] of answers.entries()) {
+    stub.utterances.push(text);
+    p.speak(1600);
+    await p.until(() => p.events.some((e) => e.type === "done" && e.turn === i + 1), 15_000);
+    p.send({ type: "spoken", turn: i + 1, count: p.events.filter((e) => e.type === "reply" && e.turn === i + 1).length });
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  stub.utterances.push("Para.");
+  p.speak(600);
+  await p.until(() => p.events.some((e) => e.type === "placement"), 15_000);
+  const placed = p.events.find((e) => e.type === "placement")!;
+  assert.equal(placed.band, "A2");
+  assert.equal(placed.lang, "pt");
+  assert.deepEqual(placed.vocabulary.quotes, ["comprei frutas"], "the quote the wearer never said is dropped");
+  assert.deepEqual(placed.grammar.quotes, ["eu fui ao mercado"]);
+  assert.ok(placed.fluency.words >= 60 && placed.fluency.turns === 3, JSON.stringify(placed.fluency));
+  assert.ok(placed.fluency.wordsPerMinute > 0, "words per minute come from the turns' audio spans");
+  assert.ok(placed.line.endsWith("No es un examen oficial."));
+  await p.until(() => p.events.some((e) => e.type === "reply" && e.text === placed.line));
+  assert.equal(p.events.find((e) => e.type === "reply" && e.text === placed.line)!.lang, "es");
+  p.send({ type: "end" });
+});

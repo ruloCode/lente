@@ -359,8 +359,21 @@ export const COACH_FUNCTIONS: FunctionSpec[] = [
     description: "Compara lo que la persona acaba de decir con la frase que debía repetir. Devuelve understood si la transcripción tiene las palabras clave, o missed y las que faltaron. No es un puntaje de pronunciación.",
     parameters: obj({ expected: { type: "string", description: "La frase que debía repetir, en el idioma que aprende" } }, ["expected"]),
   },
+  {
+    name: "finish_placement",
+    description: "Termina la conversación de nivel y dice el estimado (banda, una razón y que no es un examen oficial). Úsala solo en la conversación de nivel, cuando la persona dice «para» o ya hablaron unos cuatro minutos.",
+    parameters: obj({}),
+  },
   ...VOICE_FUNCTIONS.filter((f) => f.name === "ask_memory"),
 ];
+
+/** A scripted model that calls one tool and then ends without text: the hub acting on its own clock. */
+export function scriptedCallModel(name: string): VoiceModel {
+  return async (input) => {
+    if (input.some((i) => i.type === "function_call_output")) return { items: [], calls: [], sources: [], searches: [] };
+    return { items: [{ type: "function_call", callId: `hub-${name}`, name, arguments: "{}" }], calls: [{ callId: `hub-${name}`, name, args: {} }], sources: [], searches: [] };
+  };
+}
 
 /** What a tap on the coach's look surface asks, as the wearer's turn. */
 export const COACH_TAP_QUESTION = "¿Qué es esto?";

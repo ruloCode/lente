@@ -20,6 +20,8 @@ export interface CoachSession {
   heard(): string;
   /** The phrase just said, so the wearer's repeat of it is not taken for Lente's echo. */
   pronounced(text: string): void;
+  /** The placement (2.3): ends it, runs the estimate and returns the line to say; absent outside `mode: "placement"`. */
+  finishPlacement?(): Promise<string>;
 }
 
 /** Longest task title kept, as on the phone. */
@@ -57,6 +59,8 @@ export interface VoiceBackend {
   openRecordSheet(choice: { projectId?: string; projectName?: string; camera: boolean }): void;
   /** Ver (add-sight-mode): a fresh frame from the glasses or the phone, and the answer to the question about it. */
   look?(question: string, mode: "describe" | "read", coach?: { prompt: string }): Promise<{ ok: boolean; text: string }>;
+  /** The coach's placement estimate (add-language-coach 2.3): one structured call, the raw JSON reply. */
+  estimate?(system: string, user: string, schema: object): Promise<string>;
   /** Ver: what the person told Lente in the welcome (runtime memory only). */
   rememberPerson?(person: { name: string; age?: string; wants?: string }): void;
   /** Ver: the live narration on or off. */
@@ -176,6 +180,11 @@ export class VoiceTools {
           label: names.map((n) => n.text).join(" · "),
           say: names.map((n, i) => ({ text: seenLine(n, coach.lang, i === 0), phrase: n.text, lang: coach.lang, meaning: n.meaning })),
         };
+      },
+      finish_placement: async () => {
+        if (!coach.finishPlacement) return { result: { error: "no placement is running; this is the tutor" }, label: "Nivel" };
+        const line = await coach.finishPlacement();
+        return { result: { ok: true, said: line, note: "el estimado ya se dijo; despídete en una frase corta o no digas nada" }, label: "Tu nivel estimado", say: [{ text: line, lang: "es" }] };
       },
       check_repeat: (args) => {
         const expected = str(args.expected, MAX_PHRASE_CHARS);

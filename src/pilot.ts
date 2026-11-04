@@ -2617,6 +2617,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     },
     openRecordSheet: openSheet,
     look: (question, mode, coach) => look(question, mode, coach),
+    // The coach's placement estimate (add-language-coach 2.3): minimal effort, with room for Spark's reasoning.
+    estimate: async (system, user, schema) =>
+      (await callSpark([{ role: "system", content: system }, { role: "user", content: user }], { label: "placement", maxTokens: 2_000, prefer: "spark-1.3-minimal", extra: { response_format: { type: "json_schema", json_schema: { name: "placement", strict: true, schema } } } })).text,
     rememberPerson: (person) => {
       companion = person;
       console.log(`[sight] the companion met someone (${person.age ? "name and age" : "name"}${person.wants ? ", what they want" : ""})`);
