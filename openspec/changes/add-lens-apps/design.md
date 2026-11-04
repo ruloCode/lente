@@ -71,7 +71,7 @@ Rejected:
 | `description` | 10–`APP_DESCRIPTION_MAX = 280` characters |
 | `languages` | 1–4 of the languages Lente supports today (`es`, `en`; more only when `docs/kb/meta-api.md` documents them, see `add-language-coach`). A built-in may list a language still being checked; the catalog marks it «Pronto» |
 | `inputs` | subset of `microphone`, `camera`, `location`; `room` (listening to the people around the wearer) only with an `engine` |
-| `permissions` | subset of `camera`, `microphone`, `location`, `memory.read`, `memory.write`; must cover what `inputs` and `tools` need, and nothing they don't (an unused permission is rejected) |
+| `permissions` | subset of `camera`, `microphone`, `location`, `memory.read`, `memory.write`; must cover what `inputs` and `tools` need (and, for a built-in, what its `engine` needs: Dilo's meeting pipeline reads and keeps the day, Practicar keeps each attempt), and nothing they don't (an unused permission is rejected) |
 | `tools` | subset of the apps allow-list (decision 4) |
 | `persona` | 40–`PERSONA_MAX = 4_000` characters, Spanish or English, checked by `personaProblems()` (decision 5) |
 | `lookPrompt` | optional, ≤ 600 characters, requires `look` |
@@ -109,7 +109,7 @@ Built-ins are installed for every account and can be hidden, not uninstalled; th
 | `quiet_mode` | — | |
 | `web_search` | — | Spark's built-in search; shown on the app page as «Busca en internet» |
 
-Built-in manifests may also list the tools their engine owns (Ver's `remember_person`, Practicar's `start_lesson`); the validator accepts them only with `builtIn`.
+Built-in manifests may also list the tools their engine owns (Ver's `remember_person`, Practicar's `start_lesson` and `last_attempt`, the coach's `pronounce`, `check_repeat`, `finish_placement`, `language_progress`, `review_due`, `review_result`); the validator accepts them only with `builtIn`, and knows the permission each needs (`ENGINE_TOOLS` in `src/app-manifest.ts`).
 
 Not available to apps: `delegate` (runs agents), `complete_task`, `delete_task`, `reassign_task` (change the person's data), `start_recording` (recording needs the person's tap and `add-consent`), `remember_person` (Ver's welcome). There is no tool that sends anything to a URL, so nothing an app hears or reads can reach its developer.
 
