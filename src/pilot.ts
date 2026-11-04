@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { AsrSession, type AsrTurn } from "./asr-session.ts";
 import { type ChatMessage, completeChat, streamReply } from "./chat.ts";
 import { type DevicePreference, mayTakeOver, AudioConditioner, AudioTimeline, COMMANDS, ClipFrameParser, DISCOVERY_PORT, JitterBuffer, discoveryReply, PHONE_DEVICE, isQuestion, parseAudioFrame, parseHello, rms, toCue } from "./clip-protocol.ts";
-import { type AskMessage, type AskOutcome, type AskSource, CutOffError, ask, askSchema } from "./ask.ts";
+import { type AskMessage, type AskOutcome, type AskSource, CutOffError, ask, askSchema, untruncated } from "./ask.ts";
 import { DayLog, type DayEntry } from "./day-log.ts";
 import { iconPng, logoSvg, webManifest } from "./brand.ts";
 import { DESKTOP_PAGE } from "./desktop-page.ts";
@@ -105,7 +105,7 @@ import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
 import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
 import { NarrationGuard } from "./self-voice.ts";
 import type { Companion } from "./voice-agent.ts";
-import { COACH_MAX_TOKENS, LESSONS, coachMessages, earlierAttempts, practiceSummary, validateAttempt } from "./practice.ts";
+import { COACH_MAX_TOKENS, COACH_TARGET, LESSONS, coachMessages, earlierAttempts, practiceSummary, validateAttempt } from "./practice.ts";
 import { DEFAULT_LOOK_QUESTION, LOOK_DESCRIBE_MAX_CHARS, LOOK_READ_MAX_CHARS, parseSight, SIGHT_LIVE_PROMPT, SIGHT_READ_PROMPT, SIGHT_STALE_MS, sightLookPrompt } from "./sight.ts";
 import { type UsageSnapshot, UsageMeter, WEB_SEARCH_MODEL } from "./usage-meter.ts";
 
@@ -935,7 +935,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
    * Responses API so their first token is timed; structured calls (`extra` with a JSON schema) use
    * Chat Completions and wait for the whole answer.
    */
-  async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue"; onDelta?: (delta: string) => void; allowIncomplete?: boolean; timeoutMs?: number }): Promise<SparkReply> {
+  async function callSpark(messages: ChatMessage[], opts: { label: string; extra?: Record<string, unknown>; maxTokens?: number; stream?: boolean; job?: "cue"; onDelta?: (delta: string) => void; allowIncomplete?: boolean; timeoutMs?: number; prefer?: string }): Promise<SparkReply> {
     let lastError: unknown;
     // Once text reached the phone, another model would repeat it: no fallback after the first delta.
     let streamed = false;
@@ -944,7 +944,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const capped = capBlocked(); // ship-hackathon 2.2: no call past the day's cap
     if (capped) throw new SpendCapError(capped);
     // Cue routes keep their order and a cool-down; the other jobs reorder to stick with what answered last.
-    const targets = job ? routePolicy.pick(job, cueRoutes().map((t) => Object.assign(t, { configured: Boolean(t.apiKey) }))) : sparkTargets;
+    // `prefer` puts one Spark target first for this call only (the coach's minimal effort), without moving the others' order.
+    const targets = job ? routePolicy.pick(job, cueRoutes().map((t) => Object.assign(t, { configured: Boolean(t.apiKey) }))) : opts.prefer ? [...sparkTargets.filter((t) => t.id === opts.prefer), ...sparkTargets.filter((t) => t.id !== opts.prefer)] : sparkTargets;
     for (const [i, target] of targets.entries()) {
       try {
         const askedAt = Date.now();
@@ -954,7 +955,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         const done = opts.stream ? await streamReply(target, messages, { maxTokens, firstTokenTimeoutMs, ...(onDelta ? { onDelta } : {}), ...(opts.allowIncomplete ? { allowIncomplete: true } : {}) }) : { ...(await completeChat(target, messages, { maxTokens, extra: opts.extra, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) })), ttftMs: undefined };
         health.ok("model");
         if (job) routePolicy.succeeded(job, target.id);
-        else sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
+        else if (!opts.prefer) sparkTargets = [target, ...sparkTargets.filter((t) => t !== target)];
         broadcast({ kind: "usage", label: opts.label, model: target.id, provider: target.provider, ms: Math.round(done.totalMs), promptTokens: done.promptTokens, cachedTokens: done.cachedTokens, completionTokens: done.completionTokens });
         usage.addCall(target.model, { input: done.promptTokens, cached: done.cachedTokens, output: done.completionTokens });
         usageChanged = true;
@@ -2702,7 +2703,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     let line = "";
     const started = performance.now();
     try {
-      line = (await askSpark(coachMessages(summary.text, earlier), { label: "coach", stream: true, maxTokens: COACH_MAX_TOKENS })).replace(/\s+/g, " ").trim();
+      const messages = coachMessages(summary.text, earlier);
+      line = (await untruncated("coach", (maxTokens) => callSpark(messages, { label: "coach", stream: true, maxTokens, allowIncomplete: true, prefer: COACH_TARGET }), COACH_MAX_TOKENS)).replace(/\s+/g, " ").trim();
       console.log(`[practice] coach ${Math.round(performance.now() - started)} ms · right=${summary.right} total=${summary.total} earlier=${earlier.length}`);
     } catch (error) {
       console.error(`[practice] coach failed: ${(error as Error).message.slice(0, 200)}`);

@@ -26,8 +26,14 @@ export const MAX_ATTEMPT_NOTES = 64;
 /** Longest attempt, and latest note time inside it, in ms. */
 export const MAX_ATTEMPT_MS = 10 * 60_000;
 const MIDI_MAX = 127;
-/** The coach's reply cap, in tokens. */
-export const COACH_MAX_TOKENS = 200;
+/**
+ * The coach's token cap. Spark 1.3 reasons before it writes and the reasoning counts against the cap: at
+ * 200 every call on Modal stopped at the cap with no text (4 of 4, 2026-11-04). The prompt keeps the line
+ * short; a reply that still stops at the cap is asked again once at twice it.
+ */
+export const COACH_MAX_TOKENS = 1_000;
+/** The Spark target the coach asks first: reasoning effort minimal (providers.ts), the other one after. */
+export const COACH_TARGET = "spark-1.3-minimal";
 /** Earlier attempts at the same lesson today that the coach sees. */
 export const COACH_EARLIER = 3;
 
@@ -142,7 +148,7 @@ export function earlierAttempts(entries: readonly { at: number; kind: string; le
 export const COACH_PROMPT =
   "You are a warm, patient piano teacher from Colombia coaching a beginner who just played a short lesson on a piano or keyboard. " +
   "You get a summary of the attempt and, when there are any, their earlier attempts at the same lesson today. " +
-  "Answer in Spanish, spoken directly to them (tú), in one or two short sentences, no lists, no markdown: " +
+  "Answer in Spanish, spoken directly to them (tú), in one or two short sentences (under 200 characters in all), no lists, no markdown: " +
   "first what went well, then the single most useful thing to try next, naming the note in solfège (Do, Re, Mi, Fa, Sol, La, Si) and its position. " +
   "If this attempt has more notes right than an earlier one, say they improved. If every note was right, celebrate and suggest playing it a little faster or trying the next lesson. " +
   "Never invent a note, a mistake or a number that is not in the summary. Never say anything about health, pain, injuries or the body; this is not medical advice.";

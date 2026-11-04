@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { type StubMeta, STUB_COACH, STUB_COACH_BETTER, startStubMeta } from "../scripts/stub-meta.ts";
+import { COACH_MAX_TOKENS } from "../src/practice.ts";
 
 let stub: StubMeta;
 const children: ChildProcess[] = [];
@@ -129,11 +130,23 @@ test("practice: lessons listed, an attempt kept and coached, a second one sees t
   assert.equal(stub.requests.filter((r) => r === "POST /v1/responses").length, calls, "a refused attempt calls no model");
   assert.equal(practiceLines(dir).length, 2);
 
+  // Spark reasons before it writes: a reply cut at the cap is asked again once at twice the cap, at minimal effort.
+  stub.coachCalls.length = 0;
+  stub.coachCutOffs = 1;
+  const cut = await postAttempt(base, attempt()).then((r) => r.json()) as { line: string };
+  assert.equal(cut.line, STUB_COACH_BETTER);
+  assert.deepEqual(stub.coachCalls, [{ maxTokens: COACH_MAX_TOKENS, effort: "minimal" }, { maxTokens: 2 * COACH_MAX_TOKENS, effort: "minimal" }]);
+  stub.coachCutOffs = 2;
+  const twice = await postAttempt(base, attempt()).then((r) => r.json()) as { line: string; summary: string };
+  assert.equal(twice.line, "", "cut twice: no half sentence is said");
+  assert.ok(twice.summary);
+  assert.equal(practiceLines(dir).length, 4, "both are still kept");
+
   assert.equal((await fetch(`${base}/guest/on`, { method: "POST" })).status, 204);
   const guest = await postAttempt(base, attempt(1)).then((r) => r.json()) as { line: string; summary: string };
   assert.equal(guest.line, STUB_COACH, "a guest's coach does not see the wearer's attempts");
   assert.match(guest.summary, /falló la 2.ª/);
   await sleep(200);
-  assert.equal(practiceLines(dir).length, 2, "a guest's attempt is not kept");
+  assert.equal(practiceLines(dir).length, 4, "a guest's attempt is not kept");
   assert.equal((await fetch(`${base}/guest/off`, { method: "POST" })).status, 204);
 });

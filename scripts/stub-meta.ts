@@ -139,11 +139,17 @@ export interface StubMeta {
   requests: string[];
   /** Lines the endpointing sessions hear next, one per stretch of loud audio. */
   utterances: string[];
+  /** How many coach replies stop at the token cap before one answers (add-practice-mode). */
+  coachCutOffs: number;
+  /** Each coach request's token cap and reasoning effort. */
+  coachCalls: { maxTokens?: number; effort?: string }[];
 }
 
 export function startStubMeta(): Promise<StubMeta> {
   const requests: string[] = [];
   const utterances: string[] = [];
+  const coachCalls: StubMeta["coachCalls"] = [];
+  const stub = { coachCutOffs: 0 };
   const server = createServer((req, res) => {
     requests.push(`${req.method} ${req.url}`);
     let body = "";
@@ -164,7 +170,15 @@ export function startStubMeta(): Promise<StubMeta> {
         const usage = { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20 };
         sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text }, { type: "response.completed", response: { usage } }]);
       } else if (req.url === "/v1/responses" && body.includes("piano teacher from Colombia coaching a beginner")) {
-        // The practice coach (add-practice-mode): a fixed line, another when it sees an earlier attempt today.
+        // The practice coach (add-practice-mode): a fixed line, another when it sees an earlier attempt today;
+        // `coachCutOffs` replies stop at the token cap first, as Spark does when it reasons past it.
+        const req = JSON.parse(body) as { max_output_tokens?: number; reasoning?: { effort?: string } };
+        coachCalls.push({ maxTokens: req.max_output_tokens, effort: req.reasoning?.effort });
+        if (stub.coachCutOffs > 0) {
+          stub.coachCutOffs--;
+          const usage = { input_tokens: 300, input_tokens_details: { cached_tokens: 0 }, output_tokens: req.max_output_tokens };
+          return sse(res, [{ type: "response.created" }, { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" }, usage } }]);
+        }
         const text = body.includes("Antes, hoy:") ? STUB_COACH_BETTER : STUB_COACH;
         const usage = { input_tokens: 300, input_tokens_details: { cached_tokens: 0 }, output_tokens: 25 };
         sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text }, { type: "response.completed", response: { usage } }]);
@@ -189,7 +203,7 @@ export function startStubMeta(): Promise<StubMeta> {
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${acceptKey(key)}\r\n\r\n`);
     transcribe(socket, utterances);
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, port: (server.address() as AddressInfo).port, requests, utterances })));
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(Object.assign(stub, { server, port: (server.address() as AddressInfo).port, requests, utterances, coachCalls }))));
 }
 
 /** "no" for the yes/no checks; for the chat with Lente, an answer citing the first line of its memory (or not found). */
