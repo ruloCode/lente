@@ -11,8 +11,8 @@ android {
         applicationId = "app.lente"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Sign-in (add-accounts 7.1): the Supabase project and Google's Web client ID. None is a secret
         // (a publishable key and a client ID ship in every app); they come from gradle.properties or
