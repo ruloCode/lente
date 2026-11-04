@@ -80,6 +80,7 @@ RADIUS = 2.5
 LID_LIP = 1.5
 FIT = 0.2
 PARTS_T = 3.0                    # outer layer over the Pi
+TAIL_EXTRA = 4.0                 # free room in the tail, outside the parts layer: folded camera ribbon, solder joints
 CAM_SLOT_WALL = 0.8              # head wall left outside the camera board's edge slots
 RIB_T, RIB_H, TEMPLE_W = 1.6, 3.0, 7.0
 TEMPLE_MIN, TEMPLE_MAX = 2.0, 10.0
@@ -97,7 +98,7 @@ IN_Z = PI[1] + 0.6
 PY0 = w + BAT_BAY + 0.3          # Pi PCB, back face
 PY1 = PY0 + PI_PCB               # Pi top side
 OY0 = PY1 + PI_LOW + 0.2         # outer parts layer
-TAIL_IN_Y = OY0 + PARTS_T + 0.2 - w
+TAIL_IN_Y = OY0 + PARTS_T + TAIL_EXTRA + 0.2 - w
 # Head: only the camera board is 25 mm wide; its back connector (19.61) and focus module (10.8) are
 # narrower. The cavity fits the connector and the board's edges ride in slots in the side walls.
 HEAD_IN_Y = CAM_CONN[0] + 0.4

@@ -4,7 +4,7 @@
     27.0,
     33.8
   ],
-  "tail_width_mm": 15.1,
+  "tail_width_mm": 19.1,
   "head_mm": [
     10.8,
     27.0
@@ -27,8 +27,8 @@
       14.0
     ]
   },
-  "shell_volume_cm3": 14.51,
-  "shell_mass_g_pla_100pct": 18.0,
+  "shell_volume_cm3": 15.35,
+  "shell_mass_g_pla_100pct": 19.0,
   "hud_arm_mass_g_pla_100pct": 2.4,
   "camera_center_yz": [
     13.5,
