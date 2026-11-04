@@ -14,15 +14,15 @@ test("LENTE_APPS defaults to builtin; only «open» opens", () => {
   assert.equal(parseAppsMode(" open "), "open");
 });
 
-test("GET /apps lists the built-ins with their permissions in Spanish; Idiomas is «Pronto»", () => {
+test("GET /apps lists the built-ins with their permissions in Spanish; Idiomas runs in Portuguese, French is «Pronto»", () => {
   const answer = appsAnswer({ method: "GET", url: "/apps?x=1" }, builtins, "builtin")!;
   assert.equal(answer.status, 200);
   const { apps } = answer.body as { apps: { id: string; builtIn: boolean; soon: boolean; permissions: { label: string; sentence: string }[]; languages: { code: string; soon: boolean }[] }[] };
-  assert.deepEqual(apps.map((a) => [a.id, a.builtIn, a.soon]), [["dilo", true, false], ["ver", true, false], ["practicar", true, false], ["idiomas", true, true]]);
+  assert.deepEqual(apps.map((a) => [a.id, a.builtIn, a.soon]), [["dilo", true, false], ["ver", true, false], ["practicar", true, false], ["idiomas", true, false]]);
   const ver = apps.find((a) => a.id === "ver")!;
   assert.equal(ver.permissions[0]!.label, "Cámara");
   assert.ok(ver.permissions.every((p) => p.sentence.endsWith(".")));
-  assert.deepEqual(apps.find((a) => a.id === "idiomas")!.languages.map((l) => [l.code, l.soon]), [["es", false], ["pt", true], ["fr", true]]);
+  assert.deepEqual(apps.find((a) => a.id === "idiomas")!.languages.map((l) => [l.code, l.soon]), [["es", false], ["pt", false], ["fr", true]]);
   // The listing carries no persona; the page does.
   assert.equal("persona" in ver, false);
 });

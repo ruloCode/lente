@@ -1,11 +1,11 @@
 {
   "manifest": 1,
   "id": "idiomas",
-  "version": 1,
+  "version": 2,
   "name": "Idiomas",
   "icon": "volume",
   "developer": "Lente",
-  "description": "Un tutor de idiomas en tus gafas: nombra lo que ves, te hace repetir frases y te dice cómo vas, explicando en español.",
+  "description": "Un tutor de portugués en tus gafas: te dice cómo se dice algo, nombra lo que ves y te hace repetir, explicando en español. El francés llega pronto.",
   "languages": ["es", "pt", "fr"],
   "inputs": ["microphone", "camera", "room"],
   "permissions": ["camera", "microphone", "memory.read", "memory.write"],

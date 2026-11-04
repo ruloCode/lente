@@ -34,8 +34,11 @@ export const PERSONA_CAPS_RUN_MAX = 20;
 
 /** Languages Lente supports today (`docs/kb/meta-api.md`). */
 export const SUPPORTED_LANGUAGES = ["es", "en"] as const;
-/** Languages still being checked: only a built-in may list one, and the catalog marks it «Pronto». */
-export const PENDING_LANGUAGES = ["pt", "fr"] as const;
+/**
+ * The coach's target languages (add-language-coach): only a built-in may list one. The catalog marks
+ * those that have not passed their check «Pronto» (`COACH_LANGUAGES[…].verified`).
+ */
+export const BUILTIN_LANGUAGES = ["pt", "fr"] as const;
 export const LANGUAGE_NAMES: Readonly<Record<string, string>> = { es: "Español", en: "Inglés", pt: "Portugués", fr: "Francés" };
 
 /**
@@ -232,7 +235,7 @@ export function validateManifest(json: unknown, opts: { builtIn: boolean }): Man
   if (developer?.includes("@")) fail("developer", "Debe ser el nombre que se muestra, no un correo.");
   const description = text("description", APP_DESCRIPTION_MIN, APP_DESCRIPTION_MAX);
 
-  const languageSet = new Set<string>([...SUPPORTED_LANGUAGES, ...(opts.builtIn ? PENDING_LANGUAGES : [])]);
+  const languageSet = new Set<string>([...SUPPORTED_LANGUAGES, ...(opts.builtIn ? BUILTIN_LANGUAGES : [])]);
   const languages = list("languages", languageSet, (l) => `«${l}» no es un idioma que Lente admita (${SUPPORTED_LANGUAGES.join(", ")}).`);
   if (languages && (languages.length < 1 || languages.length > LANGUAGES_MAX)) fail("languages", `Debe listar entre 1 y ${LANGUAGES_MAX} idiomas.`);
 

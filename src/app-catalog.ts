@@ -2,14 +2,18 @@
 // answer, from validated manifests. Pure: the hub reads the files (`app-builtins.ts`) and owns the socket.
 // Only built-ins exist so far; nothing third-party is served whatever `LENTE_APPS` says.
 
-import { APP_ID_PATTERN, type AppManifest, LANGUAGE_NAMES, PENDING_LANGUAGES, PERMISSION_TEXT } from "./app-manifest.ts";
+import { APP_ID_PATTERN, type AppManifest, LANGUAGE_NAMES, PERMISSION_TEXT } from "./app-manifest.ts";
+import { COACH_LANGUAGES } from "./coach.ts";
 
 /** `LENTE_APPS`: `builtin` (the default) serves the built-ins; `open` (P1) will add listed apps. */
 export type AppsMode = "builtin" | "open";
 export const parseAppsMode = (raw: string | undefined): AppsMode => (raw?.trim() === "open" ? "open" : "builtin");
 
 /** Engines the hub runs today; a built-in bound to another one is listed with «Pronto». */
-export const ENGINES_READY: readonly string[] = ["dilo", "ver", "practicar"];
+export const ENGINES_READY: readonly string[] = ["dilo", "ver", "practicar", "coach"];
+
+/** A coach target language that has not passed its check (add-language-coach 1.1) is listed with «Pronto». */
+const languagePending = (code: string): boolean => Object.hasOwn(COACH_LANGUAGES, code) && !COACH_LANGUAGES[code as keyof typeof COACH_LANGUAGES].verified;
 
 export interface AppListing {
   id: string;
@@ -47,7 +51,7 @@ export function appListing(m: AppManifest, builtIn: boolean): AppListing {
     description: m.description,
     builtIn,
     soon: m.engine !== undefined && !ENGINES_READY.includes(m.engine),
-    languages: m.languages.map((code) => ({ code, name: LANGUAGE_NAMES[code] ?? code, soon: (PENDING_LANGUAGES as readonly string[]).includes(code) })),
+    languages: m.languages.map((code) => ({ code, name: LANGUAGE_NAMES[code] ?? code, soon: languagePending(code) })),
     permissions: m.permissions.map((id) => ({ id, ...PERMISSION_TEXT[id] })),
     price: m.price,
   };

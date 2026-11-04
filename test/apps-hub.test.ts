@@ -50,7 +50,7 @@ test("GET /apps lists the four built-ins with their permissions; an unknown id i
   assert.ok(body.apps.every((a) => a.builtIn && a.permissions.length > 0));
   assert.deepEqual(body.apps.find((a) => a.id === "ver")!.permissions.map((p) => p.label), ["Cámara", "Micrófono", "Ubicación", "Leer tu memoria", "Escribir en tu memoria"]);
   assert.deepEqual(body.apps.find((a) => a.id === "practicar")!.permissions.map((p) => p.id), ["microphone", "memory.write"]);
-  assert.equal(body.apps.find((a) => a.id === "idiomas")!.soon, true);
+  assert.equal(body.apps.find((a) => a.id === "idiomas")!.soon, false, "the coach runs (add-language-coach 2.1)");
 
   const page = await fetch(`${hub.base}/apps/dilo`);
   assert.equal(page.status, 200);

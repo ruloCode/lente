@@ -42,6 +42,7 @@ test("the table of decision 3: inputs and permissions of the three that run toda
   // «Idiomas» follows add-language-coach design decision 12.
   const idiomas = byId.get("idiomas")!;
   assert.deepEqual(idiomas.languages, ["es", "pt", "fr"]);
+  assert.match(idiomas.description, /portugués/, "Portuguese runs today (add-language-coach 2.1)");
   assert.deepEqual(idiomas.inputs, ["microphone", "camera", "room"]);
   assert.deepEqual(idiomas.permissions, ["camera", "microphone", "memory.read", "memory.write"]);
   assert.deepEqual(idiomas.price, { model: "free" });
