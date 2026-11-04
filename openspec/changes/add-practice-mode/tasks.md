@@ -15,9 +15,12 @@ Schedule (Bogotá, 2026-11-04; the closing plan is `openspec/changes/ship-hackat
 
 ## 2. Android: hearing notes (lane C)
 
-- [ ] 2.1 `core/Pitch.kt` (YIN, design decision 2) with JVM tests on synthetic tones: sine and 3-harmonic C3/A4/C6 within ±20 cents, silence → no pitch, white noise → no confident pitch (`pnpm android:test`)
-- [ ] 2.2 `core/NoteTracker.kt` with JVM tests: a decaying note → one event; repeated note with decay → two events; a one-frame octave glitch → no extra event; solfège names (`pnpm android:test`)
-- [ ] 2.3 `core/Lesson.kt`: the alignment and marks (design decision 4) with JVM tests: perfect scale, Fa→Sol substitution, a missed note, an extra note, octave-up playing counts right (`pnpm android:test`)
+- [x] 2.1 `core/Pitch.kt` (YIN, design decision 2) with JVM tests on synthetic tones: sine and 3-harmonic C3/A4/C6 within ±20 cents, silence → no pitch, white noise → no confident pitch (`pnpm android:test`)
+  - 2026-11-04: `PitchTest` (8 tests, `pnpm android:test`): sine and 3-harmonic C3/A4/C6 and the range ends C2/C7 within ±20 cents at confidence ≥ 0.8, A4 = 440 ± 1 Hz, a +30-cent tone reads +30 ± 5, silence and a tone under `MIN_RMS` give no pitch, white noise (5 seeds) no confident pitch. `rms` is the newest 32 ms hop, not the whole window, so a damper drop shows at once (found by the 2.2 damper test).
+- [x] 2.2 `core/NoteTracker.kt` with JVM tests: a decaying note → one event; repeated note with decay → two events; a one-frame octave glitch → no extra event; solfège names (`pnpm android:test`)
+  - 2026-11-04: `NoteTrackerTest` (11 tests): a decaying note → one event with an offset; Mi Mi with the first still ringing, cut by the damper, and after a gap → two events each, second onset within 160 ms of the strike; a held note → one; the scale from struck tones → its 8 notes; one- and two-frame octave glitches → no extra event, a real octave jump → a new note at its first frame; noise, silence, unconfident frames → none; solfège names, «Fa sostenido» for TalkBack, octave 4 for middle C.
+- [x] 2.3 `core/Lesson.kt`: the alignment and marks (design decision 4) with JVM tests: perfect scale, Fa→Sol substitution, a missed note, an extra note, octave-up playing counts right (`pnpm android:test`)
+  - 2026-11-04: `LessonTest` (12 tests): the three built-in lessons; perfect scale; Fa→Sol is the 4th wrong with Sol played, 7 right; a missed note; an extra note; an octave up counts right; Estrellita with a repeated note missing; the open (live) alignment leaves unreached notes out; an attempt ends on the last note or after 4 quiet s; the `POST /practice/attempt` body; lessons parsed from the hub's JSON.
 - [ ] 2.4 `platform/PitchListener.kt`: `AudioRecord` at 16 kHz mono (`MediaRecorder.AudioSource.MIC`), a background thread feeding the tracker, released when the Practice screen closes; logcat tag `LentePractice` with numbers only (design decision 7)
 
 ## 3. Android: the Practice screen (lane C)
