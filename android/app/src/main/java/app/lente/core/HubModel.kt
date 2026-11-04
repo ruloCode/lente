@@ -34,8 +34,12 @@ data class Status(
     val session: Session? = null,
     /** The media archive (add-media-archive 4.1): offered only to the hub's owner for now. */
     val media: MediaState = MediaState(),
+    /** «Sesión de invitado» (add-sight-mode): the hub keeps nothing while it is on. */
+    val guest: Boolean = false,
 ) {
     val recordOnly get() = assistMode == "record"
+    /** «Ver» (add-sight-mode): live reads describe for someone who cannot see; no Dilo cues. */
+    val sight get() = assistMode == "sight"
     val phoneIsDevice get() = clip && device == "phone"
     val clipIsDevice get() = clip && device == "clip"
 }
@@ -185,6 +189,7 @@ object HubJson {
             val sw = m.optJSONObject("switches")
             MediaState(m.optBoolean("offered"), sw?.optBoolean("audio", true) ?: true, sw?.optBoolean("photos", true) ?: true, m.optInt("retentionDays", 30), m.optBoolean("keepingAudio"), m.optBoolean("keepingPhotos"))
         } ?: MediaState(),
+        guest = o.optBoolean("guest"),
     )
 
     fun entry(o: JSONObject) = Entry(

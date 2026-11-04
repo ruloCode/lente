@@ -480,6 +480,7 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
         Group {
             SwitchRow("Solo grabar", s.recordOnly, { vm.setAssist(if (it) "record" else "assist") }, hint = "Sin sugerencias", tag = "set-record", leading = { RowGlyph(Glyph.Wave) })
             Hairline(); SwitchRow("Leer en voz alta", voice, vm::setReadAloud, hint = "Respuestas y resúmenes", tag = "set-voice", leading = { RowGlyph(Glyph.Speaker) })
+            Hairline(); SpeechRateRow(vm)
             Hairline(); SwitchRow("Todas las preguntas", s.everyQuestion, vm::everyQuestion, hint = "Solo para pruebas", tag = "set-all", leading = { RowGlyph(Glyph.Sparkle) })
         }
         // add-media-archive 4.1: what is kept besides the text, only where the hub offers it (its owner, for now).
@@ -505,6 +506,9 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
         Group { SetRow(Glyph.Link, "Hub", value = vm.hubAddress?.removePrefix("https://")?.removePrefix("http://")?.substringBefore('/')?.let { host -> if (host.endsWith(".modal.run")) "En la nube" else if (host.length > 16) host.take(15) + "…" else host } ?: "Sin hub") { open("hub") } }
         SectionTitle("Privacidad")
         Group {
+            // add-sight-mode: for someone trying Lente (the INCI session); the hub keeps nothing while it is on.
+            SwitchRow("Sesión de invitado", s.guest, vm::setGuest, hint = if (s.guest) app.lente.core.Sight.GUEST else "No guarda audio, fotos ni el día", tag = "set-guest", leading = { RowGlyph(Glyph.Person) })
+            Hairline()
             SetRow(Glyph.Trash, "Borrar toda la memoria", danger = true) { open("wipe") }
             if (signedIn) { Hairline(); AccountDataRows(vm, open) }
         }
@@ -524,6 +528,30 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
         }
     }
     sheet?.let { AjustesSheet(vm, hub, it) { sheet = null } }
+}
+
+/** «Velocidad de la voz» (add-sight-mode): Lente's own text-to-speech rate, 0.8× to 2.0×; a sample plays on release. */
+@Composable
+private fun SpeechRateRow(vm: LenteViewModel) {
+    val c = Lente.c
+    val rate by vm.speechRate.collectAsState()
+    Column(Modifier.fillMaxWidth().padding(horizontal = Lente.gutter, vertical = 10.dp).testTag("set-speech-rate")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RowGlyph(Glyph.Speaker)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Velocidad de la voz", style = Type.body, color = c.ink)
+                Text("Con TalkBack se usa la suya", style = Type.caption, color = c.muted)
+            }
+            Text(app.lente.core.SpeechVoice.rateLabel(rate), style = Type.callout, color = c.muted)
+        }
+        androidx.compose.material3.Slider(
+            value = rate, onValueChange = vm::setSpeechRate, valueRange = app.lente.core.SpeechVoice.MIN_RATE..app.lente.core.SpeechVoice.MAX_RATE,
+            onValueChangeFinished = { vm.speak("Así habla Lente.") },
+            colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = c.ink, activeTrackColor = c.ink, inactiveTrackColor = c.raised),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Velocidad de la voz" },
+        )
+    }
 }
 
 private val THEMES = listOf("system" to "Sistema", "light" to "Claro", "dark" to "Oscuro")

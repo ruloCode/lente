@@ -22,16 +22,23 @@ class RecordChoiceTest {
     }
 
     @Test fun modesOpenOnTheHubsAndOnlyChangeItWhenNeeded() {
-        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
-        assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Memory, recordOnly = false))
-        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Memory, recordOnly = true))
+        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Ver", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
+        assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Memory, assistMode = "assist"))
+        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Memory, assistMode = "record"))
         assertEquals(false, RecordChoice.Mode.Teleprompter.ready)
-        assertEquals(RecordChoice.Mode.Record, RecordChoice.modeNow(recordOnly = true))
-        assertEquals(RecordChoice.Mode.Assist, RecordChoice.modeNow(recordOnly = false))
-        assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Record, recordOnly = false))
-        assertEquals("assist", RecordChoice.assistToSet(RecordChoice.Mode.Assist, recordOnly = true))
-        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Assist, recordOnly = false))
-        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Teleprompter, recordOnly = true))
+        assertEquals(RecordChoice.Mode.Record, RecordChoice.modeNow(assistMode = "record"))
+        assertEquals(RecordChoice.Mode.Assist, RecordChoice.modeNow(assistMode = "assist"))
+        assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Record, assistMode = "assist"))
+        assertEquals("assist", RecordChoice.assistToSet(RecordChoice.Mode.Assist, assistMode = "record"))
+        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Assist, assistMode = "assist"))
+        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Teleprompter, assistMode = "record"))
+        // Ver (add-sight-mode): its own mode, and leaving it for Asistir sets assist again.
+        assertEquals("sight", RecordChoice.assistToSet(RecordChoice.Mode.Sight, assistMode = "assist"))
+        assertEquals("assist", RecordChoice.assistToSet(RecordChoice.Mode.Assist, assistMode = "sight"))
+        assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Record, assistMode = "sight"))
+        assertEquals(RecordChoice.Mode.Sight, RecordChoice.modeNow("sight"))
+        assertEquals("Empezar a ver", RecordChoice.startLabel(RecordChoice.Mode.Sight))
+        assertEquals(true, RecordChoice.usesCamera(RecordChoice.Mode.Sight, chosen = false))
     }
 
     @Test fun aMemoryAlwaysRecordsTheCameraAndTheSheetSaysWhatItWillDo() {

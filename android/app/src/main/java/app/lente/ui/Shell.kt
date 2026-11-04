@@ -121,13 +121,14 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     val live by vm.liveOpen.collectAsState()
     val camera by vm.cameraOpen.collectAsState()
     val voice by vm.voiceOpen.collectAsState()
+    val sight by vm.sightOpen.collectAsState()
     val toast by vm.toast.collectAsState()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val screen = stack.last()
     val s = hub.status
 
-    BackHandler(enabled = drawer.isOpen || live || camera || voice || stack.size > 1 || screen != Screen.Ahora) {
+    BackHandler(enabled = drawer.isOpen || live || camera || voice || sight || stack.size > 1 || screen != Screen.Ahora) {
         if (drawer.isOpen) scope.launch { drawer.close() } else if (voice) vm.closeVoice() else vm.back()
     }
 
@@ -140,7 +141,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     ModalNavigationDrawer(
         drawerState = drawer,
         scrimColor = c.scrim,
-        gesturesEnabled = !live && !camera && !voice,
+        gesturesEnabled = !live && !camera && !voice && !sight,
         drawerContent = {
             ltr {
                 ModalDrawerSheet(drawerContainerColor = c.bg, drawerShape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp), modifier = Modifier.width(312.dp)) {
@@ -194,6 +195,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
             }
             AnimatedVisibility(camera, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
                 Camera(vm, hub)
+            }
+            AnimatedVisibility(sight, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
+                SightScreen(vm, hub)
             }
             AnimatedVisibility(voice, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
                 VoiceScreen(vm)

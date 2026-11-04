@@ -40,7 +40,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -78,7 +80,8 @@ fun VoiceScreen(vm: LenteViewModel) {
             Spacer(Modifier.height(24.dp))
             StateOrb(view.phase)
             Spacer(Modifier.height(14.dp))
-            Text(VoiceEvents.label(view.phase), style = Type.headline, color = c.ink, modifier = Modifier.testTag("voice-state"))
+            // The state is read out politely when it changes (add-sight-mode: usable with TalkBack).
+            Text(VoiceEvents.label(view.phase), style = Type.headline, color = c.ink, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("voice-state"))
             Spacer(Modifier.height(28.dp))
             // What the wearer is saying now, or what they said last, in a white card.
             val said = view.partial.ifBlank { turn?.heard.orEmpty() }

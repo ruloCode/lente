@@ -23,6 +23,10 @@ class Prefs(context: Context) {
     var narrateLive: Boolean
         get() = sp.getBoolean("narrateLive", false)
         set(v) = sp.edit().putBoolean("narrateLive", v).apply()
+    /** Lente's own text-to-speech rate (add-sight-mode), 0.8–2.0; TalkBack keeps its own. */
+    var speechRate: Float
+        get() = app.lente.core.SpeechVoice.rate(sp.getFloat("speechRate", app.lente.core.SpeechVoice.DEFAULT_RATE))
+        set(v) = sp.edit().putFloat("speechRate", app.lente.core.SpeechVoice.rate(v)).apply()
     /** "system", "light" or "dark": the app's appearance, chosen in Ajustes. */
     var theme: String
         get() = sp.getString("theme", "system") ?: "system"

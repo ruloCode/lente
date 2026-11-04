@@ -90,8 +90,15 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
     if (chatOpen) ChatSheet(vm, hub.status.clip, talk) { chatOpen = false }
     if (sheet || asked != null) RecordSheet(vm, hub, initialProject = asked?.projectId ?: vm.chatProject.value, initialCamera = asked?.camera ?: false, onDismiss = close) { mode, project, camera, title, device ->
         close(); tab = HomeTab.Inicio
-        RecordChoice.assistToSet(mode, s.recordOnly)?.let(vm::setAssist)
-        record(project, camera, title, device == RecordChoice.Device.Phone)
+        if (mode == RecordChoice.Mode.Sight) {
+            // Ver (add-sight-mode): the hub turns the camera and its live reads on; the phone streams only when it is the eyes.
+            val phone = device == RecordChoice.Device.Phone
+            if (phone && !s.phoneIsDevice) usePhone()
+            vm.openSight(phone)
+        } else {
+            RecordChoice.assistToSet(mode, s.assistMode)?.let(vm::setAssist)
+            record(project, camera, title, device == RecordChoice.Device.Phone)
+        }
     }
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -145,9 +152,11 @@ private fun Inicio(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("ahora"), state = list, contentPadding = PaddingValues(start = Lente.gutter, end = Lente.gutter, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // Without a clip the device pill already says so and opens Dispositivos, where "Usar el teléfono" lives.
         Copy.note(s)?.takeUnless { it == Copy.WAITING_FOR_CLIP }?.let { note -> item("note") { Notice(note, tag = "status-note") } }
+        // «Sesión de invitado» (add-sight-mode): said plainly while the hub keeps nothing.
+        if (s.guest) item("guest") { Notice(app.lente.core.Sight.GUEST, tag = "guest-note") }
         (capture as? Capture.State.Stopped)?.let { stopped -> item("phone-note") { Notice(stopped.why, action = if (stopped.resumable) "Reanudar" else null, tag = "phone-note", onAction = usePhone) } }
         val card = hub.card
-        if (card != null && !s.recordOnly) item("cue") { DiloCard(card) }
+        if (card != null && !s.recordOnly && !s.sight) item("cue") { DiloCard(card) }
         item("hello") { Welcome(s.names.firstOrNull()) }
         // A recording that just ended: its notes being written, then ready (add-home-dock), above the projects.
         items(processing, key = { "processing-${it.meetingId}" }) { card ->
@@ -196,7 +205,7 @@ private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: Strin
     val projects by vm.projects.collectAsState()
     // The clip counts as available only when it is the device that is connected, not the phone.
     val clipOn = s.clipIsDevice
-    var mode by rememberSaveable { mutableStateOf(RecordChoice.modeNow(s.recordOnly)) }
+    var mode by rememberSaveable { mutableStateOf(RecordChoice.modeNow(s.assistMode)) }
     var device by rememberSaveable { mutableStateOf(RecordChoice.deviceNow(clipOn)) }
     var cameraChosen by rememberSaveable(initialCamera) { mutableStateOf(initialCamera) }
     var project by rememberSaveable(initialProject) { mutableStateOf(initialProject) }
@@ -208,7 +217,7 @@ private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: Strin
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().imePadding().padding(horizontal = Lente.gutter).padding(bottom = 20.dp).testTag("record-sheet"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Grabar", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
             SheetLabel("Qué hace Lente")
-            // Four tiles in two rows: the chosen one outlined in ink with an ink glyph tile.
+            // The tiles in rows of two: the chosen one outlined in ink with an ink glyph tile.
             RecordChoice.Mode.entries.chunked(2).forEach { pair ->
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     pair.forEach { m -> ModeTile(m, selected = mode == m, Modifier.weight(1f)) { if (m.ready) mode = m } }
@@ -231,7 +240,7 @@ private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: Strin
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Cámara", style = Type.body, color = c.ink)
-                        Text(if (mode.camera) "Un recuerdo siempre la usa" else if (camera) "Lente describe lo que ve mientras graba" else "Solo el micrófono", style = Type.caption, color = c.muted)
+                        Text(if (mode == RecordChoice.Mode.Sight) "Ver siempre la usa" else if (mode.camera) "Un recuerdo siempre la usa" else if (camera) "Lente describe lo que ve mientras graba" else "Solo el micrófono", style = Type.caption, color = c.muted)
                     }
                     androidx.compose.material3.Switch(
                         checked = camera, onCheckedChange = { cameraChosen = it }, enabled = !mode.camera,
@@ -250,7 +259,7 @@ private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: Strin
             ) {
                 Dot(c.onAccent, 10.dp)
                 Spacer(Modifier.width(10.dp))
-                Text("Empezar a grabar", style = Type.headline, color = c.onAccent)
+                Text(RecordChoice.startLabel(mode), style = Type.headline, color = c.onAccent)
             }
             // Title and project, folded: most recordings need neither.
             SheetCard {
@@ -318,7 +327,7 @@ private fun DeviceTile(d: RecordChoice.Device, hint: String, selected: Boolean, 
     }
 }
 
-private fun modeGlyph(m: RecordChoice.Mode): Glyph = when (m) { RecordChoice.Mode.Assist -> Glyph.Sparkle; RecordChoice.Mode.Memory -> Glyph.Camera; RecordChoice.Mode.Record -> Glyph.Wave; RecordChoice.Mode.Teleprompter -> Glyph.Doc }
+private fun modeGlyph(m: RecordChoice.Mode): Glyph = when (m) { RecordChoice.Mode.Assist -> Glyph.Sparkle; RecordChoice.Mode.Memory -> Glyph.Camera; RecordChoice.Mode.Record -> Glyph.Wave; RecordChoice.Mode.Sight -> Glyph.Eye; RecordChoice.Mode.Teleprompter -> Glyph.Doc }
 
 @Composable
 private fun SheetLabel(text: String) = Text(text, style = Type.caption, color = Lente.c.muted, modifier = Modifier.padding(start = 4.dp, top = 6.dp))

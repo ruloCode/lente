@@ -26,6 +26,8 @@ import app.lente.core.HubState
 import app.lente.core.MeetingDetail
 import app.lente.core.Projects
 import app.lente.core.SearchResult
+import app.lente.core.Sight
+import app.lente.core.SightView
 import app.lente.core.TraceStep
 import app.lente.core.Voice
 import app.lente.core.RecordSheetRequest
@@ -125,7 +127,9 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val toast = MutableStateFlow<String?>(null)
     val busy = MutableStateFlow<Set<String>>(emptySet())
 
-    private val speech = Speech(app) { text -> post("/narrated", JSONObject().put("text", text)) }
+    /** Lente's own voice rate, set in Ajustes (add-sight-mode). */
+    val speechRate = MutableStateFlow(prefs.speechRate)
+    private val speech = Speech(app, { speechRate.value }) { text -> post("/narrated", JSONObject().put("text", text)) }
     private val vibrator = app.getSystemService(Vibrator::class.java)
 
     val hubAddress get() = client?.base ?: prefs.hub
@@ -199,11 +203,14 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (event is HubEvent.StatusEvent && since != null && since != before.status.session?.startedAt && before.statusAt != 0L && after.status.session?.running == true && prefs.collapsedSession != since) liveOpen.value = true
         // The phone was the device and the hub now has the clip: release the microphone.
         if (event is HubEvent.StatusEvent && after.status.clipIsDevice && Capture.state.value is Capture.State.On) CaptureService.stop(getApplication())
+        // Ver open (add-sight-mode): its own rules speak the look's answers and the live reads.
+        val sightSpeaks = sightOpen.value && event is HubEvent.Day && (event.entry.kind == "live" || Sight.isLookAnswer(event.entry))
+        if (sightSpeaks) onSight((event as HubEvent.Day).entry)
         for (effect in effectsOf(event)) when (effect) {
             is Effect.Ack -> post("/seen", JSONObject().put("id", effect.id))
-            Effect.Vibrate -> if (!after.status.recordOnly) vibrator?.vibrate(VibrationEffect.createOneShot(VIBRATE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
+            Effect.Vibrate -> if (!after.status.recordOnly && !sightSpeaks) vibrator?.vibrate(VibrationEffect.createOneShot(VIBRATE_MS, VibrationEffect.DEFAULT_AMPLITUDE))
             // Live descriptions (low priority) follow Narrar en voz alta; everything else follows Voz.
-            is Effect.Speak -> if (if (effect.priority == Voice.Priority.Low) narrateLive.value else readAloud.value) speech.say(effect.text, effect.priority)
+            is Effect.Speak -> if (!sightSpeaks && if (effect.priority == Voice.Priority.Low) narrateLive.value else readAloud.value) speech.say(effect.text, effect.priority)
         }
         if (event is HubEvent.Day && event.entry.kind == "cue" && !event.entry.isPhoto) _screen.value = listOf(Screen.Ahora)
     }
@@ -225,6 +232,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Back: closes En vivo, then a meeting, then returns to Ahora. False when there is nowhere to go. */
     fun back(): Boolean {
+        if (sightOpen.value) { closeSight(); return true }
         if (cameraOpen.value) { cameraOpen.value = false; return true }
         if (liveOpen.value) { closeLive(); return true }
         val s = _screen.value
@@ -330,6 +338,71 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         prefs.narrateLive = on
         if (!on) speech.stop()
     }
+
+    fun setSpeechRate(rate: Float) {
+        prefs.speechRate = rate
+        speechRate.value = prefs.speechRate
+    }
+
+    // --- Ver (add-sight-mode) -----------------------------------------------------------------
+
+    /** The Ver screen is open over everything but the voice screen. */
+    val sightOpen = MutableStateFlow(false)
+    val sight = MutableStateFlow(SightView())
+    /** The hub's assist mode before Ver (assist or record), set again on leaving. */
+    private var modeBeforeSight = "assist"
+    private var lookTimeout: Job? = null
+
+    /** Opens Ver: the hub's sight mode (camera and live reads on, no Dilo cues), its narration on. */
+    fun openSight(phone: Boolean = false) {
+        if (client == null) return say("No hay hub conectado: revisa Ajustes.")
+        _hub.value.status.assistMode.takeIf { it == "assist" || it == "record" }?.let { modeBeforeSight = it }
+        // Ver narrates on its own switch, so Narrar outside it stays as the wearer left it.
+        sight.value = SightView(narrating = true)
+        sightOpen.value = true
+        post(if (phone) "/device/prefer/phone" else "/device/prefer/any")
+        post("/assist-mode/sight") { failed(it, "abrir Ver") }
+    }
+
+    /** Salir: back to the mode Ver started from (Asistir or Solo grabar). */
+    fun closeSight() {
+        sightOpen.value = false
+        lookTimeout?.cancel()
+        speech.stop()
+        post("/assist-mode/$modeBeforeSight") { failed(it, "salir de Ver") }
+    }
+
+    /** One tap: a fresh look, answered with a VER cue. */
+    fun sightLook() {
+        sight.value = Sight.looking(sight.value)
+        lookTimeout?.cancel()
+        lookTimeout = viewModelScope.launch { delay(Sight.LOOK_TIMEOUT_MS); sight.value = Sight.lookEnded(sight.value) }
+        post("/look") { if (!it.ok) { lookTimeout?.cancel(); sight.value = Sight.lookEnded(sight.value); failed(it, "mirar") } }
+    }
+
+    /** Two-finger tap: pause or resume the live reads' narration (a look is still answered out loud). */
+    fun sightNarration() {
+        val on = !sight.value.narrating
+        sight.value = Sight.narration(sight.value, on)
+        if (!on) speech.stop()
+    }
+
+    /** Says the latest description again, in full. */
+    fun sightRepeat() {
+        val text = sight.value.text
+        if (text.isNotBlank()) speech.sayAll(Sight.chunks(text), Voice.Priority.High)
+    }
+
+    private fun onSight(e: app.lente.core.Entry) {
+        val (next, say) = Sight.reduce(sight.value, e)
+        if (Sight.isLookAnswer(e)) lookTimeout?.cancel()
+        sight.value = next
+        // Hablar con Lente, opened from Ver, has the floor: Ver shows what arrives and keeps quiet.
+        if (!voiceOpen.value) say?.let { speech.sayAll(it.parts, if (it.urgent) Voice.Priority.High else Voice.Priority.Low) }
+    }
+
+    /** «Sesión de invitado» (add-sight-mode): the hub keeps no media, day entries or memory while on. */
+    fun setGuest(on: Boolean) = post(if (on) "/guest/on" else "/guest/off") { failed(it, "cambiar la sesión de invitado") }
 
     fun closeLive() {
         liveOpen.value = false

@@ -31,20 +31,24 @@ Deadline: the INCI session needs groups 1–4 on the owner's Samsung by **2026-1
 
 ## 4. Android
 
-- [ ] 4.1 «Ver» in the recording options and `ui/Sight.kt` per design decision 4 (tap: look, long press: voice, two-finger tap: pause narration; TalkBack custom actions; live-region state); JVM tests for the state reducer (`pnpm android:test`)
-- [ ] 4.2 `platform/Speech.kt` per design decision 5: TalkBack routing, locale preference `es-CO` → `es-US` → `es-ES`, `Prefs.speechRate` with a slider in Ajustes (0.8–2.0); every control on the Ver and voice screens has a content description; `pnpm android:test` and `pnpm android:apk`
+- [x] 4.1 «Ver» in the recording options and `ui/Sight.kt` per design decision 4 (tap: look, long press: voice, two-finger tap: pause narration; TalkBack custom actions; live-region state); JVM tests for the state reducer (`pnpm android:test`)
+  - 2026-11-04: «Ver» tile and «Empezar a ver» in the recording options; `ui/Sight.kt` (white on black, state in yellow, text that shrinks and scrolls, screen kept on; tap = look, long press = voice, two-finger tap = pause narration; one TalkBack node with actions Mirar, Hablar con Lente, Pausar/Seguir narrando, Repetir, Salir; polite live region); pure `core/Sight.kt` with 7 JVM tests. Ver keeps its own narration switch instead of flipping «Narrar». Salir returns to the mode the hub had before (assist or record). 130 of 130 JVM tests.
+- [x] 4.2 `platform/Speech.kt` per design decision 5: TalkBack routing, locale preference `es-CO` → `es-US` → `es-ES`, `Prefs.speechRate` with a slider in Ajustes (0.8–2.0); every control on the Ver and voice screens has a content description; `pnpm android:test` and `pnpm android:apk`
+  - 2026-11-04: `platform/Speech.kt`: with TalkBack on, text is announced through the accessibility service and the app's own voice stays silent (the hub still gets `/narrated`); otherwise `core/SpeechVoice.kt` picks es-CO → es-US → es-ES at the speed from Ajustes («Velocidad de la voz», 0.8–2.0); long text is queued in pieces. APK 4.4 MB.
 - [ ] 4.3 On the Samsung with the clip on the glasses: Ver narrates, a tap looks, a long press opens voice and «¿qué tengo en la mano?» is answered out loud; then the same with TalkBack on (no double voice, actions reachable from the TalkBack menu); screenshots of each state [phone] [hw]
 - [ ] 4.4 «Sesión de invitado» in Ajustes, with its status line; checked on the phone: after ten minutes of Ver as guest, the day shows no new entries and Recuerdos no new photos [phone]
 
 ## 5. How good is it
 
-- [ ] 5.1 `scripts/eval/sight-set.ts` per design decision 7 (guided, owner scores y/n, no images saved); unit test for the scoring summary (`pnpm test`)
+- [x] 5.1 `scripts/eval/sight-set.ts` per design decision 7 (guided, owner scores y/n, no images saved); unit test for the scoring summary (`pnpm test`)
+  - 2026-11-04: automatic instead of y/n by hand: `src/sight-eval.ts` holds the set and a scorer (a banknote is right with its value in digits or words and wrong if another value appears; texts and objects by keyword, accents ignored), 4 tests; `scripts/eval/sight-set.ts` taps the Ver screen over adb, reads the answer off the screen with uiautomator, times tap → answer, and lets the owner override each score.
 - [ ] 5.2 Run the set with the clip on the glasses in the owner's room light; record accuracy per kind and time p50 in `docs/benchmarks.md`; anything under 4 of 6 for banknotes, or a page not read, is left out of the video [hw] [human] [key:MODEL_API_KEY]
 - [ ] 5.3 Sight bench (1.1) again with the sight prompt and with looks; record against the baseline from 1.2 [hw] [key:MODEL_API_KEY]
 
 ## 6. Docs
 
-- [ ] 6.1 `docs/kb/decisions.md`: «2026-11-04 · Ver describes and never guides movement» (with the rejected alternatives: obstacle warnings, face recognition) and «Sight is an assist mode, not a pipeline»
+- [x] 6.1 `docs/kb/decisions.md`: «2026-11-04 · Ver describes and never guides movement» (with the rejected alternatives: obstacle warnings, face recognition) and «Sight is an assist mode, not a pipeline»
+  - 2026-11-04: both entries written, with the measured baseline behind the "late is dropped" rule.
 - [ ] 6.2 README: a «Ver» bullet in What runs today, its measured numbers in the Measured table (only from 1.2, 3.3, 5.2, 5.3), the no-guidance and no-identity rules under Privacy, and the day's row in What was built
 
 ## 7. The INCI session

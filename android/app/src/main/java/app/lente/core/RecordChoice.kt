@@ -23,14 +23,15 @@ object RecordChoice {
 
     /**
      * What Lente does while it records (add-home-dock): assist with the line to say; keep a memory with the
-     * camera and the microphone to relive it later; only keep the day as text; or the teleprompter, planned
-     * and shown as Pronto until it is built. `cues` is whether Lente suggests lines; `camera` whether the
+     * camera and the microphone to relive it later; only keep the day as text; describe out loud what is in
+     * front of the wearer (Ver, add-sight-mode); or the teleprompter, planned and shown as Pronto until it is built. `cues` is whether Lente suggests lines; `camera` whether the
      * mode always records with the camera.
      */
     enum class Mode(val key: String, val label: String, val hint: String, val ready: Boolean, val cues: Boolean, val camera: Boolean) {
         Assist("assist", "Asistir", "Te dice qué decir cuando te preguntan", true, cues = true, camera = false),
         Memory("memory", "Recuerdo", "Cámara y micrófono, para revivirlo después", true, cues = false, camera = true),
         Record("record", "Solo grabar", "Solo lo que se dice, como texto", true, cues = false, camera = false),
+        Sight("sight", "Ver", "Describe en voz alta lo que tienes al frente", true, cues = false, camera = true),
         Teleprompter("teleprompter", "Teleprompter", "Tu guion en el teléfono", false, cues = false, camera = false),
     }
 
@@ -53,16 +54,22 @@ object RecordChoice {
     fun summary(mode: Mode, device: Device, camera: Boolean): String =
         "${mode.label} · ${device.label} · " + if (usesCamera(mode, camera)) "micrófono y cámara" else "solo micrófono"
 
-    /** The mode the sheet opens on: the hub's current one. */
-    fun modeNow(recordOnly: Boolean): Mode = if (recordOnly) Mode.Record else Mode.Assist
+    /** The mode the sheet opens on: the hub's current one (`assistMode`: assist, record or sight). */
+    fun modeNow(assistMode: String): Mode = when (assistMode) { "record" -> Mode.Record; "sight" -> Mode.Sight; else -> Mode.Assist }
 
-    /** The hub's assist mode to set before recording, or null when it already matches (or the mode is not built). */
-    fun assistToSet(chosen: Mode, recordOnly: Boolean): String? = when {
-        !chosen.ready -> null
-        chosen.cues == !recordOnly -> null
-        chosen.cues -> "assist"
-        else -> "record"
+    /** The hub's assist mode to set before recording, or null when it already matches (or the mode is not built). Ver sets its own. */
+    fun assistToSet(chosen: Mode, assistMode: String): String? {
+        val want = when {
+            !chosen.ready -> return null
+            chosen == Mode.Sight -> "sight"
+            chosen.cues -> "assist"
+            else -> "record"
+        }
+        return want.takeIf { it != assistMode }
     }
+
+    /** The start button's words. */
+    fun startLabel(mode: Mode): String = if (mode == Mode.Sight) "Empezar a ver" else "Empezar a grabar"
 
     /** The chat chip: the whole memory, or the chosen project's name. */
     fun scopeLabel(projectId: String?, projects: List<Projects.Summary>): String =
