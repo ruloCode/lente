@@ -11,11 +11,16 @@ Lanes and their files are in `docs/handoff-closing.md`. `[orch]` = the orchestra
 
 ## 0. Owner actions (5–10 minutes total, before 12:15)
 
-- [ ] 0.1 Google Cloud → APIs & Services → OAuth consent screen → **Publish app** (from "Testing" to "In production"). Basic scopes need no verification. Without this, no judge can sign in [owner]
-- [ ] 0.2 Google Cloud → Credentials → the Android OAuth client lists the SHA-1 of the debug key that signs the release APK (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA1`); add it if missing [owner]
-- [ ] 0.3 Supabase → Authentication → URL configuration: the Modal hub's `/auth/callback` is listed. Google provider on. No change expected [owner]
-- [ ] 0.4 Confirm the Meta USD 150 credit is claimed (deadline today 21:00 ET) and a spend limit is set in Meta's Billing [owner]
-- [ ] 0.5 Give the orchestrator the go to deploy to Modal and apply additive Supabase migrations today without asking again (one line in the orchestrator's chat) [owner]
+- [x] 0.1 Google Cloud → APIs & Services → OAuth consent screen → **Publish app** (from "Testing" to "In production"). Basic scopes need no verification. Without this, no judge can sign in [owner]
+  - 2026-11-04 10:55: Branding got the home page, privacy and terms links on rulocode.github.io/lente/ and that authorized domain; the owner confirmed «Publish app»; status «In production».
+- [x] 0.2 Google Cloud → Credentials → the Android OAuth client lists the SHA-1 of the debug key that signs the release APK (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA1`); add it if missing [owner]
+  - 2026-11-04 10:45: the «Lente Android» client lists package app.lente and SHA-1 FE:B6:D8:…:C9:A4, the debug key's; no change.
+- [x] 0.3 Supabase → Authentication → URL configuration: the Modal hub's `/auth/callback` is listed. Google provider on. No change expected [owner]
+  - 2026-11-04 11:00: Redirect URLs list the Modal hub's /auth/callback (plus localhost); site URL is the Modal hub; no change.
+- [x] 0.4 Confirm the Meta USD 150 credit is claimed (deadline today 21:00 ET) and a spend limit is set in Meta's Billing [owner]
+  - 2026-11-04 10:50: claimed; US$ 98.26 of free credit left and no card on file (calls stop at zero); a US$ 50 monthly email alert set. The global cap went to US$ 6.00 for that (design decision 2).
+- [x] 0.5 Give the orchestrator the go to deploy to Modal and apply additive Supabase migrations today without asking again (one line in the orchestrator's chat) [owner]
+  - 2026-11-04 10:50: the owner gave the go («déjalo todo listo para los jurados»).
 
 ## 1. Ver on Android, finished (L1, 10:30–12:00)
 
@@ -99,7 +104,8 @@ Lanes and their files are in `docs/handoff-closing.md`. `[orch]` = the orchestra
 
 ## 7. Checkpoints (orchestrator)
 
-- [ ] 7.1 **12:15:** merge the lanes that are green, in this order: L6 (docs only), L1, L3, L2. After each: `pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm smoke`, `pnpm android:test`, `openspec validate --strict` for every open change. Apply migrations 2.2/2.3 through the Supabase MCP after `list_migrations` shows nothing pending but them. Deploy (`pnpm deploy:hub` from a clean `main`), then check:
+- [x] 7.1 **12:15:** merge the lanes that are green, in this order: L6 (docs only), L1, L3, L2. After each: `pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm smoke`, `pnpm android:test`, `openspec validate --strict` for every open change. Apply migrations 2.2/2.3 through the Supabase MCP after `list_migrations` shows nothing pending but them. Deploy (`pnpm deploy:hub` from a clean `main`), then check:
+  - 2026-11-04 11:05 (early): merged L6, L3, L2, L1 (408cfb4), gates green after each (796 tests, smoke, android:test, every open change valid); applied 20261104000000_usage_daily and 20261104010000_terms through the MCP after list_migrations matched; deployed; /health ok, /terminos and /privacidad 200, the clip reconnected (hello v2.0), the owner's web app loads with no 428, `[spend] caps US$ 1.00 per account, US$ 6.00 in all`; the capped non-owner is covered by test/judge-access-hub.test.ts on the stub.
   - `/health` ok;
   - the owner's account still works;
   - the clip reconnects;
