@@ -171,7 +171,8 @@ class PracticeModel(
         scope.launch {
             val sent = SystemClock.elapsedRealtime()
             val answer = withTimeoutOrNull(COACH_TIMEOUT_MS) { postAttempt(at.body()) }?.let(Lessons::coach)
-            if (answer != null) PracticeLog.coach(SystemClock.elapsedRealtime() - sent)
+            // Only a real line is a coach time: an empty one (the coach failed) would make the bench look fast or slow.
+            if (answer != null && answer.line.isNotEmpty()) PracticeLog.coach(SystemClock.elapsedRealtime() - sent)
             // A new attempt may have started while the hub answered: then this line is stale.
             if (attempt != null) return@launch
             when {
