@@ -41,15 +41,22 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.lente.LenteViewModel
 import app.lente.Screen
 import app.lente.core.AskSource
+import app.lente.core.Coach
+import app.lente.core.Pronounce
 import app.lente.core.VoiceEvents
 import app.lente.core.VoicePhase
 
@@ -57,6 +64,8 @@ import app.lente.core.VoicePhase
  * Hablar con Lente (add-voice-mode): one large state (escuchando, pensando, hablando), the words the
  * wearer is saying, Lente's reply as it is spoken, and chips for the tools it used and its sources.
  * Hands-free by default; hold-to-talk is one tap away. Pausar and Terminar at the bottom.
+ * With the coach on (add-language-coach) it is «Idiomas · Portugués»: the latest phrase to say large,
+ * its Spanish meaning under it, «Más despacio» and «Repetir», and a surface whose tap names what is in view.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -65,24 +74,32 @@ fun VoiceScreen(vm: LenteViewModel) {
     val view by vm.voice.collectAsState()
     val handsFree by vm.voiceHandsFree.collectAsState()
     val uri = LocalUriHandler.current
+    val coach by vm.coach.collectAsState()
+    val looking by vm.coachLooking.collectAsState()
+    val note by vm.coachNote.collectAsState()
     val turn = view.current
     Column(Modifier.fillMaxSize().background(c.bg).statusBarsPadding().navigationBarsPadding().testTag("voice")) {
         // Header: close on the left, a small centred title with the source under it, an empty slot on the right.
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             PlainIcon(Glyph.Close, "Terminar", Modifier.testTag("voice-close")) { vm.closeVoice() }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Hablar con Lente", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink)
+                Text(coach?.let(Coach::title) ?: "Hablar con Lente", style = Type.headline.copy(fontWeight = FontWeight.Normal), color = c.ink)
                 VoiceEvents.sourceLabel(view.source).takeIf { it.isNotEmpty() }?.let { Text(it, style = Type.caption, color = c.muted, modifier = Modifier.testTag("voice-source")) }
             }
             Spacer(Modifier.size(44.dp))
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Lente.gutter), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(24.dp))
-            StateOrb(view.phase)
+            Spacer(Modifier.height(if (coach != null) 12.dp else 24.dp))
+            StateOrb(view.phase, if (coach != null) 0.6f else 1f)
             Spacer(Modifier.height(14.dp))
             // The state is read out politely when it changes (add-sight-mode: usable with TalkBack).
             Text(VoiceEvents.label(view.phase), style = Type.headline, color = c.ink, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("voice-state"))
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(if (coach != null) 16.dp else 28.dp))
+            coach?.let { lang ->
+                view.pronounce?.let { PronounceCard(it, lang, note, vm); Spacer(Modifier.height(10.dp)) }
+                LookSurface(looking, vm)
+                Spacer(Modifier.height(10.dp))
+            }
             // What the wearer is saying now, or what they said last, in a white card.
             val said = view.partial.ifBlank { turn?.heard.orEmpty() }
             if (said.isNotBlank()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surface).padding(16.dp)) {
@@ -139,12 +156,59 @@ private fun Chip(glyph: Glyph, label: String, tag: String, onClick: (() -> Unit)
     }
 }
 
+/** The coach's phrase: large, its Spanish meaning under it, and the two ways to hear it again. */
+@Composable
+private fun PronounceCard(p: Pronounce, lang: Coach.Language, note: String?, vm: LenteViewModel) {
+    val c = Lente.c
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(c.surface).padding(18.dp).testTag("coach-phrase")) {
+        Text(lang.name, style = Type.caption, color = c.muted)
+        // Read out politely when a new phrase arrives, with its meaning, for TalkBack.
+        Text(
+            p.text, style = Type.large.copy(fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.SemiBold), color = c.ink,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp).testTag("coach-phrase-text").semantics {
+                contentDescription = Coach.phraseDescription(p, lang)
+                liveRegion = LiveRegionMode.Polite
+            },
+        )
+        if (p.meaning.isNotBlank()) Text(p.meaning, style = Type.title.copy(fontWeight = FontWeight.Normal), color = c.muted, modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("coach-meaning"))
+        note?.let { Text(it, style = Type.callout, color = c.muted, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("coach-note")) }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PairButton(Coach.SLOWER, Glyph.Speaker, primary = false, Modifier.weight(1f).testTag("coach-slower"), description = Coach.slowerDescription(p), raised = true) { vm.coachRepeat(slow = true) }
+            PairButton(Coach.REPEAT, Glyph.Retry, primary = true, Modifier.weight(1f).testTag("coach-repeat"), description = Coach.repeatDescription(p)) { vm.coachRepeat(slow = false) }
+        }
+    }
+}
+
+/** Ver's surface in the coach: a tap asks Lente to name, in the target language, what the camera sees. */
+@Composable
+private fun LookSurface(looking: Boolean, vm: LenteViewModel) {
+    val c = Lente.c
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier.fillMaxWidth().height(76.dp).clip(shape).border(1.5.dp, c.ink, shape).clickable(role = Role.Button, onClick = vm::coachLook).padding(horizontal = 18.dp).testTag("coach-look")
+            .clearAndSetSemantics {
+                contentDescription = if (looking) Coach.LOOKING else Coach.LOOK_HINT
+                role = Role.Button
+                onClick(label = Coach.LOOK) { vm.coachLook(); true }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Glyph.Camera, c.ink, size = 26.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(if (looking) Coach.LOOKING else Coach.LOOK, style = Type.headline, color = c.ink)
+            Text(Coach.LOOK_LINE, style = Type.caption, color = c.muted)
+        }
+    }
+}
+
 /** One of the two equal buttons at the bottom: white for the secondary action, ink for the final one. */
 @Composable
-private fun PairButton(label: String, glyph: Glyph, primary: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun PairButton(label: String, glyph: Glyph, primary: Boolean, modifier: Modifier, description: String = label, raised: Boolean = false, onClick: () -> Unit) {
     val c = Lente.c
     Row(
-        modifier.height(52.dp).clip(RoundedCornerShape(12.dp)).background(if (primary) c.ink else c.surface).clickable(onClick = onClick).semantics { contentDescription = label },
+        modifier.height(52.dp).clip(RoundedCornerShape(12.dp)).background(if (primary) c.ink else if (raised) c.raised else c.surface).clickable(onClick = onClick).semantics { contentDescription = description },
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(glyph, if (primary) c.bg else c.ink, size = 18.dp)
@@ -155,7 +219,7 @@ private fun PairButton(label: String, glyph: Glyph, primary: Boolean, modifier: 
 
 /** The large state: breathing while it listens, pulsing while it thinks, swelling while it speaks. */
 @Composable
-private fun StateOrb(phase: VoicePhase) {
+private fun StateOrb(phase: VoicePhase, size: Float = 1f) {
     val c = Lente.c
     val t = rememberInfiniteTransition(label = "orb")
     val period = when (phase) { VoicePhase.Thinking -> 520; VoicePhase.Speaking -> 360; else -> 1600 }
@@ -164,10 +228,10 @@ private fun StateOrb(phase: VoicePhase) {
     // Monochrome: ink while Lente thinks or speaks, a quiet grey while it listens or waits.
     val active = phase == VoicePhase.Speaking || phase == VoicePhase.Thinking
     val fill = if (active) c.ink else c.surface
-    Box(Modifier.size(180.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(180.dp).scale(if (still) 1f else pulse * 1.04f).alpha(0.35f).clip(CircleShape).background(fill))
-        Box(Modifier.size(132.dp).scale(if (still) 1f else pulse).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
-            Icon(when (phase) { VoicePhase.Speaking -> Glyph.Speaker; VoicePhase.Thinking -> Glyph.Sparkle; VoicePhase.Paused -> Glyph.Pause; else -> Glyph.Mic }, if (active) c.bg else c.ink, size = 44.dp)
+    Box(Modifier.size(180.dp * size), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(180.dp * size).scale(if (still) 1f else pulse * 1.04f).alpha(0.35f).clip(CircleShape).background(fill))
+        Box(Modifier.size(132.dp * size).scale(if (still) 1f else pulse).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+            Icon(when (phase) { VoicePhase.Speaking -> Glyph.Speaker; VoicePhase.Thinking -> Glyph.Sparkle; VoicePhase.Paused -> Glyph.Pause; else -> Glyph.Mic }, if (active) c.bg else c.ink, size = 44.dp * size)
         }
     }
 }

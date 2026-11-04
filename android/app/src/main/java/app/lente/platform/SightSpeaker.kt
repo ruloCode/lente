@@ -10,6 +10,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import app.lente.capture.Capture
+import app.lente.core.Coach
 import app.lente.core.LineKind
 import app.lente.core.SpeechQueue
 import app.lente.core.SpeechVoice
@@ -35,13 +36,15 @@ import kotlin.coroutines.resume
  * (`POST /tts`, voice `sight`) when it answers within [SpeechQueue.TTS_WAIT_MS], else the phone's own
  * voice, a female Spanish one when the engine has it. With TalkBack on the line is announced through
  * the accessibility service instead. Every line goes to `narrated` first, the hub's echo guard.
- * Called on the main thread.
+ * The coach (add-language-coach) also speaks through it: a line in a target language asks the hub for
+ * that language's voice, falls back to the phone's voice in the language, and with neither stays text
+ * ([missingVoice]). Called on the main thread.
  */
 class SightSpeaker(
     context: Context,
     private val scope: CoroutineScope,
-    /** The hub's audio for a line: (status, bytes); 404 means the hub has no voice of its own. */
-    private val fetch: suspend (String) -> Pair<Int, ByteArray?>,
+    /** The hub's audio for a line in its language (null: Spanish): (status, bytes); 404 means the hub has no voice of its own. */
+    private val fetch: suspend (String, String?) -> Pair<Int, ByteArray?>,
     private val rate: () -> Float,
     private val narrated: (String) -> Unit,
     private val screenReader: () -> Boolean,
@@ -50,6 +53,8 @@ class SightSpeaker(
     private val holdNarration: () -> Boolean,
     /** A look's answer or a narration started (its kind) or ended (null): the session's phone microphone sends silence meanwhile. */
     private val ambient: (LineKind?) -> Unit = {},
+    /** A target-language line had neither the hub's audio nor a phone voice in the language: it stays text. */
+    private val missingVoice: (Coach.Language) -> Unit = {},
 ) : SentenceVoice {
     private val main = Handler(Looper.getMainLooper())
     private val queue = SpeechQueue()
@@ -64,6 +69,8 @@ class SightSpeaker(
     private var ttsReady = false
     private var female: android.speech.tts.Voice? = null
     private var spanish: Locale = Locale.forLanguageTag("es-ES")
+    /** The phone's installed voice for each coach language, by its code ("pt"); missing when the engine has none. */
+    private var targetVoices: Map<String, android.speech.tts.Voice> = emptyMap()
     private val pending = ConcurrentHashMap<String, () -> Unit>()
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
         ttsReady = status == TextToSpeech.SUCCESS
@@ -84,6 +91,14 @@ class SightSpeaker(
         val name = SpeechVoice.female(voices.associate { it.name to it.locale.toLanguageTag() })
         female = voices.firstOrNull { it.name == name }
         Log.i(TAG, "phone voice: ${female?.name ?: "engine default"} ($spanish)")
+        val installed = runCatching { tts.voices.orEmpty() }.getOrDefault(emptySet()).filter { TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in it.features.orEmpty() }
+        targetVoices = Coach.LANGUAGES.mapNotNull { lang ->
+            val tag = Coach.phoneVoice(lang, installed.map { it.locale.toLanguageTag() }) ?: return@mapNotNull null
+            // An on-device voice first: the network ones need a connection the hub's voice already lacks.
+            val same = installed.filter { it.locale.toLanguageTag().replace('_', '-').equals(tag, ignoreCase = true) }
+            (same.firstOrNull { !it.isNetworkConnectionRequired } ?: same.firstOrNull())?.let { lang.code to it }
+        }.toMap()
+        Log.i(TAG, "coach voices: ${targetVoices.mapValues { it.value.locale.toLanguageTag() }}")
     }
 
     init {
@@ -94,22 +109,22 @@ class SightSpeaker(
      * A look's answer, a coach line or a live description. All but narration go a sentence at a time, so
      * the first starts as soon as its own audio is ready; a description stays whole (only the newest waits).
      */
-    fun say(text: String, kind: LineKind) {
+    fun say(text: String, kind: LineKind, lang: String? = null, slow: Boolean = false) {
         if (kind == LineKind.Narration) return offer(text, kind, null)
-        for (s in SpeechQueue.sentences(text)) offer(s, kind, null)
+        for (s in SpeechQueue.sentences(text)) offer(s, kind, null, lang, slow)
     }
 
     /** One sentence of a voice reply; `done` once it was said (or skipped), never after [stop]. */
-    override fun sentence(turn: Int, text: String, done: () -> Unit) {
-        main.post { offer(text, LineKind.Reply, done) }
+    override fun sentence(turn: Int, text: String, lang: String?, done: () -> Unit) {
+        main.post { offer(text, LineKind.Reply, done, lang) }
     }
 
-    private fun offer(text: String, kind: LineKind, done: (() -> Unit)?) {
+    private fun offer(text: String, kind: LineKind, done: (() -> Unit)?, lang: String? = null, slow: Boolean = false) {
         if (text.isBlank()) { done?.invoke(); return }
-        val line = SpokenLine(++ids, text.trim(), kind, System.currentTimeMillis())
+        val line = SpokenLine(++ids, text.trim(), kind, System.currentTimeMillis(), lang, slow)
         done?.let { after[line.id] = it }
-        // The conversation's lines are fetched at once, so the next sentence is ready when this one ends.
-        if (kind != LineKind.Narration) prefetch(line)
+        // The conversation's lines are fetched at once, so the next sentence is ready when this one ends; «Más despacio» asks only if the phone has no voice for it.
+        if (kind != LineKind.Narration && !slow) prefetch(line)
         if (queue.offer(line)) playJob?.cancel()
         wake.trySend(Unit)
     }
@@ -117,7 +132,7 @@ class SightSpeaker(
     private fun prefetch(line: SpokenLine) {
         if (hubHasNoVoice || screenReader()) return
         audio[line.id] = System.currentTimeMillis() to scope.async(Dispatchers.IO) {
-            val (code, bytes) = fetch(line.text)
+            val (code, bytes) = fetch(line.text, line.lang)
             if (code == 404) hubHasNoVoice = true
             bytes
         }
@@ -167,12 +182,14 @@ class SightSpeaker(
         }
         Capture.speaking = true
         try {
+            val target = Coach.target(line.lang)
+            if (target != null) return sayInTarget(line, target)
             if (line.id !in audio) prefetch(line)
             val (asked, bytes) = audio[line.id] ?: (0L to null)
             val wait = SpeechQueue.ttsWaitMs(asked, System.currentTimeMillis())
             val sound = bytes?.let { withTimeoutOrNull(wait) { runCatching { it.await() }.getOrNull() } }
             // The log says when the line starts, in ms after it was handed over: numbers only, never the text.
-            if (sound != null && playAudio(sound) { Log.i(TAG, "${line.kind}: hub voice starts ${System.currentTimeMillis() - line.at} ms after it was asked") }) return
+            if (sound != null && playAudio(sound, SpeechVoice.rate(rate()) / SpeechVoice.DEFAULT_RATE) { Log.i(TAG, "${line.kind}: hub voice starts ${System.currentTimeMillis() - line.at} ms after it was asked") }) return
             Log.i(TAG, "${line.kind}: phone voice starts ${System.currentTimeMillis() - line.at} ms after it was asked")
             phoneSay(line.text)
         } finally {
@@ -181,8 +198,30 @@ class SightSpeaker(
         }
     }
 
-    /** Plays the hub's audio to its end; false when it could not start (then the phone's voice says it). */
-    private suspend fun playAudio(bytes: ByteArray, started: () -> Unit = {}): Boolean = suspendCancellableCoroutine { cont ->
+    /**
+     * A line in the coach's target language, in the order of [Coach.way]: the hub's voice for the language,
+     * the phone's voice in it, or the text alone. «Más despacio» is the phone's voice at [Coach.SLOW_RATE],
+     * or the hub's audio played that much slower when the phone has no voice in the language.
+     */
+    private suspend fun sayInTarget(line: SpokenLine, target: Coach.Language) {
+        // The engine lists its voices once it has started: a coach line right after opening waits for it.
+        if (!ttsReady) withTimeoutOrNull(SpeechQueue.TTS_INIT_WAIT_MS) { while (!ttsReady) delay(50) }
+        val phone = targetVoices[target.code]
+        var sound: ByteArray? = null
+        if (!(line.slow && phone != null)) {
+            if (line.id !in audio) prefetch(line)
+            val (asked, bytes) = audio[line.id] ?: (0L to null)
+            sound = bytes?.let { withTimeoutOrNull(SpeechQueue.ttsWaitMs(asked, System.currentTimeMillis())) { runCatching { it.await() }.getOrNull() } }
+        }
+        val way = Coach.way(hubAudio = sound != null, phoneVoice = phone != null, slow = line.slow)
+        val speed = if (line.slow) Coach.SLOW_RATE else SpeechVoice.rate(rate()) / SpeechVoice.DEFAULT_RATE
+        if (way == Coach.Way.Hub && playAudio(sound!!, speed) { Log.i(TAG, "${line.kind} ${target.code}: hub voice starts ${System.currentTimeMillis() - line.at} ms after it was asked") }) return
+        if (phone != null) phoneSay(line.text, phone, if (line.slow) Coach.SLOW_RATE else SpeechVoice.rate(rate()))
+        else missingVoice(target)
+    }
+
+    /** Plays the hub's audio to its end at [speed]; false when it could not start (then the phone's voice says it). */
+    private suspend fun playAudio(bytes: ByteArray, speed: Float, started: () -> Unit = {}): Boolean = suspendCancellableCoroutine { cont ->
         val mp = MediaPlayer()
         var playing = false
         var released = false
@@ -191,7 +230,6 @@ class SightSpeaker(
             mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             mp.setDataSource(Bytes(bytes))
             mp.setOnPreparedListener {
-                val speed = SpeechVoice.rate(rate()) / SpeechVoice.DEFAULT_RATE
                 if (kotlin.math.abs(speed - 1f) > 0.01f) runCatching { it.playbackParams = it.playbackParams.setSpeed(speed) }
                 playing = true
                 it.start()
@@ -210,17 +248,16 @@ class SightSpeaker(
         cont.invokeOnCancellation { main.post { release() } }
     }
 
-    /** The phone's own voice, to the end of the line. */
-    private suspend fun phoneSay(text: String) {
+    /** The phone's own voice (Spanish unless [voice] is given), to the end of the line. */
+    private suspend fun phoneSay(text: String, voice: android.speech.tts.Voice? = female, speechRate: Float = SpeechVoice.rate(rate())) {
         // A speaker made just now (Practicar's first line) may have an engine still starting.
         if (!ttsReady) withTimeoutOrNull(SpeechQueue.TTS_INIT_WAIT_MS) { while (!ttsReady) delay(50) }
         if (!ttsReady) return
         suspendCancellableCoroutine { cont ->
             val id = "sight-${System.nanoTime()}"
             pending[id] = { if (cont.isActive) cont.resume(Unit) }
-            val voice = female
             if (voice != null) tts.voice = voice else tts.language = spanish
-            tts.setSpeechRate(SpeechVoice.rate(rate()))
+            tts.setSpeechRate(speechRate)
             if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) pending.remove(id)?.invoke()
             cont.invokeOnCancellation { pending.remove(id); tts.stop() }
         }

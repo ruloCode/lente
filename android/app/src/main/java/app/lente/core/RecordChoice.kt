@@ -34,6 +34,8 @@ object RecordChoice {
         Sight("sight", "Ver", "Describe en voz alta lo que tienes al frente", true, cues = false, camera = true),
         /** Practicar (add-practice-mode): the phone on the piano hears each note and the hub coaches the attempt. */
         Practice("practice", "Practicar", "Escucha tu piano y te corrige", true, cues = false, camera = false),
+        /** Idiomas (add-language-coach): a spoken tutor in Brazilian Portuguese, the voice screen with the coach persona. */
+        Coach("coach", "Idiomas · Portugués", "Conversa con un tutor y aprende portugués", true, cues = false, camera = false),
         Teleprompter("teleprompter", "Teleprompter", "Tu guion en el teléfono", false, cues = false, camera = false),
     }
 
@@ -55,6 +57,7 @@ object RecordChoice {
     /** The line above the start button: «Recuerdo · Celular · micrófono y cámara». */
     fun summary(mode: Mode, device: Device, camera: Boolean): String =
         if (mode == Mode.Practice) "${mode.label} · el micrófono del teléfono"
+        else if (mode == Mode.Coach) "${mode.label} · una conversación, no se graba"
         else "${mode.label} · ${device.label} · " + if (usesCamera(mode, camera)) "micrófono y cámara" else "solo micrófono"
 
     /** The mode the sheet opens on: the hub's current one (`assistMode`: assist, record or sight). */
@@ -63,7 +66,7 @@ object RecordChoice {
     /** The hub's assist mode to set before recording, or null when it already matches (or the mode is not built). Ver sets its own. */
     fun assistToSet(chosen: Mode, assistMode: String): String? {
         val want = when {
-            !chosen.ready || chosen == Mode.Practice -> return null
+            !chosen.ready || chosen == Mode.Practice || chosen == Mode.Coach -> return null
             chosen == Mode.Sight -> "sight"
             chosen.cues -> "assist"
             else -> "record"
@@ -72,9 +75,15 @@ object RecordChoice {
     }
 
     /** The start button's words. */
-    fun startLabel(mode: Mode): String = when (mode) { Mode.Sight -> "Empezar a ver"; Mode.Practice -> "Empezar a practicar"; else -> "Empezar a grabar" }
+    fun startLabel(mode: Mode): String = when (mode) { Mode.Sight -> "Empezar a ver"; Mode.Practice -> "Empezar a practicar"; Mode.Coach -> "Empezar a hablar"; else -> "Empezar a grabar" }
 
     /** Practicar always hears through the phone, which sits on the piano: the sheet shows this instead of «Con qué» and «Captura». */
+    /** Idiomas hears whoever the hub listens to (the clip, else the phone), like Hablar con Lente: no device or capture to choose. */
+    const val COACH_HINT = "Hablas con Lente en español y practicas en portugués. Toca «Nombrar lo que veo» para aprender lo que tienes al frente."
+
+    /** Modes that are a conversation, not a recording: the sheet hides «Con qué» and «Captura» for them. */
+    fun choosesDevice(mode: Mode): Boolean = mode != Mode.Practice && mode != Mode.Coach
+
     const val PRACTICE_HINT = "Pon el teléfono en el atril, cerca de las cuerdas. Escucha con su micrófono y el audio no sale del teléfono."
 
     /** The chat chip: the whole memory, or the chosen project's name. */

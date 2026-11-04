@@ -28,6 +28,7 @@ import app.lente.core.HubState
 import app.lente.core.MeetingDetail
 import app.lente.core.Projects
 import app.lente.core.SearchResult
+import app.lente.core.Coach
 import app.lente.core.Sight
 import app.lente.core.SightView
 import app.lente.core.TraceStep
@@ -377,7 +378,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun speaker(): SightSpeaker = sightSpeaker ?: SightSpeaker(
         getApplication(), viewModelScope,
-        fetch = { text -> client?.postAudio("/tts", JSONObject().put("text", text).put("voice", Sight.PERSONA), TTS_CALL_MS) ?: (0 to null) },
+        // Ver's Colombian voice, or the coach's voice for a sentence in its language (add-language-coach).
+        fetch = { text, lang -> client?.postAudio("/tts", JSONObject().put("text", text).put("voice", Coach.hubVoice(lang)), TTS_CALL_MS) ?: (0 to null) },
         rate = { speechRate.value },
         narrated = { text -> sightSaid = Sight.remember(sightSaid, text); post("/narrated", JSONObject().put("text", text)) },
         screenReader = { speech.screenReader },
@@ -390,6 +392,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             if (on) voiceClient?.deaf = true
             else viewModelScope.launch { delay(Voice.MUTE_TAIL_MS); if (!sightAmbient) voiceClient?.deaf = false }
         },
+        missingVoice = ::coachMissingVoice,
     ).also { sightSpeaker = it }
 
     /**
@@ -1031,6 +1034,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         val c = client ?: return say("No hay hub conectado: revisa Ajustes.")
         voiceClient?.shutdown()
         speech.stop()
+        coach.value = null
         voice.value = VoiceView()
         voiceOpen.value = true
         viewModelScope.launch {
@@ -1051,7 +1055,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (inSight) sight.value = Sight.talk(sight.value, next, sightSaid)
         for (e in effects) when (e) {
             is VoiceEffect.Speak -> {
-                voiceClient?.speak(e.turn, e.text)
+                voiceClient?.speak(e.turn, e.text, e.lang)
+                if (coach.value != null) coachLookEnded()
                 sightReconnects = 0
                 // Ver's welcome counts as done once Lente has said something in it.
                 if (inSight && sightIntro && !prefs.sightMet) prefs.sightMet = true
@@ -1064,7 +1069,70 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
             is VoiceEffect.Narration -> if (sightOpen.value) setSightNarration(e.on, byAgent = true)
             is VoiceEffect.Quiet -> if (inSight) { if (e.on) sightQuiet() else sightTalkAgain(byAgent = true) }
             is VoiceEffect.Locate -> answerLocate(e.id)
+            is VoiceEffect.SayPhrase -> if (coach.value != null) {
+                coachLookEnded()
+                speaker().say(e.phrase.text, LineKind.Look, e.phrase.lang.ifBlank { coach.value?.code })
+            }
         }
+    }
+
+    // --- Idiomas (add-language-coach) ------------------------------------------------------------
+    // The tutor is the voice screen with the coach persona; its sentences go through Ver's speaker, which
+    // says each one in its language (the hub's voice, the phone's, or only the text).
+
+    /** The coach's language while its session is open, else null (the plain voice screen). */
+    val coach = MutableStateFlow<Coach.Language?>(null)
+    /** A tap on the look surface is waiting for the coach to name what it sees. */
+    val coachLooking = MutableStateFlow(false)
+    /** Lente has no voice in the language on this phone: the note shown under the phrase, said once in Spanish. */
+    val coachNote = MutableStateFlow<String?>(null)
+    private var coachLookTimeout: Job? = null
+
+    /** «Idiomas · Portugués»: the voice screen with `start { persona: "coach", lang, mode: "tutor" }`. */
+    fun openCoach(lang: Coach.Language = Coach.PT) {
+        val c = client ?: return say("No hay hub conectado: revisa Ajustes.")
+        if (sightOpen.value) closeSight()
+        voiceClient?.shutdown()
+        speech.stop()
+        speaker()
+        coach.value = lang
+        coachNote.value = null
+        coachLookEnded()
+        voice.value = VoiceView(lang = lang.code)
+        voiceOpen.value = true
+        viewModelScope.launch {
+            val token = account.accessToken()
+            if (!voiceOpen.value || coach.value != lang) return@launch
+            voiceClient = VoiceClient(getApplication(), c.base, prefs.cookie, token, ::onVoiceEvent, start = Coach.start(lang), voice = speaker()) { why ->
+                voice.value = voice.value.copy(phase = VoicePhase.Ended, error = why ?: voice.value.error)
+            }.also { it.handsFree = voiceHandsFree.value }
+        }
+    }
+
+    /** «Repetir» and «Más despacio»: the latest phrase again, on the phone only. */
+    fun coachRepeat(slow: Boolean) {
+        val p = voice.value.pronounce ?: return
+        speaker().say(p.text, LineKind.Look, p.lang.ifBlank { coach.value?.code }, slow)
+    }
+
+    /** A tap on the look surface: the coach names what is in front of the wearer (decision 13: `{"type":"look"}`). */
+    fun coachLook() {
+        val session = voiceClient ?: return say("La conversación no está abierta.")
+        session.send(Coach.look())
+        coachLooking.value = true
+        coachLookTimeout?.cancel()
+        coachLookTimeout = viewModelScope.launch { delay(Sight.LOOK_TIMEOUT_MS); coachLooking.value = false }
+    }
+
+    private fun coachLookEnded() {
+        coachLookTimeout?.cancel()
+        coachLooking.value = false
+    }
+
+    private fun coachMissingVoice(lang: Coach.Language) {
+        if (coach.value == null || coachNote.value != null) return
+        coachNote.value = lang.noVoice
+        speaker().say(lang.noVoice, LineKind.Look)
     }
 
     /** Terminar: ends the session and leaves what was said and answered in Inicio's chat. */
@@ -1073,6 +1141,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         voiceClient?.shutdown()
         voiceClient = null
         voiceOpen.value = false
+        if (coach.value != null) {
+            coach.value = null
+            coachLookEnded()
+            sightSpeaker?.stop()
+        }
         val lines = VoiceEvents.chatLines(view) { ++chatIds }
         if (lines.isNotEmpty()) chat.value = chat.value.filterNot { it.pending } + lines
     }

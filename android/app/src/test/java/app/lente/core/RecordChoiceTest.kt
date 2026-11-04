@@ -22,7 +22,7 @@ class RecordChoiceTest {
     }
 
     @Test fun modesOpenOnTheHubsAndOnlyChangeItWhenNeeded() {
-        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Ver", "Practicar", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
+        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Ver", "Practicar", "Idiomas · Portugués", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
         assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Memory, assistMode = "assist"))
         assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Memory, assistMode = "record"))
         assertEquals(false, RecordChoice.Mode.Teleprompter.ready)

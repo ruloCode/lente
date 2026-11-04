@@ -24,9 +24,9 @@ import okio.ByteString.Companion.toByteString
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-/** Someone else's voice for a session's sentences (Ver's speaker): says one, then calls `done`; `stop` drops all. */
+/** Someone else's voice for a session's sentences (Ver's speaker): says one in `lang` (null: Spanish), then calls `done`; `stop` drops all. */
 interface SentenceVoice {
-    fun sentence(turn: Int, text: String, done: () -> Unit)
+    fun sentence(turn: Int, text: String, lang: String?, done: () -> Unit)
     fun stop()
 }
 
@@ -78,7 +78,8 @@ class VoiceClient(
             AuthRetry.header(bearer)?.let { (k, v) -> header(k, v) }
         }.build(),
         object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) { start?.let { webSocket.send(it) } }
+            // The start names only the persona and its options (never what was said), so the log may show it.
+            override fun onOpen(webSocket: WebSocket, response: Response) { start?.let { webSocket.send(it); Log.i(TAG, "voice session open, start sent: $it") } }
             override fun onMessage(webSocket: WebSocket, text: String) { main.post { onEvent(text) } }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = closed(null)
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -105,11 +106,11 @@ class VoiceClient(
         spoken.finished(turn)?.let { socket.send(VoiceEvents.spoken(turn, it)) }
     }
 
-    /** One sentence of `turn`, queued after the ones before it. */
-    fun speak(turn: Int, text: String) {
+    /** One sentence of `turn`, queued after the ones before it; `lang` reaches the session's own voice (the coach's). */
+    fun speak(turn: Int, text: String, lang: String? = null) {
         if (voice != null && text.isNotBlank()) {
             spoken.queued(turn)
-            voice.sentence(turn, text) { main.post { spoken.finished(turn)?.let { socket.send(VoiceEvents.spoken(turn, it)) } } }
+            voice.sentence(turn, text, lang) { main.post { spoken.finished(turn)?.let { socket.send(VoiceEvents.spoken(turn, it)) } } }
             return
         }
         if (!ttsReady || text.isBlank()) {

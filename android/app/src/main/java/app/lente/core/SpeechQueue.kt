@@ -9,7 +9,8 @@ package app.lente.core
  */
 enum class LineKind { Reply, Look, Narration }
 
-data class SpokenLine(val id: Long, val text: String, val kind: LineKind, val at: Long)
+/** `lang` is a coach sentence's language (add-language-coach), null for Spanish; `slow` is «Más despacio». */
+data class SpokenLine(val id: Long, val text: String, val kind: LineKind, val at: Long, val lang: String? = null, val slow: Boolean = false)
 
 class SpeechQueue(private val staleMs: Long = NARRATION_STALE_MS) {
     private val front = ArrayDeque<SpokenLine>()

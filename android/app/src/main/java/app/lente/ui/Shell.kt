@@ -183,6 +183,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 }, practice = {
                     // Practicar (add-practice-mode) hears the piano through the phone's microphone.
                     askMicrophone { ok -> if (ok) vm.openPractice() else vm.say("Lente necesita el micrófono para escuchar el piano.") }
+                }, coach = {
+                    // Idiomas (add-language-coach) is a voice session: without the clip Lente hears the phone.
+                    askMicrophone { ok -> if (ok) vm.openCoach() else vm.say("Lente necesita el micrófono para hablar contigo.") }
                 })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))

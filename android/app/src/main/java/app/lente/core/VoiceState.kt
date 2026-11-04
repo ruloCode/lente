@@ -37,12 +37,18 @@ data class VoiceView(
     val partial: String = "",
     val turns: List<VoiceTurn> = emptyList(),
     val error: String? = null,
+    /** Idiomas (add-language-coach): the session's target language, and the latest phrase to say. */
+    val lang: String? = null,
+    val pronounce: Pronounce? = null,
 ) {
     val current get() = turns.lastOrNull()
 }
 
 sealed interface VoiceEffect {
-    data class Speak(val turn: Int, val text: String) : VoiceEffect
+    /** One reply sentence; `lang` is its language when the hub tagged it (the coach), else Spanish. */
+    data class Speak(val turn: Int, val text: String, val lang: String? = null) : VoiceEffect
+    /** The coach's `pronounce`: the phone says the phrase once in its language (add-language-coach). */
+    data class SayPhrase(val phrase: Pronounce) : VoiceEffect
     data object StopSpeaking : VoiceEffect
     data class OpenRecordSheet(val request: RecordSheetRequest) : VoiceEffect
     /** Ver's companion turned the live narration on or off (add-sight-mode). */
@@ -105,7 +111,13 @@ object VoiceEvents {
                 // Lente may speak first (Ver's welcome): a reply to a turn nobody started opens it, with nothing heard.
                 val opened = if (turn >= 0 && view.turns.none { it.turn == turn }) view.copy(turns = view.turns + VoiceTurn(turn, "")) else view
                 val next = opened.withTurn(turn) { t -> t.copy(reply = t.reply + text, commentary = if (e.optBoolean("commentary")) t.commentary + t.reply.size else t.commentary) }
-                next.copy(phase = VoicePhase.Speaking) to listOf(VoiceEffect.Speak(turn, text))
+                next.copy(phase = VoicePhase.Speaking) to listOf(VoiceEffect.Speak(turn, text, e.optString("lang").ifBlank { null }))
+            }
+            "pronounce" -> {
+                val text = e.optString("text").trim()
+                if (text.isEmpty()) return view to emptyList()
+                val p = Pronounce(text, e.optString("meaning").trim(), e.optString("lang").ifBlank { view.lang ?: "" }, turn.takeIf { it >= 0 })
+                view.copy(pronounce = p) to listOf(VoiceEffect.SayPhrase(p))
             }
             "tool" -> view.withTurn(turn) { t -> t.copy(tools = t.tools + VoiceTool(e.optString("name"), e.optString("label"))) } to emptyList()
             "sources" -> view.withTurn(turn) { t -> t.copy(sources = (t.sources + sources(e.optJSONArray("sources"))).distinct()) } to emptyList()
