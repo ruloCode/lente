@@ -125,7 +125,8 @@ export class AsrSession {
       const delay = event.code === 1013 || event.code === 1008 ? 5000 : 1000;
       setTimeout(() => !this.stopped && this.start(), delay);
     });
-    ws.addEventListener("error", () => this.handlers.onStatus("transcription connection error"));
+    // A session replaced by a new bias (`setLanguages`) errors as it closes; that is not this session's error.
+    ws.addEventListener("error", () => this.ws === ws && this.handlers.onStatus("transcription connection error"));
   }
 
   /** `sessionMs` is where this frame starts in the session audio, so turns can be placed on it. */

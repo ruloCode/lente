@@ -462,3 +462,37 @@ What this says:
 - The checklist's tail is what hurts Ver: 8.65 s and 705 tokens on the photo of the rig in the hand, a read that would be dropped as stale.
 - The one sentence still reads text: on the infographic it said «un diagrama que dice LENTE ECOSYSTEM». The checklist said there was a lot of text and offered to read it. Reading all of it is the look's job (`SIGHT_READ_PROMPT`).
 - These are the model's own times, measured from the Mac. On the clip, a frame also waits for the previous call to finish (the gap between the baseline's model call and its frame → phone time).
+
+## Language coach: the Portuguese tutor (add-language-coach) — 2026-11-04
+
+`scripts/bench-voice.ts 2 --persona coach`, run with the key file as in «Talking with Lente». It sends `start { persona: "coach", lang: "pt", mode: "tutor" }`, then three synthetic questions in each of two sessions:
+- «¿Cómo se dice tenedor en portugués?» (`say -v Paulina`);
+- «O garfo.», the repeat (`say -v Luciana`, pt-BR);
+- «¿Qué significa obrigado?» (Paulina).
+
+Everything else is as in «Talking with Lente»:
+- Muse Voice Transcribe in `ENDPOINTING`, here with `["Portuguese","Spanish"]`.
+- Muse Spark 1.3 at minimal effort.
+- Times run from the end of the question's audio, on the Mac's clock.
+
+No look, no phone and no clip: these are the hub's and the models' share only. This is part of task 3.5, which also needs the look on the clip.
+
+Two runs on the same afternoon. Run B came after the prompt fix that keeps articles off words that are not nouns (run A once said «o obrigado»).
+
+| Measure | Run A: n · p50 · p90 | Run B: n · p50 · p90 |
+|---|---|---|
+| End of speech → `speechComplete` | 6 · 508 ms · 624 ms | 5 · 404 ms · 527 ms |
+| End of speech → first sentence of any kind (usually a Spanish commentary) | 6 · 3,785 ms · 4,256 ms | 5 · 3,827 ms · 5,587 ms |
+| End of speech → first answer sentence (for «¿cómo se dice?», the Portuguese «O garfo.») | 6 · 4,247 ms · 8,426 ms | 5 · 5,231 ms · 7,625 ms |
+| Cost per turn | 6 · US$ 0.0027 · US$ 0.0057 | 5 · US$ 0.0039 · US$ 0.0062 |
+
+What came back in run B (synthetic, as the bench prints it):
+- **«¿Cómo se dice tenedor?»** A `pronounce` card «o garfo» = «el tenedor» `[pt]`, then `reply [pt]` «O garfo.», then `reply [es]` «Repítelo conmigo en voz alta.»
+- **«O garfo.»** `check_repeat`, then «¡Te entendí perfecto, qué bien!» `[es]`.
+- **«¿Qué significa obrigado?»** The transcription wrote «obligado», since a Spanish voice said it. The tutor still answered with the card «obrigado» = «gracias» and `reply [pt]` «Obrigado.»
+
+What this says:
+- Every coach turn takes two model steps, the tool and then the answer. Spark usually says a Spanish commentary first, so the wearer hears Spanish about 3.8 s after they stop, and the Portuguese phrase after that.
+- That is slower than the default voice's first sentence (2,150 ms p50, 2026-11-02).
+- Run B answered 5 of 6 turns. Its second «¿Cómo se dice tenedor…?» was dropped as Lente's own echo: round 1 had said «Te digo cómo se dice tenedor» less than 30 s before, inside the hub-wide `NarrationGuard` window. The bench caused this by repeating one question.
+- An earlier run, before the hub logged the error, answered 4 of 6: one echo drop and two `model-error`s whose cause was not recorded. The voice log line now carries the error.

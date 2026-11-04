@@ -13,10 +13,12 @@
 //   --days N   seed N days of the synthetic bilingual memory (scripts/eval/memory-set.ts) instead of one meeting
 //   --memory   ask memory questions (and one task request, which must get no memory lines)
 //   --fast     run the hub with LENTE_RECALL=fast (add-memory-engine 5.4: before and after)
+//   --persona coach   the Portuguese tutor (add-language-coach): Spanish questions and one Portuguese
+//              repeat in a pt-BR voice; prints each reply with its language (synthetic text only)
 // Prints counts and timings only; the audio and the results stay in results/ (git-ignored).
 
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -35,7 +37,7 @@ const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 const VOICE = process.env.BENCH_VOICE ?? "Paulina";
 const TURN_TIMEOUT_MS = 30_000;
 
-const QUESTIONS: { kind: string; text: string }[] = [
+const QUESTIONS: { kind: string; text: string; voice?: string }[] = [
   { kind: "chat", text: "Hola Lente, ¿qué puedes hacer por mí?" },
   { kind: "add_task", text: "Agrega que llame a Ana el viernes." },
   { kind: "list_tasks", text: "¿Qué tareas tengo pendientes?" },
@@ -50,11 +52,20 @@ const MEMORY_QUESTIONS: { kind: string; text: string }[] = [
   { kind: "add_task", text: "Agrega que llame a Ana el viernes." },
 ];
 
+/** The tutor (add-language-coach): how to say a word, a repeat of it in Portuguese, what a word means. */
+const COACH_QUESTIONS: { kind: string; text: string; voice?: string }[] = [
+  { kind: "how_to_say", text: "¿Cómo se dice tenedor en portugués?" },
+  { kind: "repeat", text: "O garfo.", voice: "Luciana" },
+  { kind: "meaning", text: "¿Qué significa obrigado?" },
+];
+
 const args = process.argv.slice(2);
+const coach = args.includes("--persona") && args[args.indexOf("--persona") + 1] === "coach";
 const useStub = args.includes("--stub");
 const fastRecall = args.includes("--fast");
 const memoryDays = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 0;
 if (args.includes("--memory")) QUESTIONS.splice(0, QUESTIONS.length, ...MEMORY_QUESTIONS);
+if (coach) QUESTIONS.splice(0, QUESTIONS.length, ...COACH_QUESTIONS);
 const rounds = Number(args.find((a, i) => /^\d+$/.test(a) && args[i - 1] !== "--days") ?? 2);
 if (!useStub && !process.env.MODEL_API_KEY) {
   console.error("MODEL_API_KEY is not set: run with node --env-file=.env, or pass --stub");
@@ -65,10 +76,10 @@ const out = join("results", "bench-voice");
 mkdirSync(out, { recursive: true });
 
 /** One question as 16 kHz mono PCM16, spoken by `say`. */
-function speech(i: number, text: string): Buffer {
+function speech(i: number, text: string, voice = VOICE): Buffer {
   const aiff = join(out, `q${i}.aiff`);
   const wav = join(out, `q${i}.wav`);
-  execFileSync("say", ["-v", VOICE, "-o", aiff, text]);
+  execFileSync("say", ["-v", voice, "-o", aiff, text]);
   execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff, wav]);
   const pcm = readPcm16Wav(readFileSync(wav));
   if (pcm.sampleRate !== 16000) throw new Error(`afconvert gave ${pcm.sampleRate} Hz, not 16000`);
@@ -116,7 +127,9 @@ const env: Record<string, string | undefined> = {
   MODEL_API_KEY: useStub ? "stub" : process.env.MODEL_API_KEY,
   ...(stub ? { META_BASE_URL: `http://127.0.0.1:${stub.port}/v1`, META_REALTIME_URL: `ws://127.0.0.1:${stub.port}/v1/asr/realtime` } : {}),
 };
-const hub = spawn(process.execPath, ["src/pilot.ts"], { env, stdio: "ignore" });
+// --hub-log <file>: the hub's own log (counts and lengths, never what was said), to see why a turn failed.
+const hubLog = args.includes("--hub-log") ? openSync(args[args.indexOf("--hub-log") + 1]!, "w") : undefined;
+const hub = spawn(process.execPath, ["src/pilot.ts"], { env, stdio: hubLog === undefined ? "ignore" : ["ignore", hubLog, hubLog] });
 const base = `http://localhost:${port}`;
 for (let i = 0; i < 200 && !(await fetch(`${base}/health`).then((r) => r.ok, () => false)); i++) await new Promise((r) => setTimeout(r, 50));
 
@@ -134,7 +147,7 @@ interface Row {
   partials: number;
 }
 const rows: Row[] = [];
-const clips = QUESTIONS.map((q, i) => speech(i, q.text));
+const clips = QUESTIONS.map((q, i) => speech(i, q.text, q.voice));
 
 for (let round = 0; round < rounds; round++) {
   const ws = new WebSocket(`ws://localhost:${port}/voice`);
@@ -144,6 +157,7 @@ for (let round = 0; round < rounds; round++) {
     ws.addEventListener("open", () => ok());
     ws.addEventListener("error", () => fail(new Error("the voice socket did not open")));
   });
+  if (coach) ws.send(JSON.stringify({ type: "start", persona: "coach", lang: "pt", mode: "tutor" }));
   // Silence at real time between questions, as a phone in a quiet room would send.
   let queue: Buffer[] = [];
   let sentAt = 0;
@@ -199,6 +213,13 @@ for (let round = 0; round < rounds; round++) {
       partials: mine.filter((x) => x.e.type === "partial" && (!heard || x.at <= heard.at)).length,
     };
     rows.push(row);
+    if (coach) {
+      if (heard) console.log(`    heard «${heard.e.text}»`);
+      for (const x of ofTurn) {
+        if (x.e.type === "pronounce") console.log(`    pronounce «${x.e.text}» = «${x.e.meaning}» [${x.e.lang}]`);
+        if (x.e.type === "reply") console.log(`    reply [${x.e.lang ?? "-"}] ${x.e.text}`);
+      }
+    }
     console.log(`round ${round + 1} · ${q.kind.padEnd(10)} heard ${formatMs(row.heardMs)} · first text ${formatMs(row.firstTextMs)} · first answer ${formatMs(row.firstAnswerMs)} · done ${formatMs(row.doneMs)} · tools ${row.tools.join(",") || "none"} · ${row.partials} partials · US$ ${usd.toFixed(5)} · ${row.stopped ?? "no answer"}`);
     // Tell the hub the phone has spoken it all, as the phone does, and leave a pause.
     const sent = ofTurn.filter((x) => x.e.type === "reply").length;
@@ -224,6 +245,7 @@ const summary = {
   model: "muse-spark-1.3 (minimal) · muse-voice-transcribe-1.0 ENDPOINTING",
   recall: fastRecall ? "fast" : "tiers",
   memoryDays,
+  persona: coach ? "coach (pt, tutor)" : "default",
   stub: useStub,
   voice: VOICE,
   turns: rows.length,
