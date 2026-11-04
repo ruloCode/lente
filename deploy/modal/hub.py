@@ -33,6 +33,8 @@ image = (
     .add_local_dir(ROOT / "src", "/app/src")
     # The desktop web app (add-web-desktop), served by the hub at /app.
     .add_local_dir(ROOT / "web" / "app", "/app/web/app")
+    # The built-in apps' manifests (add-lens-apps), served at /apps.
+    .add_local_dir(ROOT / "apps", "/app/apps")
     .add_local_file(ROOT / "scripts" / "hub-token.ts", "/app/scripts/hub-token.ts")
 )
 volume = modal.Volume.from_name("lente-data", create_if_missing=True)

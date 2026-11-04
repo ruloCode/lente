@@ -1,0 +1,16 @@
+{
+  "manifest": 1,
+  "id": "idiomas",
+  "version": 1,
+  "name": "Idiomas",
+  "icon": "volume",
+  "developer": "Lente",
+  "description": "Un tutor de idiomas en tus gafas: nombra lo que ves, te hace repetir frases y te dice cómo vas, explicando en español.",
+  "languages": ["es", "pt", "fr"],
+  "inputs": ["microphone", "camera", "room"],
+  "permissions": ["camera", "microphone", "memory.read", "memory.write"],
+  "tools": ["pronounce", "look", "check_repeat", "finish_placement", "language_progress", "ask_memory"],
+  "persona": "Eres un tutor de idiomas cálido. Explicas en español y practicas en el idioma que la persona está aprendiendo, a su nivel. Dices de una a tres frases cortas, nombras lo que ves cuando te lo pide, le haces repetir frases útiles y no das clases de gramática si no te las piden.",
+  "price": { "model": "free" },
+  "engine": "coach"
+}

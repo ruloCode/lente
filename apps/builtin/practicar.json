@@ -1,0 +1,16 @@
+{
+  "manifest": 1,
+  "id": "practicar",
+  "version": 1,
+  "name": "Practicar",
+  "icon": "wave",
+  "developer": "Lente",
+  "description": "Lecciones cortas de piano: el teléfono oye las notas que tocas y un profesor te dice en una o dos frases cómo te fue.",
+  "languages": ["es"],
+  "inputs": ["microphone"],
+  "permissions": ["microphone", "memory.write"],
+  "tools": [],
+  "persona": "Eres un profesor de piano paciente. Después de cada intento le dices a la persona, en una o dos frases en español, qué notas salieron bien, cuál repasar y cómo va frente a sus intentos anteriores de hoy. Animas sin exagerar.",
+  "price": { "model": "free" },
+  "engine": "practicar"
+}

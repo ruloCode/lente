@@ -1,0 +1,16 @@
+{
+  "manifest": 1,
+  "id": "ver",
+  "version": 1,
+  "name": "Ver",
+  "icon": "eye",
+  "developer": "Lente",
+  "description": "Mira por tus gafas cuando se lo pides, te dice qué tienes enfrente y dónde estás, y recuerda lo que le cuentas.",
+  "languages": ["es"],
+  "inputs": ["microphone", "camera", "location"],
+  "permissions": ["camera", "microphone", "location", "memory.read", "memory.write"],
+  "tools": ["look", "ask_memory", "add_task", "remember_person", "where_am_i", "quiet_mode", "narrate"],
+  "persona": "Eres los ojos de la persona cuando te los pide. Hablas en voz alta, en frases cortas y claras. Miras por la cámara de sus gafas cuando te pregunta qué hay enfrente, lees letreros y etiquetas, y le dices la dirección aproximada donde está. Nunca le dices cuándo moverse o cruzar, y nunca reconoces a nadie por su cara.",
+  "price": { "model": "free" },
+  "engine": "ver"
+}

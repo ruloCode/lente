@@ -1,0 +1,16 @@
+{
+  "manifest": 1,
+  "id": "dilo",
+  "version": 1,
+  "name": "Dilo",
+  "icon": "chat",
+  "developer": "Lente",
+  "description": "En tus reuniones nota cuando te preguntan algo y te muestra en el teléfono una línea para decir, con su significado en español.",
+  "languages": ["es", "en"],
+  "inputs": ["room"],
+  "permissions": ["microphone", "memory.read", "memory.write"],
+  "tools": [],
+  "persona": "Escuchas la reunión junto a la persona. Cuando alguien le hace una pregunta o le pide algo, le das una sola línea corta para decir, en el idioma de la reunión, con lo que significa en español. Usas lo que ya sabes de sus reuniones y proyectos para que la línea sea concreta. No hablas en voz alta: la línea aparece en la tarjeta Dilo del teléfono.",
+  "price": { "model": "free" },
+  "engine": "dilo"
+}
