@@ -244,6 +244,17 @@ The coach's own numbers replace these once measured.
 
 It is validated by `add-lens-apps`' validator when that lands, and by a shape test in this change until then. `room` (for «Tradúceme» and «Corrígeme» in meetings) is why it is an engine and not a third-party app.
 
+### 13. The wire between the hub and the phone (task 2.2's reading, 2026-11-04)
+
+Decisions 2, 3 and 5 leave a few shapes open. The phone reads them as below, the way it already reads Ver's and the voice screen's events (`VoiceEvents.reduce`): unknown fields are ignored, missing optional fields take the default named here.
+
+- **Start** (phone → hub, the first message on `/voice`): `{"type":"start","persona":"coach","intro":false,"lang":"pt","mode":"tutor"}`. `intro` stays, as Ver sends it; the coach never asks for the welcome.
+- **`reply`** gains an optional `lang`: the sentence's language as a two-letter code (`"pt"`, `"es"`, `"fr"`, `"en"`). Missing, or anything but the session's target, the sentence is Spanish and keeps today's voice. `likelyLanguage`'s «unsure» goes out as `"es"` (or without `lang`).
+- **`pronounce`** (hub → phone): `{"type":"pronounce","turn":3,"text":"o garfo","meaning":"el tenedor","lang":"pt"}`. `turn` is optional; `meaning` may be empty; `lang` missing means the session's target. The phone shows `text` large with `meaning` under it, and **says `text` once itself**, in the target voice, after the reply sentences already queued. So the agent should not repeat the phrase in its reply sentences (the tool's result can tell it «the phone already said it»); a reply sentence before the tool («Se dice así.») is fine. A newer `pronounce` replaces the card.
+- **The look** (phone → hub): a tap on the coach's look surface sends `{"type":"look"}` on the same session, not `POST /look` (outside Ver's assist mode that only takes a still for the meeting). The hub answers it as a turn of the wearer asking «¿Qué es esto?», so the coach's own `look` tool runs with `coachLookPrompt` and its names come back as `pronounce` events (and reply sentences). The phone shows «Mirando…» until the next `reply` or `pronounce`, at most `Sight.LOOK_TIMEOUT_MS`. A hub that does not know the message drops it, as `parsePhoneMessage` does today.
+- **Voices.** A target-language sentence asks `POST /tts` with `{"text","voice":"coach-pt"}` (decision 2); today's hub gives an unknown voice its default ElevenLabs voice on `eleven_flash_v2_5`, which is multilingual. A Spanish sentence asks voice `sight`, Ver's. When the hub has no audio in time (`SpeechQueue.TTS_WAIT_MS`), the phone's own `pt-BR` voice (any `pt-*` otherwise); when it has none, the text stays on the screen and Lente says once per session, in Spanish, «No tengo voz en portugués en este teléfono».
+- **«Más despacio» and «Repetir».** `/tts` takes no rate today (`{text, voice}` only), so «Más despacio» is the phone's `pt-BR` voice at `SpeechVoice.MIN_RATE` (0.8); with no such voice, the hub's audio played at 0.8× speed. «Repetir» says the phrase again at the normal rate, the hub's voice first. Neither goes to the hub.
+
 ## Risks / Trade-offs
 
 - [Portuguese and Spanish share many words, so the ASR and `likelyLanguage` may mix them] → bias both languages, test `likelyLanguage` on mixed phrases, and when unsure let the translation call answer `=`.
