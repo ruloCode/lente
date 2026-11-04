@@ -423,10 +423,23 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         voice.value = VoiceView()
         val token = account.accessToken()
         if (!sightOpen.value) return
-        voiceClient = VoiceClient(getApplication(), c.base, prefs.cookie, token, ::onVoiceEvent, start = VoiceEvents.start(Sight.PERSONA, intro), voice = speaker()) { why ->
+        var session: VoiceClient? = null
+        session = VoiceClient(getApplication(), c.base, prefs.cookie, token, ::onVoiceEvent, start = VoiceEvents.start(Sight.PERSONA, intro), voice = speaker()) { why ->
             voice.value = voice.value.copy(phase = VoicePhase.Ended, error = why ?: voice.value.error)
+            // A dropped connection (a hub restart): Ver comes back by itself, sight mode first, since the hub keeps it only while it runs.
+            if (Sight.reconnects(why, sightOpen.value, sight.value.quiet, sightReconnects)) viewModelScope.launch {
+                sightReconnects++
+                delay(Sight.RECONNECT_MS)
+                if (!sightOpen.value || voiceClient !== session) return@launch
+                client?.post("/assist-mode/sight")
+                startSightVoice(intro = false)
+            }
         }.also { it.handsFree = true }
+        voiceClient = session
     }
+
+    /** Times Ver reopened its conversation by itself since the last line Lente said. */
+    private var sightReconnects = 0
 
     /** Salir: the conversation ends, and the hub goes back to the mode Ver started from (Asistir or Solo grabar). */
     fun closeSight() {
@@ -1039,6 +1052,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         for (e in effects) when (e) {
             is VoiceEffect.Speak -> {
                 voiceClient?.speak(e.turn, e.text)
+                sightReconnects = 0
                 // Ver's welcome counts as done once Lente has said something in it.
                 if (inSight && sightIntro && !prefs.sightMet) prefs.sightMet = true
             }

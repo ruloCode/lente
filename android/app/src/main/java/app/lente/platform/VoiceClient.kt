@@ -86,7 +86,7 @@ class VoiceClient(
                 closed(when (response?.code) {
                     401 -> "Inicia sesión otra vez para hablar con Lente."
                     app.lente.core.Terms.PRECONDITION_REQUIRED -> "Acepta los términos de la prueba para hablar con Lente."
-                    else -> "Se perdió la conexión con la computadora."
+                    else -> app.lente.core.Sight.LOST
                 })
             }
         },

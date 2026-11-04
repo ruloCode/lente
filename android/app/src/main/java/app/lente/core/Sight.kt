@@ -154,6 +154,18 @@ object Sight {
 
     fun isLookAnswer(e: Entry) = e.kind == "cue" && e.label == LABEL
 
+    /** The voice socket dropped (the hub restarted, the network blinked), as `VoiceClient` says it. */
+    const val LOST = "Se perdió la conexión con la computadora."
+    /** Ver tries this many times on its own, [RECONNECT_MS] apart, before the long press is the way back. */
+    const val RECONNECTS = 3
+    const val RECONNECT_MS = 2_000L
+
+    /**
+     * Whether Ver opens the conversation again by itself: only after a dropped connection (not a refusal
+     * such as a signed-out account or the terms), while Ver is open and not recording in the quiet.
+     */
+    fun reconnects(why: String?, open: Boolean, quiet: Boolean, tries: Int) = why == LOST && open && !quiet && tries < RECONNECTS
+
     /** Lente is still working on or saying a reply (what «Grabar en silencio» lets finish). */
     fun replying(phase: VoicePhase?) = phase == VoicePhase.Thinking || phase == VoicePhase.Speaking
 

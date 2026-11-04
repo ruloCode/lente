@@ -174,4 +174,14 @@ class SightTest {
         assertFalse(Sight.isEcho("tienes", emptyList()))
         assertEquals(Sight.ECHO_LINES, (1..10).fold(emptyList<String>()) { l, i -> Sight.remember(l, "$i") }.size)
     }
+
+    @Test fun aDroppedConnectionReconnectsByItselfButARefusalOrTheQuietDoesNot() {
+        assertTrue(Sight.reconnects(Sight.LOST, open = true, quiet = false, tries = 0))
+        assertTrue(Sight.reconnects(Sight.LOST, open = true, quiet = false, tries = Sight.RECONNECTS - 1))
+        assertFalse(Sight.reconnects(Sight.LOST, open = true, quiet = false, tries = Sight.RECONNECTS))
+        assertFalse(Sight.reconnects(Sight.LOST, open = false, quiet = false, tries = 0))
+        assertFalse(Sight.reconnects(Sight.LOST, open = true, quiet = true, tries = 0))
+        assertFalse(Sight.reconnects("Inicia sesión otra vez para hablar con Lente.", open = true, quiet = false, tries = 0))
+        assertFalse(Sight.reconnects(null, open = true, quiet = false, tries = 0))
+    }
 }
