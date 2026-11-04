@@ -101,4 +101,22 @@ class SpeechQueueTest {
         assertEquals(1_500L, SpeechQueue.ttsWaitMs(0, 1_000))
         assertEquals(SpeechQueue.TTS_WAIT_MS, SpeechQueue.ttsWaitMs(5_000, 1_000))
     }
+
+    @Test fun aCoachLineIsSaidSentenceBySentenceSoTheFirstStartsWithinTheRule() {
+        val line = "Muy bien, tocaste la escala completa. El Fa se fue a Sol: prueba otra vez despacio."
+        val parts = SpeechQueue.sentences(line)
+        assertEquals(listOf("Muy bien, tocaste la escala completa.", "El Fa se fue a Sol: prueba otra vez despacio."), parts)
+        assertEquals(listOf("Sin punto final"), SpeechQueue.sentences("  Sin punto final "))
+        assertEquals(emptyList<String>(), SpeechQueue.sentences(" "))
+        val long = List(60) { "nota" }.joinToString(" ") + "."
+        assertTrue(SpeechQueue.sentences(long).all { it.length <= Sight.CHUNK_CHARS })
+        // Handed over at 0 with nothing ahead of it: the first sentence waits for the hub's audio at most 2.5 s, then the phone speaks.
+        val q = SpeechQueue()
+        parts.forEachIndexed { i, s -> q.offer(SpokenLine(i + 1L, s, LineKind.Reply, 0)) }
+        val first = q.next(now = 0)!!
+        assertEquals(parts[0], first.text)
+        assertTrue(first.at + SpeechQueue.ttsWaitMs(first.at, 0) <= SpeechQueue.TTS_WAIT_MS)
+        // Even if the loop picks it up late, the wait never runs past the rule.
+        assertTrue(SpeechQueue.ttsWaitMs(first.at, 2_000) <= SpeechQueue.TTS_WAIT_MS - 2_000 + SpeechQueue.TTS_GRACE_MS)
+    }
 }

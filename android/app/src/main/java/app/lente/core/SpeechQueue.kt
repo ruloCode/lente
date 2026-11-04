@@ -70,6 +70,8 @@ class SpeechQueue(private val staleMs: Long = NARRATION_STALE_MS) {
         const val NARRATION_STALE_MS = 6_000L
         /** How long the hub's voice may take before the phone's own voice says the line instead. */
         const val TTS_WAIT_MS = 2_500L
+        /** A phone voice still starting when its first line is due gets this long before the line is skipped. */
+        const val TTS_INIT_WAIT_MS = 1_500L
         /** A line whose audio was asked for long ago (while the lines before it played) still gets this long. */
         const val TTS_GRACE_MS = 400L
 
@@ -78,6 +80,18 @@ class SpeechQueue(private val staleMs: Long = NARRATION_STALE_MS) {
          * and at least [TTS_GRACE_MS], so audio that is already here (or nearly) is used, not skipped.
          */
         fun ttsWaitMs(askedAt: Long, now: Long): Long = (askedAt + TTS_WAIT_MS - now).coerceIn(TTS_GRACE_MS, TTS_WAIT_MS)
+
+        /**
+         * A line handed over whole (a look's answer, Practicar's coach line) in the sentences it is said in:
+         * the first one's audio is short and quick to make, the rest are fetched while it plays. A sentence
+         * longer than [Sight.CHUNK_CHARS] is cut at spaces.
+         */
+        fun sentences(text: String): List<String> {
+            val clean = text.replace(Regex("\\s+"), " ").trim()
+            if (clean.isEmpty()) return emptyList()
+            return Regex("[^.!?…]+(?:[.!?…]+[»\"”)]?|$)").findAll(clean).map { it.value.trim() }.filter { it.isNotEmpty() }
+                .flatMap { s -> if (s.length <= Sight.CHUNK_CHARS) listOf(s) else Sight.chunks(s) }.toList()
+        }
 
         /** About how long a screen reader takes to say [text], so announcements follow each other instead of cutting in. */
         fun readMs(text: String): Long = (text.length * 65L).coerceIn(900L, 15_000L)

@@ -90,8 +90,14 @@ class SightSpeaker(
         scope.launch(Dispatchers.Main) { run() }
     }
 
-    /** A look's answer or a live description. */
-    fun say(text: String, kind: LineKind) = offer(text, kind, null)
+    /**
+     * A look's answer, a coach line or a live description. All but narration go a sentence at a time, so
+     * the first starts as soon as its own audio is ready; a description stays whole (only the newest waits).
+     */
+    fun say(text: String, kind: LineKind) {
+        if (kind == LineKind.Narration) return offer(text, kind, null)
+        for (s in SpeechQueue.sentences(text)) offer(s, kind, null)
+    }
 
     /** One sentence of a voice reply; `done` once it was said (or skipped), never after [stop]. */
     override fun sentence(turn: Int, text: String, done: () -> Unit) {
@@ -165,8 +171,9 @@ class SightSpeaker(
             val (asked, bytes) = audio[line.id] ?: (0L to null)
             val wait = SpeechQueue.ttsWaitMs(asked, System.currentTimeMillis())
             val sound = bytes?.let { withTimeoutOrNull(wait) { runCatching { it.await() }.getOrNull() } }
-            if (sound != null && playAudio(sound)) { Log.i(TAG, "${line.kind}: hub voice"); return }
-            Log.i(TAG, "${line.kind}: phone voice")
+            // The log says when the line starts, in ms after it was handed over: numbers only, never the text.
+            if (sound != null && playAudio(sound) { Log.i(TAG, "${line.kind}: hub voice starts ${System.currentTimeMillis() - line.at} ms after it was asked") }) return
+            Log.i(TAG, "${line.kind}: phone voice starts ${System.currentTimeMillis() - line.at} ms after it was asked")
             phoneSay(line.text)
         } finally {
             Capture.speaking = false
@@ -175,9 +182,9 @@ class SightSpeaker(
     }
 
     /** Plays the hub's audio to its end; false when it could not start (then the phone's voice says it). */
-    private suspend fun playAudio(bytes: ByteArray): Boolean = suspendCancellableCoroutine { cont ->
+    private suspend fun playAudio(bytes: ByteArray, started: () -> Unit = {}): Boolean = suspendCancellableCoroutine { cont ->
         val mp = MediaPlayer()
-        var started = false
+        var playing = false
         var released = false
         fun release() { if (!released) { released = true; runCatching { mp.stop() }; mp.release() } }
         try {
@@ -186,13 +193,14 @@ class SightSpeaker(
             mp.setOnPreparedListener {
                 val speed = SpeechVoice.rate(rate()) / SpeechVoice.DEFAULT_RATE
                 if (kotlin.math.abs(speed - 1f) > 0.01f) runCatching { it.playbackParams = it.playbackParams.setSpeed(speed) }
-                started = true
+                playing = true
                 it.start()
+                started()
             }
             mp.setOnCompletionListener { release(); if (cont.isActive) cont.resume(true) }
             mp.setOnErrorListener { _, what, extra ->
                 Log.w(TAG, "hub voice failed to play ($what/$extra)")
-                release(); if (cont.isActive) cont.resume(started); true
+                release(); if (cont.isActive) cont.resume(playing); true
             }
             mp.prepareAsync()
         } catch (e: Exception) {
@@ -204,6 +212,8 @@ class SightSpeaker(
 
     /** The phone's own voice, to the end of the line. */
     private suspend fun phoneSay(text: String) {
+        // A speaker made just now (Practicar's first line) may have an engine still starting.
+        if (!ttsReady) withTimeoutOrNull(SpeechQueue.TTS_INIT_WAIT_MS) { while (!ttsReady) delay(50) }
         if (!ttsReady) return
         suspendCancellableCoroutine { cont ->
             val id = "sight-${System.nanoTime()}"
