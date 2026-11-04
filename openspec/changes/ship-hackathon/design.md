@@ -119,7 +119,7 @@ The website looks like Lente's own app on a bigger canvas, calm and confident, w
 
 - Built with `pnpm android:apk` on the owner's Mac. It is signed with the debug key whose SHA-1 the Android OAuth client must list. `-P lente.supabaseUrl/…` comes from `gradle.properties` as today.
 - `versionName 0.2.0`, `versionCode 2`.
-- Published with `gh release create v0.2.0-hackathon android/app/build/outputs/apk/release/app-release.apk#lente.apk --title "Lente 0.2.0 (hackathon)" --notes-file …`, so the asset is named `lente.apk`.
+- Published with `gh release create v0.2.0-hackathon <dir>/lente.apk --title "Lente 0.2.0 (hackathon)" --notes-file docs/release-notes-0.2.0.md --latest`, where `lente.apk` is a copy of `app-release.apk`: the file's own name becomes the asset's name. `file#lente.apk` would only set the label, leaving the asset `app-release.apk` and `releases/latest/download/lente.apk` a 404. Later builds replace it with `gh release upload v0.2.0-hackathon <dir>/lente.apk --clobber`.
 - The release notes say:
   - Android 10+;
   - allow installing from this source;
