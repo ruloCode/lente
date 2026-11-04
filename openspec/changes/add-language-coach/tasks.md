@@ -1,0 +1,49 @@
+# Tasks
+
+Depends on: `add-voice-mode`, `add-sight-mode`, `add-android-app`
+
+Groups 1–3 are P0. Group 4 is P1 and its «Tradúceme» waits for `add-consent` (owner only until then). Group 5 is P2. Tasks marked «Demo slice» are the optional slice for 2026-11-04 (proposal, «A demo slice for today»): 1.1–1.2 and 2.1–2.4, about 4.5–5 h estimated, or 3 h without 2.3. The orchestrator decides whether to build them before the 18:00 freeze. `add-lens-apps` is not a dependency: the coach's manifest is checked by a shape test here until that change's validator exists.
+
+## 1. Language checks (P0)
+
+- [ ] 1.1 Demo slice. Check each of Portuguese (Brazil) and French and record the results in `docs/kb/meta-api.md` under «Languages»; a language that fails stays «Pronto» [key:MODEL_API_KEY] [phone] [human]
+  - whether dev.meta.ai lists the language for Muse Voice Transcribe, and the exact `languageBias` name;
+  - a real `ENDPOINTING` session on ten synthetic phrases (`say -v Luciana`, `say -v Jacques`, 16 kHz), with the words right;
+  - whether dev.meta.ai documents languages for Muse Spark 1.3, and one call answering at A2 in the language;
+  - whether the realtime events carry word timings;
+  - ElevenLabs' documented support for the language on `eleven_flash_v2_5`, with one `/tts` line heard on the Samsung;
+  - whether the Samsung has `pt-BR` and `fr-FR` text-to-speech voices.
+- [ ] 1.2 Demo slice. `src/coach.ts` (pure): `COACH_LANGUAGES`, `likelyLanguage(text)` with fresh function-word lists for es/pt/fr/en, `coachInstructions(ctx)`, `coachLookPrompt(lang, band)`, `parseNames()`; `test/coach.test.ts`: Spanish, Portuguese and French sentences each classified, a mixed es/pt sentence that resolves to «unsure», the instructions carry the band and Lente's rules, well-formed and malformed name lines (`pnpm test`)
+
+## 2. The tutor in the voice session (P0)
+
+- [ ] 2.1 Demo slice. `start { persona: "coach", lang, mode }` in `parsePhoneMessage`; the transcription bias `[<target>, "Spanish"]` set on `start` (restart if open) in `src/voice-hub.ts` / `src/asr-session.ts`; `COACH_FUNCTIONS` with `look`, `pronounce`, `check_repeat`, `ask_memory` (`language_progress` joins in 3.2); each reply sentence tagged with `lang`; hub test on the stub: a coach session opens with the Portuguese bias, «¿cómo se dice tenedor?» emits a `pronounce` event with `lang: "pt"`, a look returns names (`pnpm test`)
+- [ ] 2.2 Demo slice. Android: «Idiomas · Portugués» in the record sheet opens the voice screen with `persona: "coach"`; `pronounce` shows the phrase large with «Más despacio» and «Repetir»; each sentence is spoken in its language (the hub's `/tts` voice, then the phone's `pt-BR` voice, else text and the Spanish note); TalkBack descriptions; `pnpm android:test`, `pnpm android:apk`, installed on the Samsung [phone]
+- [ ] 2.3 Demo slice. `src/placement.ts` (pure): `fluency(turns, prompts)` (words per minute from turn audio spans, median time to start answering, words per turn), the estimate's JSON schema, `checkEvidence()`, the closing line; the voice session's `onTurn` gains the audio span; `mode: "placement"` with the `PLACEMENT_MIN_MS`, `PLACEMENT_MAX_MS` and `PLACEMENT_MIN_WORDS` rules and `finish_placement`; tests: fluency on a synthetic transcript with known spans, a fabricated quote dropped, too few words → no band, the line always says «No es un examen oficial»; hub test on the stub: a placement ends with a `placement` item (`pnpm test`)
+- [ ] 2.4 Demo slice. On the Samsung with the clip: a two-minute Portuguese conversation with the tutor, «¿cómo se dice tenedor?», a look at a fork and a cup, and a placement that ends with an estimate; note in `tasks.md` what was heard and what failed. Only the owner's voice; nothing kept outside the account [phone] [hw] [human]
+
+## 3. Memory and progress (P0)
+
+- [ ] 3.1 `language` kind in `DayEntry` (`src/day-log.ts`) and unit kind `language` in `src/memory-index.ts` (and the snapshot's kinds), written by `pronounce`, the look's names and the placement, never in a guest or trial session; tests: a day with `language` entries reloads, an older snapshot still reads, «¿qué palabras aprendí ayer?» retrieves yesterday's items (`pnpm test`)
+- [ ] 3.2 `languageProgress()` (pure) and the `language_progress` tool, also in the default voice's functions; test: the band and its date, this week's counts by kind; hub test: «¿cómo voy con el portugués?» on the default voice cites the placement (`pnpm test`)
+- [ ] 3.3 `apps/builtin/idiomas.json` (design decision 12) with a shape test, or through `add-lens-apps`' `validateManifest({ builtIn: true })` if it has landed (`pnpm test`)
+- [ ] 3.4 `scripts/eval/coach-set.ts` (ten synthetic learner transcripts per language, two per band, and twenty sentences per language, half with one mistake, all written fresh) and `scripts/bench-coach.ts --mode placement`: each transcript scored twice; exact and within-one agreement, and against the written band; Spark 1.3 against Muse Wonder; results in `docs/benchmarks.md` «Language coach: placement». The band is shown alone only if within-one agreement holds on every transcript, otherwise as a range [key:MODEL_API_KEY]
+- [ ] 3.5 `bench-coach.ts --mode tutor` and `--mode look`: first sentence and first answer sentence in the coach persona (synthetic Spanish and Portuguese questions), look → first name ready and → `narrated` on the clip; results in `docs/benchmarks.md` «Language coach: tutor and look» [key:MODEL_API_KEY] [hw] [phone]
+- [ ] 3.6 `docs/kb/decisions.md`: «The coach runs on existing paths, behind language checks» and «The level is an estimate with its evidence»; README: «Idiomas» under what runs today with only numbers from 3.4–3.5, and the day's row in «What was built» (read in review)
+
+## 4. Live modes (P1)
+
+- [ ] 4.1 «Corrígeme»: `CorrectionPacer` (pure, checked before the model call), `CORRECT_PROMPT`, the substring check on `said`, the wearer's turns only (by voice label in meetings), the «MEJOR» card and one clip buzz, a `corrected` item; tests: two mistakes 30 s apart → one correction and one model call, a correct sentence → none, a turn from another speaker → none (`pnpm test`)
+- [ ] 4.2 The Dilo card at the wearer's band: the extra line in the reply call of `src/briefing.ts` when the coach is on and `likelyLanguage` says the question is in the target; test on the prompt and on the stub that the cue keeps its Spanish meaning and its 90-character cap (`pnpm test`)
+- [ ] 4.3 «Tradúceme» (after `add-consent`'s room notice; owner only until then): the switch, the bias, the per-turn filter, `TRANSLATE_PROMPT` with `=`, the `translation` event, the «TRADUCCIÓN» card on Android, earbud speech below cues, a `heard` item, never in a guest session; tests: a Portuguese turn from another speaker → one translation, a Spanish turn → none, the wearer's own turn → none, a non-owner without the room notice → refused (`pnpm test`); the card checked on the Samsung [phone]
+- [ ] 4.4 `bench-coach.ts --mode translate` (Spark 1.3 and Spark Open) and `--mode correct`: end of turn → translation on the phone p50/p90, the precision and recall of corrections, cost per hour of «Corrígeme» in a synthetic meeting; results in `docs/benchmarks.md` «Language coach: live modes» [key:MODEL_API_KEY] [key:BASETEN_API_KEY] [phone]
+
+## 5. Review and progress (P2)
+
+- [ ] 5.1 `src/srs.ts` (pure): the Leitner fold of design decision 10, `REVIEW_MAX`; tests: a new item due tomorrow, right moves up, wrong goes to box 1, at most seven due returned oldest first (`pnpm test`)
+- [ ] 5.2 `mode: "review"`, «Repasemos», `review_due` and `review_result` (a `review` item each); the weekly re-placement offer, once per session; hub test on the stub (`pnpm test`)
+- [ ] 5.3 A progress card in the coach's screen on Android (band with date and confidence, items this week, reviews due); checked on the Samsung [phone]
+
+## Workflow follow-up
+
+- Archive with `pnpm exec openspec archive add-language-coach --yes` when every task is ticked.
