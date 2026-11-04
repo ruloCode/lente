@@ -410,3 +410,55 @@ What this says:
 - A description reaches the phone about 3.4 s after its frame at the median. The model call is most of it (2.3 s); the rest is the frame waiting while the previous call finishes.
 - The tail is long: one in ten descriptions took over 6.8 s, the slowest 12 s. For someone who cannot see, a description of what was there 10 s ago is worse than silence, so Ver drops any description that arrives more than 6 s after its frame (`SIGHT_STALE_MS`) and logs it as `stale`.
 - The meeting prompt never stays silent (0 of 36 unchanged): it always says something, even when the view did not change. Ver's prompt answers `=` then, and nothing is spoken.
+
+### With Ver's first prompt, the checklist (task 1.2, second run)
+
+The same bench, `--label sight`, 155 s, after Ver's own live prompt replaced the meeting's: the checklist prompt (text first, then what is held up, then people, then the rest, or `=` when nothing changed). Same clip, desk, phone and model.
+
+| Measure (`sight`, checklist prompt) | n | p50 | p90 | Max |
+|---|---|---|---|---|
+| Live: model call | 33 | 4.14 s | 6.17 s | 9.61 s |
+| Live: frame on the hub → shown on the phone | 13 | 5.33 s | 6.27 s | 6.31 s |
+| Live: between descriptions shown | 12 | 8.05 s | 22.19 s | 28.03 s |
+| Look: model call | 3 | 6.28 s | 7.84 s | — |
+| Look: frame on the hub → shown on the phone | 3 | 6.69 s | 8.18 s | — |
+
+- Silent live reads (unchanged, `=`): 11 of 33.
+- Stale live reads dropped (over 6 s after their frame, `SIGHT_STALE_MS`): 9 of 33.
+- Stage split of the live reads shown: asked → first token **3.92 s** p50, against **1.94 s** in the baseline.
+
+What this says:
+- The silence works: a third of the reads found nothing new and said nothing, where the meeting prompt never stayed quiet.
+- The checklist made Spark reason about twice as long before its first token (3.92 s against 1.94 s). The model call went from 2.30 s to 4.14 s at the median, so more descriptions crossed the 6 s limit and were dropped (9 of 33). Only 13 of 33 reads reached the phone, one every 8 s at the median.
+- A description arrives 5.3 s after its frame, and the stale guard now bounds the tail (6.3 s at most) instead of the baseline's 12 s.
+- That is why the live prompt became one sentence, the most important thing first, and the detail moved to a look, which the person asks for. The A/B below measures the two prompts on the same frames. The run on the clip with the one-sentence prompt is `ship-hackathon` 6.3.
+
+### Live prompt A/B: checklist against one sentence (ship-hackathon 6.2)
+
+`node --env-file-if-exists=.env scripts/bench-sight-prompts.ts` (2026-11-04, 10:15 Bogotá, from the Mac over home Wi-Fi). Both prompts go through the hub's own live-read call: Muse Spark 1.3, minimal effort, streamed over the Responses API, 800-token cap, the prompt as the system message and "First frame." with the image as the user message. The checklist is Ver's first live prompt as committed in `5ee0323`; the one sentence is today's `SIGHT_LIVE_PROMPT`. Three frames from `docs/promo/`, nobody in them but a hand:
+- the clip on glasses (a render, 1920×1085, 141 KB);
+- the ecosystem infographic (text to read, 1920×1085, 254 KB);
+- the real photo of the clip rig held between the fingers (529×589, 341 KB).
+
+Each prompt × frame twice, interleaved: 12 calls.
+
+| Prompt | n | First token p50 | First token max | Total p50 | Output tokens p50 (mean) | Input tokens p50 | Unchanged | Cut at cap | Cost |
+|---|---|---|---|---|---|---|---|---|---|
+| Checklist | 6 | 5.50 s | 8.65 s | 5.82 s | 327 (405) | 3,064 | 0 | 0 | US$ 0.0208 |
+| One sentence | 6 | 3.08 s | 3.29 s | 3.35 s | 174 (201) | 2,859 | 0 | 0 | US$ 0.0141 |
+
+Per frame, both calls in run order:
+
+| Frame | Checklist: first token · output tokens | One sentence: first token · output tokens |
+|---|---|---|
+| Clip on glasses | 3.91 s, 5.50 s · 294, 323 | 2.48 s, 3.29 s · 139, 174 |
+| Ecosystem infographic | 5.97 s, 3.28 s · 446, 327 | 3.08 s, 3.19 s · 265, 239 |
+| Clip rig in hand | 8.65 s, 5.52 s · 705, 333 | 3.08 s, 2.75 s · 234, 157 |
+
+Spend: US$ 0.035 at list prices. Percentiles are nearest rank over 6 calls. Output tokens include the reasoning the model does before it answers.
+
+What this says:
+- One sentence halves the work: about half the output tokens (174 against 327 at the median) and 2.4 s less to the first token (3.08 s against 5.50 s). Its slowest call (3.29 s) was faster than the checklist's median.
+- The checklist's tail is what hurts Ver: 8.65 s and 705 tokens on the photo of the rig in the hand, a read that would be dropped as stale.
+- The one sentence still reads text: on the infographic it said «un diagrama que dice LENTE ECOSYSTEM». The checklist said there was a lot of text and offered to read it. Reading all of it is the look's job (`SIGHT_READ_PROMPT`).
+- These are the model's own times, measured from the Mac. On the clip, a frame also waits for the previous call to finish (the gap between the baseline's model call and its frame → phone time).

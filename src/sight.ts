@@ -27,9 +27,9 @@ const RULES =
 
 /**
  * Live reads in Ver: one sentence, the most important thing first. A checklist prompt (text, hand, people,
- * rest) made Spark reason about 330 tokens before answering (3.98 s to the first token on three frames);
- * this one took 202 tokens and 3.16 s, and still read text word for word (A/B, 2026-11-04). The detail is
- * for a look, which the person asks for.
+ * rest) made Spark spend 327 output tokens and 5.50 s to the first token (p50, three frames × 2); this one
+ * took 174 tokens and 3.08 s, and still read text word for word (scripts/bench-sight-prompts.ts,
+ * 2026-11-04). The detail is for a look, which the person asks for.
  */
 export const SIGHT_LIVE_PROMPT =
   "You narrate, in real time, what a blind person has in front of them, seen through a small camera on their glasses. " +

@@ -213,3 +213,63 @@ Ver is `assistMode: "sight"` beside Asistir and Solo grabar. It reuses the devic
 - **Late is dropped.** A description that arrives more than 6 s after its frame (`SIGHT_STALE_MS`) is not said: the wearer has moved on.
 - **A failed look is said too,** as a `VER` card («No hay cámara conectada»), since the wearer can't see the screen.
 - **Rejected:** a separate `/sight` endpoint (it would duplicate the device link and the runtime), and sending the frame to the voice agent's own call (one focused vision call is simpler to test and shows its own time).
+
+### 2026-11-04 · Ver's live read is one sentence; the detail is a look (add-sight-mode)
+
+Live reads say one short sentence, the most important thing first. The first prompt was a checklist (text, then what is held up, then people, then the rest).
+
+- **Why:** on the clip the checklist doubled the time to the first token (3.92 s against 1.94 s p50), and 9 of 33 reads came too late to be said. On the same frames, one sentence took 3.08 s and 174 output tokens against 5.50 s and 327 (p50), and still read text word for word. Numbers in `docs/benchmarks.md`, «Sight mode».
+- **The detail moved to a look,** which the person asks for by tap or by voice and which has room for three sentences, or for all the text (`SIGHT_READ_PROMPT`).
+
+### 2026-11-04 · Judges sign in with Google: open sign-up with an end date and two spend caps (ship-hackathon)
+
+During judging (Nov 5–16), anyone can sign in with Google on the web app and on Android and get their own sealed memory. A judge who cannot try the product scores only the video.
+
+- **A mode with an end date, not a removed check.** `LENTE_SIGNUP` is `allowlist` (the default) or `open`, with `LENTE_SIGNUP_UNTIL`, set to 2026-11-17. After that date only existing accounts sign in, and a new one hears «Las inscripciones están cerradas por ahora». Both are plain config in `deploy/modal/hub.py`, so closing it is a one-line deploy. The check is pure: `mayCreateAccount` in `src/access-gate.ts`.
+  - **Rejected:** reading an empty allow list as «everyone». An empty list keeps meaning «nobody»: that is the safe failure.
+- **Two caps, checked before every model call** (`src/spend-cap.ts`, pure):
+  - **US$ 1.00 a day per user.** At the measured US$ 0.267 per recorded hour (cards and transcription, 2026-11-03) that is over three hours of recording, or over 200 voice turns at US$ 0.0044 each (p50). Live narration in Ver makes a vision call every few seconds (36 in 125 s in the baseline), so it spends the cap fastest, and the cap bounds it the same way.
+  - **US$ 12.00 a day across everyone:** Meta's US$ 150 credit spread over the 12 judging and voting days.
+  - **The owner is exempt.**
+  - The day's spend per user is kept in `usage_daily` (user, day, US$, no content; RLS on, no policies; written only by the hub), so a restart does not reset it. Days roll over in America/Bogota.
+  - **When a cap is hit, nothing errors.** Model calls answer a short, kind Spanish line, and listening pauses with that reason.
+- **Capacity:** the container grows to 2 GB and one CPU. `LENTE_MAX_LISTENING` stays at 4 until a measure says otherwise. Chat, look and voice hold no transcription session, so they are not capped by it.
+- **Media (audio and keyframes) stays owner-only,** whatever the switches say.
+- **Rejected:** a paid plan for the hackathon (Supabase Pro, a bigger Modal footprint). The caps keep the free credit safe instead.
+
+### 2026-11-04 · Preview terms, accepted once (ship-hackathon)
+
+A short terms and privacy page (`/terminos`, `/privacidad`, `TERMS_VERSION = "preview-2026-11-04"`), in Spanish and English, accepted once per account.
+
+- **What it says:**
+  - Lente is a hackathon prototype, not a medical or mobility device;
+  - text memory is sealed per user, and audio and photos are kept only for the owner;
+  - model calls go to Meta's Model API on free credits, which allow content to be used to improve the product, so nothing sensitive should be shared;
+  - the account can be deleted at any time, with all its data;
+  - questions go to the repository's issues.
+- **How it holds:** until an account accepts the current version, every data route answers 428 `{ needsTerms: true }`, except the terms routes and sign-out. The web app and Android show one screen with the summary, the two links and «Acepto».
+- **Why not the full `add-consent`:** legal review, the room notice, the recording light and retention take longer than a day. The preview terms say plainly what Lente is and is not during judging. The full change stays open for version 1.
+
+### 2026-11-04 · New accounts start with a synthetic sample (ship-hackathon)
+
+On first sign-in, after the terms, the hub writes a sample through the same sealed stores as everything else:
+- one project, «PROBE · Proyecto de ejemplo»;
+- two synthetic meetings from `scripts/eval/memory-set.ts`'s generator, one in Spanish and one in English, with notes, decisions and tasks;
+- three open tasks;
+- two kept facts.
+
+All of it is marked `sample`, and «Borrar ejemplo» in Ajustes removes it and nothing else.
+
+- **Why:** an empty memory has nothing to ask about. With the sample, a judge can ask «¿Qué se decidió sobre la beta?» in the first minute and get an answer with sources, before recording anything.
+- **Only PROBE names,** from the eval generator: no real person or meeting enters a judge's account. The site's screenshots come from a test account holding only this sample.
+
+### 2026-11-04 · A static website on GitHub Pages and the APK as a release asset (ship-hackathon)
+
+- **The website** is `site/`: plain HTML and CSS in Spanish (`/`) and English (`/en/`), no framework and no build step, published by `.github/workflows/pages.yml` on pushes to `main` that touch it.
+  - It links to the web app («Entrar con Google») and to the APK («Descargar para Android», with a QR code).
+  - Every number on it is in `docs/benchmarks.md`.
+  - The generated concept images in `docs/promo/` are labelled as concepts or left out.
+  - **Why:** it is the zero-dependency way to give judges one page with the video, the two ways in and how to build the clip. It is served from the repository the judges already read.
+- **The release** is a GitHub Release whose asset is named `lente.apk`, so `releases/latest/download/lente.apk` stays the same link from one version to the next (`v0.2.0-hackathon`, `versionName 0.2.0`).
+  - It is built on the owner's Mac, signed with the key whose SHA-1 the Android OAuth client lists. Google sign-in refuses an APK signed with any other key.
+  - **Rejected:** building the APK in CI (a different key, so sign-in fails) and the Play Store for now (that is `add-store-release`, after `add-consent`).
