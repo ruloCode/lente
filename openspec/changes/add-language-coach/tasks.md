@@ -13,6 +13,7 @@ Groups 1–3 are P0. Group 4 is P1 and its «Tradúceme» waits for `add-consent
   - whether the realtime events carry word timings;
   - ElevenLabs' documented support for the language on `eleven_flash_v2_5`, with one `/tts` line heard on the Samsung;
   - whether the Samsung has `pt-BR` and `fr-FR` text-to-speech voices.
+  - (2026-11-04, Portuguese only: **passes**. dev.meta.ai lists Portuguese and French for Muse Voice Transcribe, with the bias name `"Portuguese"`. Ten synthetic `say -v Luciana` phrases in one real `ENDPOINTING` session with `["Portuguese","Spanish"]`: ten turns, every word right, one accent missing. No word timings: the docs say turn-level only. dev.meta.ai documents no language list for Spark. One Spark 1.3 call at minimal effort answered a tutor prompt in correct, simple pt-BR. ElevenLabs `eleven_flash_v2_5` with `language_code: "pt"` was judged by transcribing its audio back: three voices came back word for word, and the Brazilian «Keren» is `coach-pt`. Details are in `docs/kb/meta-api.md` «Languages». Still open: French, and the two Samsung checks [phone].)
 - [ ] 1.2 Demo slice. `src/coach.ts` (pure): `COACH_LANGUAGES`, `likelyLanguage(text)` with fresh function-word lists for es/pt/fr/en, `coachInstructions(ctx)`, `coachLookPrompt(lang, band)`, `parseNames()`; `test/coach.test.ts`: Spanish, Portuguese and French sentences each classified, a mixed es/pt sentence that resolves to «unsure», the instructions carry the band and Lente's rules, well-formed and malformed name lines (`pnpm test`)
 
 ## 2. The tutor in the voice session (P0)

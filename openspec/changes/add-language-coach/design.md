@@ -79,6 +79,20 @@ Tools (`COACH_FUNCTIONS`):
 
 `language_progress` is also added to the default voice's functions, so «¿cómo voy con el portugués?» works without opening the tutor.
 
+**The wire, as built on 2026-11-04 (the demo slice).** These fields add to the contract above and change none of it.
+- **The phone sends** `{ "type": "start", "persona": "coach", "lang": "pt", "mode": "tutor" }` first. A `lang` that has not passed task 1.1 (today: anything but `pt`), or a missing one, opens the default Lente, and the hub logs why. `mode` defaults to `tutor`.
+- **`reply` in a coach session** is `{ type: "reply", turn, text, commentary, lang }`.
+  - `lang` is `"es" | "pt" | "fr" | "en"`: the target when `likelyLanguage` says so, else `"es"` («unsure» counts as Spanish).
+  - Every sentence is in one language. The tutor is told never to mix them in one sentence.
+  - The default and `sight` personas send no `lang`, as before.
+- **`pronounce`** is `{ type: "pronounce", turn, text, meaning, lang }`, for example `{ text: "o garfo", meaning: "el tenedor", lang: "pt" }`.
+  - It is the card: the phrase large, the meaning, and «Más despacio» and «Repetir».
+  - The phone does **not** speak it when it arrives. The hub sends the phrase as a `reply` sentence with the same `lang` right after, and that sentence is what is spoken and counted in `spoken`.
+  - «Repetir» says `text` again in the `lang` voice, and «Más despacio» says it at 0.8×.
+  - A coach look sends one `pronounce` per name, each followed by its sentence (for the first name in Portuguese, «Isso é um garfo. O garfo.»).
+- **`/tts`** takes `{ text, voice: "coach-pt" }` for a sentence whose `lang` is `pt`: Keren, a Brazilian voice (`ELEVENLABS_COACH_PT_VOICE_ID` overrides it), with `language_code: "pt"`. A Spanish sentence in a coach session uses the voice the phone already uses for the voice session. `coach-fr` waits for French's check.
+- **`check_repeat`** needs no event. The tutor says whether it understood. A repeat of the phrase just pronounced is not dropped as Lente's own echo once the phone has finished speaking it (`REPEAT_ECHO_TAIL_MS`).
+
 ### 4. Placement and the estimate (`src/placement.ts`, pure)
 
 **The conversation.** `mode: "placement"`. The tutor:
@@ -232,6 +246,6 @@ It is validated by `add-lens-apps`' validator when that lands, and by a shape te
 
 ## Migration Plan
 
-1. P0 ships behind `LENTE_COACH=pt` (the verified languages, comma-separated). Unset, «Idiomas» shows «Pronto».
+1. P0 offers only the languages that passed task 1.1: `COACH_LANGUAGES` in `src/coach.ts` marks each as `verified` (2026-11-04: `pt`), and the apps catalog shows the rest as «Pronto». No environment switch: a language is turned on by the commit that records its check in `docs/kb/meta-api.md`.
 2. `language` entries are additive, like `practice`; task 3.1 checks that a day holding them loads and that the memory snapshot reads older snapshots without the new unit kind.
-3. Rollback: unset `LENTE_COACH`. The entries stay in the memory as text.
+3. Rollback: revert the commit that verified the language. The entries stay in the memory as text.

@@ -99,12 +99,36 @@ Budget sense: a 1-hour meeting costs ~$0.18 of transcription; with the USD 150 c
   - `ENDPOINTING`: the model finds turn boundaries; done = `speechComplete` per `turnId`.
   - `DIARIZATION`: endpointing plus speaker attribution; done = `speechComplete` per `turnId`. Docs warn it is "not tuned for low-latency voice commands".
 - **Server events:** `speechStart` (`turnId`, `audioProcessedMs`) · `transcript` (`transcript`, `final`, `audioProcessedMs`; partials have no `turnId`, they belong to the latest `speechStart`) · `speechEnd` (boundary, not the text) · `speechComplete` (`turnId`, `transcript`) · `speaker` (`label`, e.g. `A`; session-scoped) · `audioProgress` · `error` (`message`, `sessionId`).
-- **Languages:** 25 validated, including English and Spanish. `languageBias` takes English names ("Spanish"), not codes; it's a hint. `keywords` biases recognition.
+- **Languages:** 25 validated, including English and Spanish (the list and Portuguese are under «Languages» below). `languageBias` takes English names ("Spanish"), not codes; it's a hint. `keywords` biases recognition.
 - **Limits:** 60-minute sessions, no resume token; reconnect before the limit (new session = new speaker labels).
 - **Close codes:** `1000` done · `1008` bad config or pacing (don't retry as-is) · `1011` backend failure, retry with backoff ("Max session duration reached" → new session) · `1013` rate limited.
 - **Unverified:** whether `speaker` arrives before or after `speechComplete`, and how fast in `DIARIZATION`. `scripts/bench-asr.ts` measures both.
 
 Batch: `POST /v1/asr/transcribe`, up to 10 minutes of audio per request, 32 MB body; returns `turns[]` with `turnId`, `startMs`, `endMs`, `transcript`, `speaker`.
+
+## Languages (add-language-coach 1.1)
+
+Checked 2026-11-04 for the coach's target languages. Portuguese (Brazil) **passes**; French is not checked yet and stays «Pronto».
+
+- **Muse Voice Transcribe lists both.** `dev.meta.ai/docs/speech-to-text.md` (read 2026-11-04) names 25 languages with code-switching: Arabic, Bengali, Dutch, English, French, German, Hebrew, Hindi, Indonesian, Italian, Japanese, Kannada, Korean, Malay, Mandarin Chinese, Marathi, Polish, Portuguese, Spanish, Tagalog, Tamil, Telugu, Thai, Turkish and Vietnamese. The bias names are `"Portuguese"` and `"French"`.
+  - `languageBias` and `keywords` are set in the handshake and «cannot change once a session is running», so a new bias needs a new session.
+  - Timings are per turn only: the docs say word-level timestamps are not available.
+- **Portuguese, real `ENDPOINTING` session** (`scripts/bench-asr.ts`, `languageBias ["Portuguese","Spanish"]`, `PCM_16KHZ`):
+  - The audio: ten synthetic pt-BR phrases from `say -v Luciana`, 1.8 s of silence between them, converted with `afconvert -d LEI16@16000`.
+  - Ten turns out of ten, every word right. The only slip is a missing accent («metro» for «metrô»).
+  - The first attempt closed with `1008` «Ingress audio slower than real-time» after 24 s of audio. The retry ran clean, and the cause was not found.
+- **Muse Spark 1.3 answers in Portuguese.** dev.meta.ai's models page documents no language list for Spark.
+  - The call: Chat Completions, `reasoning_effort: "minimal"`, `max_tokens: 1200`, a Spanish system prompt asking for a tutor at A2, and a Spanish question.
+  - The reply was «Puedes decirlo así, de forma educada. Quero um café com leite, por favor. A conta, por favor.»: correct, simple Brazilian Portuguese, with the explanation in Spanish.
+  - It took 2.81 s and used 180 output tokens, 144 of them reasoning.
+- **ElevenLabs speaks it.** `eleven_flash_v2_5` with `language_code: "pt"` gave the same pt-BR sentence in three voices: the hub's default, Ver's (Nathalia) and «Keren», a Brazilian voice from the shared library (`33B4UnXyTNbgLmdEDh5P`).
+  - Each was judged by transcribing it back with the session above. All three came back word for word.
+  - Keren is the coach's Portuguese voice (`/tts` voice `coach-pt`). Its first call took 4.7 s; the next three took 474, 579 and 301 ms. Ver's voice took 330, 300 and 276 ms.
+  - Nothing was played aloud, and the audio stayed outside the repo.
+- **Not checked yet:**
+  - French: all of the above.
+  - Whether the Samsung has `pt-BR` and `fr-FR` text-to-speech voices [phone].
+  - A `/tts` line heard on the Samsung [phone].
 
 ## Baseten (Muse Spark Open, open weights)
 
