@@ -1,14 +1,22 @@
 // Accounts and who may open one (add-accounts 3.5, design decisions 0 and 5). While Lente is in a
-// closed test only emails on `LENTE_ALLOWED_EMAILS` get an account; anyone else is refused with a
-// clear message and no row is written. A new account gets its own data key, stored only wrapped
-// under the KEK. The store is an interface: a JSON file here, `accounts` + `user_keys` on Supabase.
+// closed test only emails on `LENTE_ALLOWED_EMAILS` get an account; with open sign-up
+// (ship-hackathon decision 1) anyone may until its end date. Anyone else is refused with a clear
+// message and no row is written; an existing account keeps signing in. A new account gets its own
+// data key, stored only wrapped under the KEK. The store is an interface: a JSON file here,
+// `accounts` + `user_keys` on Supabase.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { SIGNUP_CLOSED_MESSAGE, type SignupAnswer } from "./access-gate.ts";
 import { type Kek, newDek, unwrapDek, wrapDek } from "./seal.ts";
 
 /** What the app and the page show someone outside the allow list. */
 export const CLOSED_TEST_MESSAGE = "Lente está en prueba cerrada. Tu cuenta de Google no está en la lista de invitados.";
+
+/** What a refused caller reads, in Spanish; `no_account` means the session outlived its account. */
+export function admissionMessage(reason: "closed_test" | "signup_closed" | "no_account"): string {
+  return reason === "closed_test" ? CLOSED_TEST_MESSAGE : reason === "signup_closed" ? SIGNUP_CLOSED_MESSAGE : "Inicia sesión de nuevo.";
+}
 
 export interface AccountRecord {
   userId: string;
@@ -30,34 +38,39 @@ export function parseAllowList(raw: string | undefined): Set<string> {
   return new Set((raw ?? "").split(/[\s,]+/).map((e) => e.trim().toLowerCase()).filter(Boolean));
 }
 
-export type Admission = { ok: true; created: boolean } | { ok: false; reason: "closed_test" | "no_account" };
+export type Admission = { ok: true; created: boolean } | { ok: false; reason: "closed_test" | "signup_closed" | "no_account" };
+
+/** Who may get a new account: an allow list alone, or a sign-up policy (`mayCreateAccount`). */
+export type MayCreate = (email: string) => SignupAnswer;
 
 export class Accounts {
   private readonly store: AccountStore;
   private readonly keks: readonly Kek[];
-  private readonly allowed: Set<string>;
+  private readonly mayCreate: MayCreate;
   private readonly now: () => number;
   /** Unwrapped data keys of active users; dropped when their runtime is evicted. */
   private readonly deks = new Map<string, Buffer>();
   private readonly creating = new Map<string, Promise<void>>();
 
-  constructor(store: AccountStore, keks: readonly Kek[], allowed: Set<string>, now: () => number = Date.now) {
+  constructor(store: AccountStore, keks: readonly Kek[], allowed: Set<string> | MayCreate, now: () => number = Date.now) {
     if (keks.length === 0) throw new Error("accounts need a KEK (LENTE_KEK)");
     this.store = store;
     this.keks = keks;
-    this.allowed = allowed;
+    this.mayCreate = typeof allowed === "function" ? allowed : (email) => (allowed.has(email.trim().toLowerCase()) ? { ok: true } : { ok: false, reason: "closed_test" });
     this.now = now;
   }
 
   /**
-   * May this caller act? A caller with an email (an access token) must be on the allow list, and
-   * gets an account on first sign-in. A caller without one (a session cookie or a device token)
-   * must already have an account.
+   * May this caller act? An existing account always may (ship-hackathon: closing sign-up never locks
+   * out who already signed up; deleting the account does). Otherwise a caller with an email (an
+   * access token) gets an account on first sign-in if the policy lets it; a caller without one (a
+   * session cookie or a device token) must already have an account.
    */
   async admit(userId: string, email: string | undefined): Promise<Admission> {
-    if (email !== undefined && !this.allowed.has(email.trim().toLowerCase())) return { ok: false, reason: "closed_test" };
     if (await this.store.get(userId)) return { ok: true, created: false };
     if (email === undefined) return { ok: false, reason: "no_account" };
+    const may = this.mayCreate(email);
+    if (!may.ok) return may;
     let pending = this.creating.get(userId);
     const mine = !pending;
     if (!pending) {

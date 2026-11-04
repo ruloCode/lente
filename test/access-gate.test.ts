@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decideUpgrade, decideWeb } from "../src/access-gate.ts";
+import { decideUpgrade, decideWeb, mayCreateAccount, parseSignup } from "../src/access-gate.ts";
+import { parseAllowList } from "../src/accounts.ts";
 
 const web = (method: string, path: string, over: { plainHttp?: boolean; identified?: boolean } = {}) =>
   ({ method, path, plainHttp: false, identified: false, ...over });
@@ -80,4 +81,38 @@ test("the desktop web app (add-web-desktop): its shell, modules and session answ
     assert.notEqual(decideWeb(web("GET", "/apple"), mode), "app", "a prefix is not the app");
   }
   assert.equal(decideWeb(web("GET", "/app", { plainHttp: true }), "accounts"), "redirect-https");
+});
+
+// --- ship-hackathon 2.1: open sign-up with an end date ---------------------------------------------
+
+const allowList = parseAllowList("owner@example.com");
+const UNTIL = parseSignup("open", "2026-11-17").until!;
+const may = (mode: "open" | "allowlist", now: string, email: string, list = allowList) => mayCreateAccount({ mode, until: UNTIL, now: Date.parse(now), email, allowList: list });
+
+test("open sign-up: any email gets an account before the end date, closes at its start in Bogotá", () => {
+  assert.equal(UNTIL, Date.parse("2026-11-17T05:00:00Z"));
+  assert.deepEqual(may("open", "2026-11-06T15:00:00-05:00", "probe-judge@example.com"), { ok: true });
+  assert.deepEqual(may("open", "2026-11-16T23:59:00-05:00", "probe-judge@example.com"), { ok: true });
+  assert.deepEqual(may("open", "2026-11-17T00:00:00-05:00", "probe-judge@example.com"), { ok: false, reason: "signup_closed" });
+  assert.deepEqual(may("open", "2026-11-20T10:00:00-05:00", "probe-judge@example.com"), { ok: false, reason: "signup_closed" });
+  // The allow list still gets in after the date.
+  assert.deepEqual(may("open", "2026-11-20T10:00:00-05:00", "Owner@Example.com"), { ok: true });
+});
+
+test("allowlist mode: only the list, and an empty list lets nobody in", () => {
+  assert.deepEqual(may("allowlist", "2026-11-06T15:00:00-05:00", "owner@example.com"), { ok: true });
+  assert.deepEqual(may("allowlist", "2026-11-06T15:00:00-05:00", "probe-judge@example.com"), { ok: false, reason: "closed_test" });
+  assert.deepEqual(may("allowlist", "2026-11-06T15:00:00-05:00", "owner@example.com", parseAllowList("")), { ok: false, reason: "closed_test" });
+  assert.deepEqual(mayCreateAccount({ mode: "open", now: Date.now(), email: "probe@example.com", allowList: new Set() }), { ok: false, reason: "signup_closed" }, "open without an end date is closed");
+});
+
+test("LENTE_SIGNUP and LENTE_SIGNUP_UNTIL: unknown or incomplete values fall back to the allow list", () => {
+  assert.deepEqual(parseSignup(undefined, undefined), { mode: "allowlist" });
+  assert.deepEqual(parseSignup("allowlist", "2026-11-17"), { mode: "allowlist" });
+  assert.deepEqual(parseSignup(" Open ", "2026-11-17T12:00:00Z"), { mode: "open", until: Date.parse("2026-11-17T12:00:00Z") });
+  for (const [mode, until] of [["open", undefined], ["open", "mañana"], ["everyone", "2026-11-17"]] as const) {
+    const out = parseSignup(mode, until);
+    assert.equal(out.mode, "allowlist", `${mode} ${until}`);
+    assert.ok(out.warning);
+  }
 });

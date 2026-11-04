@@ -39,13 +39,23 @@ test("the first sign-in on the list creates one account with its own wrapped key
   assert.ok(!Buffer.from(row!.wrappedDek, "base64").includes(dek));
 });
 
-test("an account whose email left the list is refused; a cookie or device caller needs an account already", async () => {
+test("an existing account keeps signing in after its email left the list (ship-hackathon 2.1); a cookie or device caller needs an account already", async () => {
   const store = new FileAccountStore();
   await new Accounts(store, [kek], allow).admit(OWNER, "owner@example.com");
-  assert.deepEqual(await new Accounts(store, [kek], parseAllowList("")).admit(OWNER, "owner@example.com"), { ok: false, reason: "closed_test" });
+  assert.deepEqual(await new Accounts(store, [kek], parseAllowList("")).admit(OWNER, "owner@example.com"), { ok: true, created: false });
   const accounts = new Accounts(store, [kek], allow);
   assert.deepEqual(await accounts.admit(OWNER, undefined), { ok: true, created: false });
   assert.deepEqual(await accounts.admit(STRANGER, undefined), { ok: false, reason: "no_account" });
+});
+
+test("a sign-up policy decides new accounts: open lets a stranger in, closed says so and writes nothing", async () => {
+  const store = new FileAccountStore();
+  const open = new Accounts(store, [kek], () => ({ ok: true }));
+  assert.deepEqual(await open.admit(STRANGER, "probe-judge@example.com"), { ok: true, created: true });
+  const closed = new Accounts(store, [kek], () => ({ ok: false, reason: "signup_closed" }));
+  assert.deepEqual(await closed.admit(STRANGER, "probe-judge@example.com"), { ok: true, created: false }, "who signed up keeps signing in");
+  assert.deepEqual(await closed.admit(OWNER, "probe-late@example.com"), { ok: false, reason: "signup_closed" });
+  assert.equal(await store.get(OWNER), undefined);
 });
 
 test("the data key survives a restart through the file store and opens what was sealed before", async () => {

@@ -39,12 +39,12 @@ import { askLines, type Chats, FileChats, HISTORY_THREADS, isThreadId, RECENT_TH
 import { DeviceAuth, SESSION_COOKIE } from "./device-auth.ts";
 import { HealthTracker } from "./health.ts";
 import { PAIR_PAGE } from "./pair-page.ts";
-import { type AuthMode, decideUpgrade, decideWeb } from "./access-gate.ts";
+import { type AuthMode, decideUpgrade, decideWeb, mayCreateAccount, parseSignup } from "./access-gate.ts";
 import { type Identity, type IdentitySources, LOCAL_OWNER, identify } from "./identify.ts";
 import { BUSY_MESSAGE, EVICT_CHECK_MS, WearerRegistry, mayStartListening, parseListeningCap } from "./wearer-registry.ts";
 import { UserAuth } from "./user-auth.ts";
 import { type AgentIdentity, FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
-import { Accounts, CLOSED_TEST_MESSAGE, FileAccountStore, JsonFile, parseAllowList } from "./accounts.ts";
+import { Accounts, FileAccountStore, JsonFile, admissionMessage, parseAllowList } from "./accounts.ts";
 import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
 import { DatabaseHealth, dbFailing } from "./db-health.ts";
 import { SupabaseRest } from "./supabase-rest.ts";
@@ -239,8 +239,13 @@ async function openAccounts(): Promise<Accounts> {
       write: async (version, sealed) => canaries.write({ ...canaries.read(), [version]: sealed.toString("base64") }),
     });
     const allowed = parseAllowList(process.env.LENTE_ALLOWED_EMAILS);
-    if (allowed.size === 0) console.warn("LENTE_ALLOWED_EMAILS is empty: nobody can open an account.");
-    return new Accounts(supabase ? new SupabaseAccounts(supabase) : new FileAccountStore(join(DATA_DIR, "accounts.json")), keks, allowed);
+    // Open sign-up with an end date (ship-hackathon decision 1); the allow list always gets in.
+    const signup = parseSignup(process.env.LENTE_SIGNUP, process.env.LENTE_SIGNUP_UNTIL);
+    if (signup.warning) console.warn(signup.warning);
+    if (signup.mode === "open") console.log(`Sign-up is open to any Google account until ${new Date(signup.until!).toISOString()}.`);
+    else if (allowed.size === 0) console.warn("LENTE_ALLOWED_EMAILS is empty: nobody can open an account.");
+    const mayCreate = (email: string) => mayCreateAccount({ mode: signup.mode, ...(signup.until !== undefined ? { until: signup.until } : {}), now: Date.now(), email, allowList: allowed });
+    return new Accounts(supabase ? new SupabaseAccounts(supabase) : new FileAccountStore(join(DATA_DIR, "accounts.json")), keks, mayCreate);
   } catch (error) {
     console.error(`Accounts cannot start: ${(error as Error).message}`);
     process.exit(1);
@@ -287,7 +292,7 @@ async function signIn(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const tokens = await exchangeCode(SUPABASE_URL, AUTH_APIKEY, code, verifier);
     const { userId, email } = await userAuth!.verify(tokens.accessToken);
     const admission = await accounts.admit(userId, email);
-    if (!admission.ok) return void page(403, admission.reason === "closed_test" ? CLOSED_TEST_MESSAGE : "No se pudo abrir tu cuenta.");
+    if (!admission.ok) return void page(403, admission.reason === "no_account" ? "No se pudo abrir tu cuenta." : admissionMessage(admission.reason));
     const token = await webSessions.create(userId, tokens.refreshToken);
     const raw = cookieValue(req.headers.cookie, NEXT_COOKIE);
     const next = safeNext(raw ? decodeURIComponent(raw) : undefined) ?? "/";
@@ -335,7 +340,7 @@ async function refusal(who: Identity | undefined): Promise<string | undefined> {
   if (!accounts || !who) return undefined;
   const admission = await accounts.admit(who.userId, who.email);
   if (admission.ok) return undefined;
-  return JSON.stringify({ error: admission.reason, message: admission.reason === "closed_test" ? CLOSED_TEST_MESSAGE : "Inicia sesión de nuevo." });
+  return JSON.stringify({ error: admission.reason, message: admissionMessage(admission.reason) });
 }
 const identitySources: IdentitySources = {
   mode: AUTH_MODE,
