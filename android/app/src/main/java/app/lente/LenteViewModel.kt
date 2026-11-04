@@ -359,6 +359,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Ver's voice: the hub's Colombian voice, the phone's as fallback; made the first time Ver opens. */
     private var sightSpeaker: SightSpeaker? = null
+    /** Ver's latest spoken lines, so the microphone hearing them is not shown as the wearer's words. */
+    private var sightSaid: List<String> = emptyList()
     /** Ver is saying a look's answer or a narration now (the phone's microphone hears silence). */
     private var sightAmbient = false
     /** This Ver session started with the welcome, so the live reads wait for Lente to turn them on. */
@@ -370,12 +372,14 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         getApplication(), viewModelScope,
         fetch = { text -> client?.postAudio("/tts", JSONObject().put("text", text).put("voice", Sight.PERSONA), TTS_CALL_MS) ?: (0 to null) },
         rate = { speechRate.value },
-        narrated = { text -> post("/narrated", JSONObject().put("text", text)) },
+        narrated = { text -> sightSaid = Sight.remember(sightSaid, text); post("/narrated", JSONObject().put("text", text)) },
         screenReader = { speech.screenReader },
         announce = speech::announce,
-        holdNarration = { voice.value.partial.isNotBlank() || voice.value.phase == VoicePhase.Thinking || voice.value.phase == VoicePhase.Speaking },
-        ambient = { on ->
+        holdNarration = { voice.value.let { v -> (v.partial.isNotBlank() && !Sight.isEcho(v.partial, sightSaid)) || Sight.replying(v.phase) } },
+        ambient = { kind ->
+            val on = kind != null
             sightAmbient = on
+            sight.value = sight.value.copy(saying = kind)
             if (on) voiceClient?.deaf = true
             else viewModelScope.launch { delay(Voice.MUTE_TAIL_MS); if (!sightAmbient) voiceClient?.deaf = false }
         },
@@ -441,6 +445,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Long press: pause or resume the listening; after the conversation dropped, start it again. */
     fun sightListen() {
+        // In the quiet a long press is the way back to the conversation.
+        if (sight.value.quiet) return sightTalkAgain()
         val phase = voice.value.phase
         if (voiceClient == null || phase == VoicePhase.Ended) {
             viewModelScope.launch { startSightVoice(intro = false) }
@@ -473,7 +479,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             delay(QUIET_SETTLE_MS)
             val until = System.currentTimeMillis() + QUIET_MAX_WAIT_MS
-            while (sightSpeaker?.conversing == true && System.currentTimeMillis() < until) delay(QUIET_SETTLE_MS)
+            // The reply that turned the quiet on may still be on its way: wait for the hub to listen again and for Ver's voice to finish.
+            while ((Sight.replying(voice.value.phase) || sightSpeaker?.conversing == true) && System.currentTimeMillis() < until) delay(QUIET_SETTLE_MS)
             if (!sightOpen.value || !sight.value.quiet) return@launch
             if (session != null && voiceClient === session) {
                 session.shutdown()
@@ -961,7 +968,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (next.source != before.source) voiceClient?.useMicrophone(next.source == "phone")
         voice.value = next
         val inSight = sightOpen.value && !voiceOpen.value
-        if (inSight) sight.value = Sight.talk(sight.value, next)
+        if (inSight) sight.value = Sight.talk(sight.value, next, sightSaid)
         for (e in effects) when (e) {
             is VoiceEffect.Speak -> {
                 voiceClient?.speak(e.turn, e.text)

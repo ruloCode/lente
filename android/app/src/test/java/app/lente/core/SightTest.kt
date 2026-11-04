@@ -138,10 +138,40 @@ class SightTest {
         assertEquals(Sight.QUIET_LINE, Sight.stateLine(q))
         // A conversation opened from the quiet shows its own state.
         assertEquals("Escuchando · Narración en pausa", Sight.stateLine(q, VoicePhase.Listening))
-        assertEquals("Hablar con Lente", Sight.listenAction(VoicePhase.Ended, quiet = true))
+        // A long press in the quiet is the way back.
+        assertEquals(Sight.TALK_AGAIN, Sight.listenAction(VoicePhase.Ended, quiet = true))
+        assertEquals(Sight.TALK_AGAIN, Sight.listenAction(null, quiet = true))
         assertTrue(Sight.talkAgain(q).narrating)
         assertFalse(Sight.talkAgain(Sight.quiet(paused)).narrating)
         assertEquals(q, Sight.quiet(q))
         assertEquals(paused, Sight.talkAgain(paused))
+    }
+
+    @Test fun whileVerSaysALookOrANarrationTheStateLineSaysSo() {
+        val on = SightView()
+        assertEquals("Narrando", Sight.stateLine(on.copy(saying = LineKind.Narration), VoicePhase.Listening))
+        assertEquals("Hablando", Sight.stateLine(on.copy(saying = LineKind.Look), VoicePhase.Listening))
+        // Lente thinking about a reply is said over the narration it holds back.
+        assertEquals("Pensando…", Sight.stateLine(on.copy(saying = LineKind.Narration), VoicePhase.Thinking))
+        assertEquals(Sight.QUIET_LINE, Sight.stateLine(Sight.quiet(on), VoicePhase.Ended))
+        assertTrue(Sight.replying(VoicePhase.Thinking))
+        assertTrue(Sight.replying(VoicePhase.Speaking))
+        assertFalse(Sight.replying(VoicePhase.Listening))
+        assertFalse(Sight.replying(null))
+    }
+
+    @Test fun theMicrophoneHearingVersOwnVoiceIsNotShownAsTheWearer() {
+        val said = Sight.remember(emptyList(), "Tienes un teclado justo al frente.")
+        val echo = voice("""{"type":"partial","text":"tienes un teclado justo al"}""")
+        assertTrue(Sight.isEcho("tienes un teclado justo al", said))
+        assertEquals("", Sight.talkLine(echo, said))
+        val v = Sight.talk(SightView(text = "Un teclado.", line = "Un teclado."), echo, said)
+        assertEquals("Un teclado.", Sight.shown(v))
+        // The wearer's own words still show, accents and case aside.
+        assertFalse(Sight.isEcho("¿qué tengo en la mano?", said))
+        assertEquals("Tú: ¿qué tengo en la mano?", Sight.talkLine(voice("""{"type":"partial","text":"¿qué tengo en la mano?"}"""), said))
+        assertTrue(Sight.isEcho("TIENES UN TECLADO", Sight.remember(said, "Otra cosa.")))
+        assertFalse(Sight.isEcho("tienes", emptyList()))
+        assertEquals(Sight.ECHO_LINES, (1..10).fold(emptyList<String>()) { l, i -> Sight.remember(l, "$i") }.size)
     }
 }

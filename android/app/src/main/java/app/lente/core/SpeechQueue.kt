@@ -70,6 +70,14 @@ class SpeechQueue(private val staleMs: Long = NARRATION_STALE_MS) {
         const val NARRATION_STALE_MS = 6_000L
         /** How long the hub's voice may take before the phone's own voice says the line instead. */
         const val TTS_WAIT_MS = 2_500L
+        /** A line whose audio was asked for long ago (while the lines before it played) still gets this long. */
+        const val TTS_GRACE_MS = 400L
+
+        /**
+         * How long to wait now for a line's hub audio asked for at [askedAt]: what is left of [TTS_WAIT_MS],
+         * and at least [TTS_GRACE_MS], so audio that is already here (or nearly) is used, not skipped.
+         */
+        fun ttsWaitMs(askedAt: Long, now: Long): Long = (askedAt + TTS_WAIT_MS - now).coerceIn(TTS_GRACE_MS, TTS_WAIT_MS)
 
         /** About how long a screen reader takes to say [text], so announcements follow each other instead of cutting in. */
         fun readMs(text: String): Long = (text.length * 65L).coerceIn(900L, 15_000L)

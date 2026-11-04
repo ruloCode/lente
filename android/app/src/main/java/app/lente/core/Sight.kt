@@ -21,6 +21,8 @@ data class SightView(
     val quiet: Boolean = false,
     /** Narration as it was before the quiet, to come back to. */
     val narratingBeforeQuiet: Boolean = true,
+    /** What Ver's voice is saying now outside the conversation: a look's answer or a narration (null: nothing, or a reply). */
+    val saying: LineKind? = null,
 )
 
 /** What to say for one event: the parts in order, and whether it interrupts (a look's answer) or waits (a live read). */
@@ -58,10 +60,11 @@ object Sight {
 
     fun narrationAction(v: SightView) = if (v.narrating) "Pausar narración" else "Seguir narrando"
 
-    /** Long press: pause the listening, resume it, or start the conversation again after it dropped. */
-    fun listenAction(phase: VoicePhase?, quiet: Boolean = false) = when (phase) {
-        VoicePhase.Paused -> "Seguir escuchando"
-        null, VoicePhase.Ended -> if (quiet) "Hablar con Lente" else "Volver a hablar con Lente"
+    /** Long press: pause the listening, resume it, start the conversation again after it dropped, or leave the quiet. */
+    fun listenAction(phase: VoicePhase?, quiet: Boolean = false) = when {
+        quiet -> TALK_AGAIN
+        phase == VoicePhase.Paused -> "Seguir escuchando"
+        phase == null || phase == VoicePhase.Ended -> "Volver a hablar con Lente"
         else -> "Pausar escucha"
     }
 
@@ -73,7 +76,8 @@ object Sight {
         v.quiet && (phase == null || phase == VoicePhase.Ended) -> QUIET_LINE
         phase == VoicePhase.Connecting -> "Conectando…"
         phase == VoicePhase.Thinking -> "Pensando…"
-        phase == VoicePhase.Speaking -> "Hablando"
+        phase == VoicePhase.Speaking || v.saying == LineKind.Look -> "Hablando"
+        v.saying == LineKind.Narration -> "Narrando"
         phase == VoicePhase.Paused -> "Escucha en pausa · ${narrationWord(v)}"
         phase == VoicePhase.Listening -> "Escuchando · ${narrationWord(v)}"
         else -> narrationWord(v)
@@ -88,16 +92,40 @@ object Sight {
     }
 
     /** The conversation's latest line: what the wearer is saying, else Lente's reply, else what the wearer said. */
-    fun talkLine(voice: VoiceView): String {
-        if (voice.partial.isNotBlank()) return "Tú: ${voice.partial.trim()}"
+    fun talkLine(voice: VoiceView, said: List<String> = emptyList()): String {
+        if (voice.partial.isNotBlank() && !isEcho(voice.partial, said)) return "Tú: ${voice.partial.trim()}"
         val t = voice.current ?: return ""
         if (t.reply.isNotEmpty() && !t.cancelled) return "Lente: ${t.reply.joinToString(" ")}"
         return if (t.heard.isNotBlank()) "Tú: ${t.heard.trim()}" else ""
     }
 
+    /**
+     * The microphone heard Ver's own voice: most of the partial's words are in a line Ver just said. The
+     * hub drops such a turn, but its partial arrives first; it is not shown as the wearer's words.
+     */
+    fun isEcho(partial: String, said: List<String>): Boolean {
+        val heard = tokens(partial)
+        if (heard.isEmpty()) return false
+        return said.any { line ->
+            val spoken = tokens(line).toSet()
+            heard.count { it in spoken } >= kotlin.math.ceil(heard.size * ECHO_SHARE).toInt()
+        }
+    }
+
+    /** What Ver said lately, for [isEcho]: the newest [ECHO_LINES] lines. */
+    fun remember(said: List<String>, line: String): List<String> = (said + line).takeLast(ECHO_LINES)
+
+    /** Share of a partial's words that must be in a line just said for it to be Ver's own voice. */
+    const val ECHO_SHARE = 0.8
+    const val ECHO_LINES = 4
+
+    private fun tokens(text: String): List<String> =
+        java.text.Normalizer.normalize(text.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+            .split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+
     /** A voice event arrived: the large text follows the conversation only when its line changed. */
-    fun talk(v: SightView, voice: VoiceView): SightView {
-        val line = talkLine(voice)
+    fun talk(v: SightView, voice: VoiceView, said: List<String> = emptyList()): SightView {
+        val line = talkLine(voice, said)
         return if (line.isNotBlank() && line != v.talk) v.copy(line = line, talk = line) else v.copy(talk = line)
     }
 
@@ -125,6 +153,9 @@ object Sight {
     }
 
     fun isLookAnswer(e: Entry) = e.kind == "cue" && e.label == LABEL
+
+    /** Lente is still working on or saying a reply (what «Grabar en silencio» lets finish). */
+    fun replying(phase: VoicePhase?) = phase == VoicePhase.Thinking || phase == VoicePhase.Speaking
 
     /**
      * Long text in pieces of at most [max] characters for text-to-speech: whole sentences together while

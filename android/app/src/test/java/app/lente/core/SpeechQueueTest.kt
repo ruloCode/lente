@@ -93,4 +93,12 @@ class SpeechQueueTest {
         assertFalse(SpeechVoice.isFemale("es-us-x-esd-local"))
         assertFalse(SpeechVoice.isFemale("es-CO-SMTm00"))
     }
+
+    @Test fun aLineAskedForWhileOthersPlayedStillGetsItsHubAudio() {
+        // Asked at 0 and due at 4 s, after the sentence before it: a short grace, not zero.
+        assertEquals(SpeechQueue.TTS_GRACE_MS, SpeechQueue.ttsWaitMs(0, 4_000))
+        assertEquals(SpeechQueue.TTS_WAIT_MS, SpeechQueue.ttsWaitMs(1_000, 1_000))
+        assertEquals(1_500L, SpeechQueue.ttsWaitMs(0, 1_000))
+        assertEquals(SpeechQueue.TTS_WAIT_MS, SpeechQueue.ttsWaitMs(5_000, 1_000))
+    }
 }

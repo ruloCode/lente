@@ -48,8 +48,8 @@ class SightSpeaker(
     private val announce: (String) -> Unit,
     /** The wearer is talking or Lente is thinking: narration waits. */
     private val holdNarration: () -> Boolean,
-    /** A look's answer or a narration is being said (true) or ended (false): the session's phone microphone sends silence meanwhile. */
-    private val ambient: (Boolean) -> Unit = {},
+    /** A look's answer or a narration started (its kind) or ended (null): the session's phone microphone sends silence meanwhile. */
+    private val ambient: (LineKind?) -> Unit = {},
 ) : SentenceVoice {
     private val main = Handler(Looper.getMainLooper())
     private val queue = SpeechQueue()
@@ -143,9 +143,9 @@ class SightSpeaker(
             val job = scope.launch(Dispatchers.Main) { play(line) }
             playJob = job
             val outside = line.kind != LineKind.Reply
-            if (outside) ambient(true)
+            if (outside) ambient(line.kind)
             job.join()
-            if (outside) ambient(false)
+            if (outside) ambient(null)
             queue.done()
             audio.remove(line.id)?.second?.cancel()
             after.remove(line.id)?.invoke()
@@ -163,7 +163,7 @@ class SightSpeaker(
         try {
             if (line.id !in audio) prefetch(line)
             val (asked, bytes) = audio[line.id] ?: (0L to null)
-            val wait = (asked + SpeechQueue.TTS_WAIT_MS - System.currentTimeMillis()).coerceAtLeast(0)
+            val wait = SpeechQueue.ttsWaitMs(asked, System.currentTimeMillis())
             val sound = bytes?.let { withTimeoutOrNull(wait) { runCatching { it.await() }.getOrNull() } }
             if (sound != null && playAudio(sound)) { Log.i(TAG, "${line.kind}: hub voice"); return }
             Log.i(TAG, "${line.kind}: phone voice")

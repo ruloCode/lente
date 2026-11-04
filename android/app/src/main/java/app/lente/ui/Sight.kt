@@ -69,7 +69,6 @@ fun SightScreen(vm: LenteViewModel, hub: HubState) {
     val talk by vm.voice.collectAsState()
     val narration = Sight.narrationAction(view)
     val listen = Sight.listenAction(talk.phase, view.quiet)
-    val quiet = if (view.quiet) Sight.TALK_AGAIN else Sight.QUIET
     // The screen stays on (a wearer who cannot see it must not find it locked), with light status icons on the black.
     val host = LocalView.current
     DisposableEffect(Unit) {
@@ -91,11 +90,12 @@ fun SightScreen(vm: LenteViewModel, hub: HubState) {
                     contentDescription = Sight.SURFACE
                     onClick(label = Sight.LOOK) { vm.sightLook(); true }
                     onLongClick(label = listen) { vm.sightListen(); true }
-                    customActions = listOf(
+                    // In the quiet the long press is «Volver a conversar» itself, so «Grabar en silencio» leaves the menu.
+                    customActions = listOfNotNull(
                         CustomAccessibilityAction(Sight.LOOK) { vm.sightLook(); true },
                         CustomAccessibilityAction(listen) { vm.sightListen(); true },
                         CustomAccessibilityAction(narration) { vm.sightNarration(); true },
-                        CustomAccessibilityAction(quiet) { if (view.quiet) vm.sightTalkAgain() else vm.sightQuiet(); true },
+                        if (view.quiet) null else CustomAccessibilityAction(Sight.QUIET) { vm.sightQuiet(); true },
                         CustomAccessibilityAction(Sight.REPEAT) { vm.sightRepeat(); true },
                         CustomAccessibilityAction(Sight.EXIT) { vm.closeSight(); true },
                     )
