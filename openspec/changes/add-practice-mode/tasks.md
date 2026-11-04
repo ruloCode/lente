@@ -32,7 +32,8 @@ Schedule (Bogotá, 2026-11-04; the closing plan is `openspec/changes/ship-hackat
 
 ## 5. On the real piano (owner)
 
-- [ ] 5.1 `scripts/bench-practice.ts` (design decision 7) with a unit test for its line parsing and percentiles (`pnpm test`)
+- [x] 5.1 `scripts/bench-practice.ts` (design decision 7) with a unit test for its line parsing and percentiles (`pnpm test`)
+  - 2026-11-04: `node scripts/bench-practice.ts --seconds 600 --serial RFGYB098QCN --reference 3` follows `adb logcat -s LentePractice -T <now>` (checked on the Samsung: the epoch form is accepted) or `--stdin`; a note's onset belongs to the next `attempt` line, a `coach` line to the one before; accuracy is over each lesson's first `--reference` attempts; prints the Markdown table for `docs/benchmarks.md` and keeps the parsed lines in `results/practice-<date>/`. `test/bench-practice.test.ts` (3): parsing (both arrows, the hub's own coach line, junk dropped), attribution and nearest-rank percentiles, the table.
 - [ ] 5.2 Play the scale three times correctly, then once with a deliberate wrong note; run the bench; record accuracy, onset → shown p50/p90 and coach p50 in `docs/benchmarks.md` under «Practice (add-practice-mode)». Anything under 7 of 8 on the clean scale is not claimed in the video [hw] [human] [phone]
 
 ## 6. P1 and P2 (only if 5.2 is green by 16:00)
