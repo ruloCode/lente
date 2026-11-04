@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -133,18 +133,87 @@ test("2.2 per-user cap: a judge's question spends; past the cap it gets the limi
   hub.stop();
 });
 
-test("2.2 after a restart today's spend is read back: the caps still hold, per account and in all; the owner goes on", { timeout: 30_000 }, async () => {
+test("2.2 after a restart today's spend is read back: the caps still hold, per account and in all; the owner goes on and is not counted", { timeout: 30_000 }, async () => {
   const perUser = await startHub(OPEN, volume({ [JUDGE]: 1.0, [OWNER]: 5 }));
   assert.equal((await askAs(perUser.base, JUDGE, "probe-judge@example.com")).answer, LIMIT_USER);
   assert.notEqual((await askAs(perUser.base, OTHER, "probe-other@example.com")).answer, LIMIT_USER);
   assert.notEqual((await askAs(perUser.base, OWNER, "probe-owner@example.com")).answer, LIMIT_USER);
   perUser.stop();
 
-  // The owner's own spend counts toward everyone's (it is the same credit), but never caps the owner.
-  const global = await startHub(OPEN, volume({ [JUDGE]: 0.5, [OWNER]: 11.6 }));
+  // Everyone's sum is the other accounts' (the default US$ 6.00): seven judges at US$ 0.90 reach it.
+  const judges = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`dddddddd-0000-4000-8000-00000000000${i}`, 0.9]));
+  const global = await startHub(OPEN, volume({ ...judges, [OWNER]: 50 }));
   const other = await askAs(global.base, OTHER, "probe-other@example.com");
   assert.deepEqual([other.answer, other.limit], [LIMIT_GLOBAL, "global"]);
   assert.equal((await askAs(global.base, JUDGE, "probe-judge@example.com")).answer, LIMIT_GLOBAL);
   assert.notEqual((await askAs(global.base, OWNER, "probe-owner@example.com")).answer, LIMIT_GLOBAL);
   global.stop();
+
+  // The owner's own spend, however large, is its own budget: it never caps anyone else.
+  const ownerOnly = await startHub(OPEN, volume({ [OWNER]: 50 }));
+  assert.notEqual((await askAs(ownerOnly.base, OTHER, "probe-other@example.com")).answer, LIMIT_GLOBAL);
+  ownerOnly.stop();
+});
+
+/** Every event from /events for one account, parsed, as they arrive. */
+function events(base: string, sub: string, email: string) {
+  const out: Record<string, any>[] = [];
+  const abort = new AbortController();
+  void (async () => {
+    const res = await fetch(`${base}/events`, as(sub, email, { signal: abort.signal }));
+    const reader = res.body!.getReader();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
+      if (done) return;
+      buf += new TextDecoder().decode(value);
+      let at;
+      while ((at = buf.indexOf("\n\n")) >= 0) {
+        const data = buf.slice(0, at).split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6)).join("\n");
+        buf = buf.slice(at + 2);
+        if (data) try { out.push(JSON.parse(data)); } catch { /* keep-alive */ }
+      }
+    }
+  })();
+  return { out, stop: () => abort.abort() };
+}
+const until = async <T>(f: () => T | undefined, ms = 10_000): Promise<T> => {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 50))) {
+    const v = f();
+    if (v !== undefined && v !== false) return v;
+  }
+  throw new Error("timed out");
+};
+
+test("2.2 in Ver: when a judge reaches the cap, narration stops and the limit is said once as a VER card; a look says it too", { timeout: 40_000 }, async () => {
+  const dir = volume({});
+  const hub = await startHub({ ...OPEN, LENTE_USER_DAY_CAP_USD: "0.000001" }, dir);
+  const seen = events(hub.base, JUDGE, "probe-judge@example.com");
+  // The clip emulator on /device with the judge's token, answering photo requests with a tiny synthetic JPEG.
+  const photos = join(dir, "photos");
+  mkdirSync(photos);
+  writeFileSync(join(photos, "a.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]));
+  const wav = Buffer.alloc(44 + 32_000);
+  wav.write("RIFF", 0); wav.writeUInt32LE(36 + 32_000, 4); wav.write("WAVEfmt ", 8); wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(32_000, 40);
+  writeFileSync(join(dir, "silence.wav"), wav);
+  const port = new URL(hub.base).port;
+  children.push(spawn(process.execPath, ["scripts/fake-clip.ts", join(dir, "silence.wav"), "--photos", photos, "--host", "localhost", "--port", port, "--ws", "--token", token(JUDGE, "probe-judge@example.com"), "--loop"], { stdio: "ignore" }));
+  await until(() => seen.out.find((e) => e.kind === "status" && e.clip === true));
+
+  assert.equal((await fetch(`${hub.base}/assist-mode/sight`, as(JUDGE, "probe-judge@example.com", { method: "POST" }))).status, 204);
+  await until(() => seen.out.find((e) => e.kind === "live"));
+  const card = await until(() => seen.out.find((e) => e.kind === "cue" && e.label === "VER"));
+  assert.equal(card.text, LIMIT_USER);
+  await until(() => seen.out.findLast((e) => e.kind === "status")?.live === false || undefined);
+  assert.equal(seen.out.filter((e) => e.kind === "cue" && e.text === LIMIT_USER).length, 1, "said once");
+
+  // A tap afterwards answers with the same line, spoken as a VER card, and calls no model.
+  const calls = modelCalls();
+  assert.equal((await fetch(`${hub.base}/look`, as(JUDGE, "probe-judge@example.com", { method: "POST" }))).status, 204);
+  await until(() => seen.out.filter((e) => e.kind === "cue" && e.label === "VER" && e.text === LIMIT_USER).length === 2 || undefined);
+  assert.equal(modelCalls(), calls);
+  seen.stop();
+  hub.stop();
 });

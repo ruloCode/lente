@@ -33,14 +33,14 @@ Until an account has accepted the current preview terms, the hub SHALL answer it
 - **THEN** its data routes answer normally and the acceptance time is kept
 
 ### Requirement: Daily spend caps
-Before every model or transcription call for an account other than the owner's, the hub SHALL check that account's spend today against the per-user cap and everyone's spend today against the global cap. When either is reached, the call SHALL NOT be made, the person SHALL get a short Spanish explanation, and listening SHALL pause with that reason.
+Before every model or transcription call for an account other than the owner's, the hub SHALL check that account's spend today against the per-user cap and the spend today of every account but the owner's against the global cap. When either is reached, the call SHALL NOT be made, the person SHALL get a short Spanish explanation, and listening SHALL pause with that reason.
 
 #### Scenario: A judge reaches the per-user cap
 - **WHEN** an account's spend today reaches `LENTE_USER_DAY_CAP_USD`
 - **THEN** its next question is answered with the limit message, no model is called, and other accounts are unaffected
 
 #### Scenario: The global cap
-- **WHEN** the sum of today's spend reaches `LENTE_GLOBAL_DAY_CAP_USD`
+- **WHEN** the sum of today's spend of every account but the owner's reaches `LENTE_GLOBAL_DAY_CAP_USD`
 - **THEN** every non-owner account gets the limit message until the next day in Bogotá's time zone
 
 #### Scenario: A restart

@@ -267,7 +267,8 @@ const pkce = new PkceFlows();
 
 // --- Spend caps (ship-hackathon 2.2, design decision 2) ----------------------------------------------
 // Accounts mode only: everyone's spend today, per account and in all, survives a restart through
-// usage_daily (or a file without Supabase). The owner is never capped; the laptop hub has only the owner.
+// usage_daily (or a file without Supabase). The owner is never capped and not counted in everyone's sum
+// (its own budget, ship-hackathon design decision 2); the laptop hub has only the owner.
 const USER_DAY_CAP_USD = parseCapUsd(process.env.LENTE_USER_DAY_CAP_USD, DEFAULT_USER_DAY_CAP_USD);
 const GLOBAL_DAY_CAP_USD = parseCapUsd(process.env.LENTE_GLOBAL_DAY_CAP_USD, DEFAULT_GLOBAL_DAY_CAP_USD);
 const SPEND_SAVE_MS = 60_000;
@@ -276,7 +277,10 @@ const spendLedger = daySpend ? await openSpendLedger() : undefined;
 async function openSpendLedger(): Promise<SpendLedger> {
   const day = dayIn(Date.now());
   try {
-    const ledger = new SpendLedger({ day, users: await daySpend!.load(day) });
+    const users = await daySpend!.load(day);
+    // The owner is never capped and has its own budget: everyone's sum is the other accounts'.
+    if (process.env.LENTE_OWNER_USER_ID) delete users[process.env.LENTE_OWNER_USER_ID];
+    const ledger = new SpendLedger({ day, users });
     console.log(`[spend] caps US$ ${USER_DAY_CAP_USD.toFixed(2)} per account, US$ ${GLOBAL_DAY_CAP_USD.toFixed(2)} in all; today so far US$ ${ledger.all().toFixed(2)}`);
     return ledger;
   } catch (error) {
@@ -610,20 +614,32 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   // listening pauses with the limit as its reason and a voice session ends.
   const spentSince = new MeterDelta(usage.today().usd);
   function capBlocked(): CapBlock | undefined {
-    if (!spendLedger) return undefined;
+    if (!spendLedger || isOwner) return undefined; // the owner is never capped, nor counted in everyone's sum
     spendLedger.add(userId, spentSince.next(usage.today().usd));
     const out = capCheck({ userTodayUsd: spendLedger.user(userId), allTodayUsd: spendLedger.all(), userCapUsd: USER_DAY_CAP_USD, globalCapUsd: GLOBAL_DAY_CAP_USD, isOwner });
     return out === "ok" ? undefined : out.blocked;
   }
   const limitPause = (blocked: CapBlock) => ({ reason: "limit" as const, limit: blocked, message: LIMIT_MESSAGES[blocked] });
+  /** The open voice socket, so a session ended by the cap can say why first. */
+  let capVoiceSocket: VoiceSocket | undefined;
+  /**
+   * The cap reached: whatever is running stops quietly and the person hears why once: on the voice
+   * socket if a conversation is open, else as a card (Ver speaks its «VER» cards).
+   */
+  function capReached(blocked: CapBlock): void {
+    const running = status.listening || status.live || voiceSession !== undefined;
+    if (!running) return;
+    console.log(`[spend] ${blocked} cap reached: listening, live reads and voice stopped`);
+    if (status.listening) setListening(false, limitPause(blocked));
+    if (status.live) setLive(false);
+    const message = LIMIT_MESSAGES[blocked];
+    if (voiceSession && capVoiceSocket) capVoiceSocket.send({ type: "error", message });
+    else broadcast({ kind: "cue", label: sightOn ? "VER" : "LENTE", text: message });
+    voiceSession?.close();
+  }
   every(() => {
     const blocked = capBlocked();
-    if (!blocked) return;
-    if (status.listening) {
-      console.log(`[spend] ${blocked} cap reached: listening paused`);
-      setListening(false, limitPause(blocked));
-    }
-    voiceSession?.close();
+    if (blocked) capReached(blocked);
   }, USAGE_PUSH_MS);
 
   /** Today's seconds sent, tokens per model and approximate US$, for "Hoy" on the phone. */
@@ -1718,7 +1734,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       }
       console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · ${said(text)}`);
     } catch (error) {
-      console.error(`[live] failed: ${(error as Error).message.slice(0, 200)}`);
+      if (error instanceof SpendCapError) capReached(error.blocked); // ship-hackathon 2.2: narration stops, said once
+      else console.error(`[live] failed: ${(error as Error).message.slice(0, 200)}`);
     } finally {
       liveDescribing = false;
       const next = liveNext;
@@ -1773,6 +1790,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       console.log(`[look] ${ms} ms · ${Math.round(frame.length / 1024)} KB · ${mode} · ${said(text)}`);
       return { ok: true, text };
     } catch (error) {
+      if (error instanceof SpendCapError) return { ok: false, text: error.message }; // ship-hackathon 2.2
       console.error(`[look] failed: ${(error as Error).message.slice(0, 200)}`);
       return { ok: false, text: "No pude ver: el modelo no respondió. Intenta otra vez." };
     }
@@ -2478,6 +2496,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       ws.send({ type: "error", message: LIMIT_MESSAGES[capped] });
       return void ws.close();
     }
+    capVoiceSocket = ws;
     voiceSession?.close();
     const target = chatTargets().find((t) => t.id === "spark-1.3-minimal")!;
     const session = serveVoiceSession(ws, {

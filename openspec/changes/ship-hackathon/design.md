@@ -44,12 +44,13 @@ Rejected: emptying the allow list's meaning («empty = everyone»). An empty lis
 
 `src/spend-cap.ts` (pure): `capCheck({ userTodayUsd, allTodayUsd, userCapUsd, globalCapUsd, isOwner })` returns `ok` or `{ blocked: "user" | "global" }`.
 - **Per user:** `LENTE_USER_DAY_CAP_USD`, default **1.00**. At today's measured costs that is many hours of chat and look, and about two hours of listening.
-- **Global:** `LENTE_GLOBAL_DAY_CAP_USD`, default **12.00**: Meta's USD 150 credit over 12 judging and voting days.
-- **Owner:** exempt.
+- **Global:** `LENTE_GLOBAL_DAY_CAP_USD`, default **6.00**. Meta's billing showed **US$ 98.26** of free credit left on 2026-11-04, with no card on file (calls fail at zero, they are not billed). 13 days (Nov 4–16) at 6.00 is about US$ 78, which leaves a buffer for the owner and the benches.
+- **Owner:** exempt, and not counted in the global sum: the owner's use comes out of that buffer, so it never caps a judge.
 
-Daily spend per user is kept in a new `usage_daily` table: user, day, USD, no content, RLS with no policies, written only by the hub with the service key. It survives restarts. The hub also sums the day in memory for the global check and reloads it from the table at start.
+Daily spend per user is kept in a new `usage_daily` table: user, day, USD, no content, RLS with no policies, written only by the hub with the service key. It survives restarts. The hub also sums the day in memory for the global check and reloads it from the table at start. (`usage_daily` already exists from `add-accounts`, one row per user, day, provider and model with `cost_micro_usd`; the migration only adds an index on `day`.)
 
 When blocked:
+- in Ver, narration stops and the line is said once as a «VER» card; a look answers with it;
 - model calls return a friendly Spanish line («Por hoy llegaste al límite de la prueba. Vuelve mañana.» / «La demo llegó a su límite de hoy.»);
 - listening pauses with that reason;
 - nothing errors.

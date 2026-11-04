@@ -71,8 +71,8 @@ test("the routes that would spend", () => {
   assert.equal(cappedRoute("POST", "/ask"), "ask");
   assert.equal(cappedRoute("POST", "/listen/on"), "listen");
   assert.equal(cappedRoute("POST", "/tts"), "tts");
-  for (const path of ["/help", "/briefing", "/look", "/summary", "/live/on"]) assert.equal(cappedRoute("POST", path), "model", path);
-  for (const [method, path] of [["GET", "/ask"], ["POST", "/listen/off"], ["POST", "/meeting/end"], ["GET", "/tasks"]] as const) assert.equal(cappedRoute(method, path), undefined, `${method} ${path}`);
+  for (const path of ["/help", "/briefing", "/summary"]) assert.equal(cappedRoute("POST", path), "model", path);
+  for (const [method, path] of [["GET", "/ask"], ["POST", "/listen/off"], ["POST", "/meeting/end"], ["GET", "/tasks"], ["POST", "/look"], ["POST", "/live/on"]] as const) assert.equal(cappedRoute(method, path), undefined, `${method} ${path}`);
 });
 
 test("usage_daily on the fake PostgREST: each runtime's rows read back as every account's spend today, transcription priced by the second", async () => {

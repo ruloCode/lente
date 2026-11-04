@@ -1,13 +1,17 @@
 // The daily spend caps (ship-hackathon decision 2): before a model, voice or transcription call for
 // anyone but the owner, that account's spend today is checked against a per-user cap and everyone's
-// spend today against a global one. Spend is what the usage meter prices (src/usage-meter.ts); the
+// spend today (the owner's left out) against a global one. Spend is what the usage meter prices (src/usage-meter.ts); the
 // day is Bogotá's. Pure: the hub loads the day's totals from usage_daily (or a file) at start and
 // feeds the ledger each runtime's new spend.
 
 /** `LENTE_USER_DAY_CAP_USD`: many hours of chat and look, about two hours of listening at measured costs. */
 export const DEFAULT_USER_DAY_CAP_USD = 1.0;
-/** `LENTE_GLOBAL_DAY_CAP_USD`: Meta's US$ 150 credit over 12 judging and voting days. */
-export const DEFAULT_GLOBAL_DAY_CAP_USD = 12.0;
+/**
+ * `LENTE_GLOBAL_DAY_CAP_USD`: the US$ 98.26 of Meta credit left on 2026-11-04 (no card on file, so calls
+ * fail at zero) over the 13 days Nov 4–16 is about US$ 78 at this cap, leaving a buffer for the owner
+ * (exempt and not counted) and the benches.
+ */
+export const DEFAULT_GLOBAL_DAY_CAP_USD = 6.0;
 /** The caps' day turns at midnight here. */
 export const CAP_TIME_ZONE = "America/Bogota";
 
@@ -135,6 +139,8 @@ export function cappedRoute(method: string | undefined, path: string | undefined
   if (path === "/ask") return "ask";
   if (path === "/listen/on") return "listen";
   if (path === "/tts") return "tts";
-  if (path === "/help" || path === "/briefing" || path === "/look" || path === "/summary" || path === "/live/on") return "model";
+  // Looks and live reads are not refused here: in Ver they must be said, so they reach the model call,
+  // which throws the limit line for the hub to speak as a «VER» card and stop narration.
+  if (path === "/help" || path === "/briefing" || path === "/summary") return "model";
   return undefined;
 }
