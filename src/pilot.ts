@@ -108,6 +108,9 @@ import type { Companion } from "./voice-agent.ts";
 import { COACH_MAX_TOKENS, COACH_TARGET, LESSONS, coachMessages, earlierAttempts, practiceSummary, validateAttempt } from "./practice.ts";
 import { DEFAULT_LOOK_QUESTION, LOOK_DESCRIBE_MAX_CHARS, LOOK_READ_MAX_CHARS, parseSight, SIGHT_LIVE_PROMPT, SIGHT_READ_PROMPT, SIGHT_STALE_MS, sightLookPrompt } from "./sight.ts";
 import { type UsageSnapshot, UsageMeter, WEB_SEARCH_MODEL } from "./usage-meter.ts";
+import { loadBuiltinApps } from "./app-builtins.ts";
+import { type AppManifest } from "./app-manifest.ts";
+import { appsAnswer, parseAppsMode } from "./app-catalog.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
 const WEB_PORT = Number(process.env.PILOT_WEB_PORT ?? 8080);
@@ -607,6 +610,26 @@ async function gateWeb(req: IncomingMessage, res: ServerResponse): Promise<boole
   }
 }
 
+
+// --- Apps (add-lens-apps P0): the read-only catalog of built-in manifests, read on first use. -----
+const APPS_MODE = parseAppsMode(process.env.LENTE_APPS);
+let builtinApps: AppManifest[] | undefined;
+
+/** `GET /apps`, `GET /apps/:id`; a built-in that no longer validates answers 503 and logs why. Returns true when it answered. */
+function appsRoute(req: IncomingMessage, res: ServerResponse): boolean {
+  if (!req.url?.startsWith("/apps")) return false;
+  let answer: ReturnType<typeof appsAnswer>;
+  try {
+    builtinApps ??= loadBuiltinApps();
+    answer = appsAnswer(req, builtinApps, APPS_MODE);
+  } catch (error) {
+    console.error(`apps: ${(error as Error).message}`);
+    answer = { status: 503, body: { error: "apps_unavailable", message: "Las apps no están disponibles ahora." } };
+  }
+  if (!answer) return false;
+  res.writeHead(answer.status, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(answer.body));
+  return true;
+}
 
 // --- One wearer's live state (add-accounts 6.1) ------------------------------------------------
 
@@ -2717,6 +2740,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   /** The routes that act on this wearer's state; answers 404 for anything else. */
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (await practiceRoute(req, res)) return;
+    if (appsRoute(req, res)) return;
     if (req.method === "POST" && req.url === "/listen/on" && !status.listening && !mayListen()) {
       // LENTE_MAX_LISTENING: past the cap, starting to listen answers busy instead of overloading the hub.
       res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
