@@ -268,3 +268,35 @@ test("2.3 terms before data: a new account gets 428 until it accepts the current
   assert.equal((await fetch(`${again.base}/tasks`, as(OTHER, "probe-other@example.com"))).status, 428);
   again.stop();
 });
+
+test("2.4 the sample: written on the first acceptance, it answers «¿Qué se decidió sobre la beta?» with a source; «Borrar ejemplo» leaves the person's own data", { timeout: 30_000 }, async () => {
+  const hub = await startHub({ LENTE_SIGNUP: "open", LENTE_SIGNUP_UNTIL: "2999-01-01" });
+  const judge = (path: string, init: RequestInit = {}) => fetch(`${hub.base}${path}`, as(JUDGE, "probe-judge@example.com", init));
+  assert.equal((await judge("/terms/accept", { method: "POST", body: "{}" })).status, 200);
+  type Tasks = { tasks: { title: string; meetingTitle: string; projectName: string }[] };
+  const tasks = (await (await judge("/tasks")).json()) as Tasks;
+  assert.deepEqual(tasks.tasks.map((t) => t.projectName), ["PROBE · Proyecto de ejemplo", "PROBE · Proyecto de ejemplo", "PROBE · Proyecto de ejemplo"]);
+  const projects = (await (await judge("/projects")).json()) as { projects: { name: string }[] };
+  assert.deepEqual(projects.projects.map((p) => p.name), ["PROBE · Proyecto de ejemplo"]);
+
+  const answer = (await (await judge("/ask", { method: "POST", body: JSON.stringify({ question: "¿Qué se decidió sobre la beta?" }) })).json()) as { ok: boolean; sources: { label: string; meetingId?: string }[] };
+  assert.equal(answer.ok, true);
+  assert.ok(answer.sources.length > 0, "the answer cites a source");
+  assert.match(answer.sources[0]!.label, /Planificación de la beta/);
+
+  // Accepting again (a new version, or a repeated tap) writes no second sample.
+  assert.equal((await judge("/terms/accept", { method: "POST", body: "{}" })).status, 200);
+  assert.equal(((await (await judge("/tasks")).json()) as Tasks).tasks.length, 3);
+
+  // The person's own task stays when the sample goes.
+  assert.equal((await judge("/tasks/add", { method: "POST", body: JSON.stringify({ title: "PROBE comprar café" }) })).status, 201);
+  const removed = (await (await judge("/sample/delete", { method: "POST", body: "{}" })).json()) as { ok: boolean; removed: number };
+  assert.deepEqual(removed, { ok: true, removed: 2 + 3 + 2 + 1 });
+  assert.deepEqual(((await (await judge("/tasks")).json()) as Tasks).tasks.map((t) => t.title), ["PROBE comprar café"]);
+  const after = (await (await judge("/ask", { method: "POST", body: JSON.stringify({ question: "¿Qué se decidió sobre la beta?" }) })).json()) as { sources: { label: string }[] };
+  assert.ok(!after.sources.some((s) => /beta/.test(s.label)), "the sample is no longer cited");
+  assert.deepEqual(await (await judge("/sample/delete", { method: "POST", body: "{}" })).json(), { ok: true, removed: 0 });
+  // The owner, never asked for the terms, gets no sample.
+  assert.deepEqual(((await (await fetch(`${hub.base}/projects`, as(OWNER, "probe-owner@example.com"))).json()) as { projects: unknown[] }).projects, []);
+  hub.stop();
+});

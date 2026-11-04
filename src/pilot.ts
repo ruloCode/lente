@@ -46,6 +46,7 @@ import { UserAuth } from "./user-auth.ts";
 import { type CapBlock, type CappedRoute, DEFAULT_GLOBAL_DAY_CAP_USD, DEFAULT_USER_DAY_CAP_USD, LIMIT_MESSAGES, MeterDelta, SpendCapError, SpendLedger, capCheck, cappedRoute, dayIn, parseCapUsd } from "./spend-cap.ts";
 import { FileDaySpend } from "./stores.ts";
 import { TERMS_VERSION, needsTerms, needsTermsBody, termsPage, termsRequired, termsView } from "./preview-terms.ts";
+import { SAMPLE_PROJECT_NAME, isSampleMeeting, sampleMemory } from "./sample-memory.ts";
 import { SupabaseDaySpend } from "./supabase-stores.ts";
 import { type AgentIdentity, FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { Accounts, FileAccountStore, JsonFile, admissionMessage, parseAllowList } from "./accounts.ts";
@@ -343,8 +344,11 @@ async function termsRoute(req: IncomingMessage, res: ServerResponse, who: Identi
     }
     if (asked !== undefined && asked !== TERMS_VERSION) return json(409, needsTermsBody()), true;
     try {
+      const before = await accounts.terms(who.userId).catch(() => undefined);
       const accepted = await accounts.acceptTerms(who.userId, TERMS_VERSION);
       console.log(`[terms] an account accepted ${TERMS_VERSION}`);
+      // ship-hackathon 2.4: the first acceptance ever brings the sample; a failure never undoes the acceptance.
+      if (!before) await wearers.get(who.userId).writeSample().catch((error: Error) => console.error(`[sample] could not write the sample: ${error.message.slice(0, 160)}`));
       json(200, { ok: true, version: accepted.version, acceptedAt: accepted.at });
     } catch (error) {
       console.error(`[terms] could not keep an acceptance: ${(error as Error).message}`);
@@ -1918,6 +1922,58 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     setStatus({ everyQuestion: on });
   }
 
+  // --- The sample memory (ship-hackathon 2.4, design decision 5) ------------------------------------
+  // Written once, after an account first accepts the terms, through this runtime's own (sealed) stores;
+  // «Borrar ejemplo» removes the sample's meetings, their tasks and facts, and archives its project.
+
+  async function writeSample(): Promise<number> {
+    const now = Date.now();
+    if ((await projects.list()).some((p) => p.name === SAMPLE_PROJECT_NAME && p.status === "active")) return 0;
+    const sample = sampleMemory(now);
+    const project = await projects.create(SAMPLE_PROJECT_NAME, now);
+    const ids: string[] = [];
+    for (const m of sample.meetings) {
+      const id = await meetings.uniqueId(m.id);
+      await meetings.save({ ...m, id });
+      ids.push(id);
+    }
+    // The sealed stores write meetings behind; a project assignment needs their rows first.
+    if (sealed && (await sealed.flush())) throw new Error("the sample's meetings did not reach the database");
+    for (const id of ids) await projects.assign(id, project.id);
+    for (const t of sample.tasks) await taskStore.add({ title: t.title, who: "me", source: "meeting", ...(t.due ? { due: t.due } : {}), meetingId: ids[t.meeting]!, projectId: project.id, evidence: t.evidence }, now);
+    for (const f of sample.facts) for (const proposed of await facts.propose(ids[f.meeting]!, [{ text: f.text, evidence: f.evidence }], now)) await facts.keep(proposed.id);
+    await recall?.flush().catch((error: Error) => console.error(`[sample] index update failed: ${error.message.slice(0, 160)}`));
+    broadcastMeetings();
+    await refreshTaskProjects();
+    console.log(`[sample] written: ${ids.length} meetings, ${sample.tasks.length} tasks, ${sample.facts.length} facts`);
+    return ids.length;
+  }
+
+  /** «Borrar ejemplo»: how many items went (meetings, tasks, facts, the project). */
+  async function deleteSample(): Promise<number> {
+    const sampleProjects = (await projects.list()).filter((p) => p.name === SAMPLE_PROJECT_NAME);
+    const ids = new Set(sampleProjects.map((p) => p.id));
+    const assigned = await projects.assignments();
+    const gone = meetings.list().filter((m) => m.id !== current?.id && isSampleMeeting(m, assigned.get(m.id), ids));
+    let removed = 0;
+    for (const m of gone) {
+      if (!(await meetings.delete(m.id))) continue;
+      removed++;
+      deletedMeetings.add(m.id);
+      traces.delete(m.id);
+      actions.removeMeeting(m.id);
+      removed += await facts.removeMeeting(m.id);
+    }
+    const goneIds = new Set(gone.map((m) => m.id));
+    for (const t of await taskStore.list()) if (goneIds.has(t.meetingId) && (await taskStore.remove(t.id))) removed++;
+    for (const p of sampleProjects) if (p.status === "active" && (await projects.setStatus(p.id, "archived"))) removed++;
+    if (gone.length) await forgetInMemory({ meetings: gone });
+    broadcastMeetings();
+    await refreshTaskProjects();
+    console.log(`[sample] deleted: ${removed} item(s)`);
+    return removed;
+  }
+
   function setListening(on: boolean, pause: Pause = { reason: "manual" }): void {
     const capped = on ? capBlocked() : undefined; // ship-hackathon 2.2: no transcription past the day's cap
     if (capped) return void setListening(false, limitPause(capped));
@@ -2664,6 +2720,12 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       return void res.end(JSON.stringify({ error: "busy", message: BUSY_MESSAGE }));
     }
+    if (req.method === "POST" && req.url === "/sample/delete") {
+      // ship-hackathon 2.4: «Borrar ejemplo»; the person's own data stays.
+      const removed = await deleteSample();
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      return void res.end(JSON.stringify({ ok: true, removed }));
+    }
     // Spend caps (ship-hackathon 2.2): a capped account gets the limit line instead of a model call.
     const capRoute = cappedRoute(req.method, req.url);
     const capped = capRoute ? capBlocked() : undefined;
@@ -3029,6 +3091,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       serveDevice(socket, remote);
     },
     serveVoice,
+    /** ship-hackathon 2.4: the sample, written after the first acceptance of the terms. */
+    writeSample,
     pushStatus: (): void => broadcast(statusEvent()),
     listening: (): boolean => status.listening,
     /** Waits for this account's pending writes (before an export). */
@@ -3060,7 +3124,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
 type WearerRuntime = ReturnType<typeof createWearerRuntime>;
 /** What the hub needs of a runtime; an account's runtime is opened asynchronously behind it. */
-type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" | "flush"> & {
+type Wearer = Pick<WearerRuntime, "pushStatus" | "listening" | "busy" | "close" | "flush" | "writeSample"> & {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
   agent(): Promise<AgentApi>;
   bridge(req: IncomingMessage, res: ServerResponse, client: string): Promise<void>;
@@ -3096,6 +3160,7 @@ function openAccountWearer(userId: string, mayListen: () => boolean): Wearer {
     busy: () => (open ? open.busy() : true),
     close: async () => (await ready).close(),
     flush: async () => (await ready).flush(),
+    writeSample: async () => (await ready).writeSample(),
   };
 }
 
