@@ -73,6 +73,11 @@ Summary: `right / total`, the first wrong position, and the time from the first 
 - the arrays are bounded (≤ 64 notes);
 - the numbers are in range.
 
+Contract details the hub settled (2026-11-04, lane L3; the phone follows them):
+- `matched` is an optional fourth array, one per expected note: the played MIDI note the alignment paired with it, `null` when missed. With it, the summary names the wrong note («tocó Fa en vez de Sol»). Without it the hub walks `played` in order only when `extra` is 0; otherwise the summary says «falló la 4.ª (era Sol)».
+- Bounds: `expected` 1–64 MIDI notes, `played` 0–64, MIDI 0–127 integers, `atMs` and `durationMs` 0–600,000 ms (10 min), `extra` 0–64, `marks` one per expected note. `expected` is not required to equal the lesson's notes (the phone's built-in fallback may lag the hub).
+- A rejected attempt answers 400 `{ error }` and keeps nothing. A coach that fails answers 200 with `line: ""` (the attempt is still kept); the phone then shows the summary.
+
 The hub then:
 1. Writes a `practice` day entry with a one-line Spanish summary from `practiceSummary()` (pure), e.g. «Piano · Himno de la alegría: 13 de 15 notas bien; falló la 4.ª (tocó Fa en vez de Sol); 21 s». Guest mode: not written, like every other entry.
 2. Calls Muse Spark 1.3, minimal effort, streamed, with `COACH_PROMPT` and the summary, plus the last 3 attempts at the same lesson today (from the day record) so it can say «mejoraste». Max 200 tokens; one or two sentences in Spanish, warm and specific, naming the note in solfège; never a medical or physical-pain claim.

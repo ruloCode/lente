@@ -6,7 +6,8 @@ Schedule (Bogotá, 2026-11-04; the closing plan is `openspec/changes/ship-hackat
 
 ## 1. Hub: lessons and attempts (lane B)
 
-- [ ] 1.1 `src/practice.ts` (pure): `LESSONS` (design decision 3), `validateAttempt`, `practiceSummary` (Spanish one-liner with solfège names, design decision 5), `COACH_PROMPT`; unit tests: the three lessons' notes, validation (unknown lesson, > 64 notes, out-of-range numbers), the summary for a perfect attempt, one wrong note, a missed note (`pnpm test`)
+- [x] 1.1 `src/practice.ts` (pure): `LESSONS` (design decision 3), `validateAttempt`, `practiceSummary` (Spanish one-liner with solfège names, design decision 5), `COACH_PROMPT`; unit tests: the three lessons' notes, validation (unknown lesson, > 64 notes, out-of-range numbers), the summary for a perfect attempt, one wrong note, a missed note (`pnpm test`)
+  - 2026-11-04: `src/practice.ts` with 13 tests in `test/practice.test.ts`: the lessons, solfège names (sharps spelled «sostenido»), 16 malformed or out-of-range bodies refused, the summary for perfect / wrong / missed / extra notes, today's earlier attempts, the coach's messages. The contract's optional `matched` array and the bounds are written into design decision 5.
 - [ ] 1.2 `practice` kind in `DayEntry` (`src/day-log.ts`) and in the memory index's text extraction, so a summary is searchable; test that a practice line is found by a recall query (`pnpm test`)
 - [ ] 1.3 Routes in `src/pilot.ts`: `GET /practice/lessons`, `POST /practice/attempt` (validate → day entry unless guest → one streamed Spark call with today's last 3 summaries of that lesson → `{ line, summary }`, a `practice` broadcast); stub answer in `scripts/stub-meta.ts` for `COACH_PROMPT`; hub test on the stub: lessons listed, a valid attempt kept and coached, an unknown lesson 400 and nothing kept, a guest attempt coached and not kept (`pnpm test`, `pnpm smoke`)
 
