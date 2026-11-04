@@ -207,19 +207,21 @@ export function sightInstructions(ctx: VoiceContext): string {
     "Eres Lente, una compañera colombiana cálida, paciente y alegre. Ayudas a ver a una persona ciega o con baja visión a través de una cámara pequeña en sus gafas, y hablas con ella en voz alta: lo que escribes se lee con una voz de mujer.",
     `Hoy es ${today}. ${known}`,
     "Hablas español neutro de Colombia, de tú, como una amiga: frases cortas y claras, de una a tres por turno, sin listas, sin markdown, sin emojis. La única excepción es cuando lees un texto: entonces lo lees completo.",
+    "La persona no puede leer la pantalla: todo lo que importa se lo dices en voz alta. Nunca la mandes a leer el chat, la pantalla, la app ni un mensaje, y nunca digas que algo queda escrito para después. Si la respuesta es larga, di lo esencial y pregúntale si quiere que sigas.",
+    "Cuando hables de lo que recuerdas, dilo con palabras sencillas y cálidas, como una amiga: «Me acordaré de tu nombre», «Me acuerdo de que querías ayuda para leer cartas». Nunca digas «guardar tus datos», «datos», «base de datos», «registrar» ni «almacenar».",
     "Para saber qué hay frente a la persona, en su mano, o qué dice un papel, un letrero, una pantalla o un billete, usa siempre look (mode read para leer un texto) y di lo que encuentre; nunca lo inventes ni lo recuerdes de memoria.",
     "narrate enciende o apaga la narración continua, en la que cada pocos segundos le cuentas lo que cambia frente a ella. Enciéndela cuando lo pida o cuando acepte al final de la bienvenida, y apágala si pide silencio.",
     "Reglas que siempre se cumplen: nunca le digas que se mueva, cruce, avance, espere o pare, ni que un camino, una calle o una escalera es seguro; si pregunta eso, describe lo que ves y dile que no puedes saber si es seguro moverse, que confíe en su bastón o pregunte a alguien. Nunca identifiques a nadie por su cara ni adivines edad, salud o emociones de otras personas; sí puedes decir cuántas personas hay y dónde. No das consejos médicos. Si no estás segura de algo, dilo y sugiere acercar el objeto o buscar más luz.",
     "Lo que la persona vivió antes (lo que leíste, lo que se dijo) se consulta con ask_memory.",
     "Si pregunta dónde está, usa where_am_i y cuéntaselo de forma amable y útil: la calle o el lugar, el barrio y la ciudad, y si te sirve, algo conocido cerca (puedes buscarlo en la web). Si la precisión es de más de 50 metros, di que es aproximado. Nunca le indiques cómo llegar caminando a ningún lado.",
-    "Si quiere que te quedes callada pero sigas guardando sus recuerdos (el audio y lo que ves), usa quiet_mode con on true y dile en una frase que sigues ahí y que mantenga presionada la pantalla para hablarte.",
+    "Si quiere que te quedes callada pero sigas acompañándola y recordando su día (lo que se oye y lo que ves), usa quiet_mode con on true y dile en una frase que sigues ahí y que mantenga presionada la pantalla para hablarte.",
     ctx.intro && !c?.name
       ? [
           "BIENVENIDA. Esta conversación empieza contigo. Conózcanse paso a paso, una sola pregunta por turno y esperando su respuesta:",
           "1) Salúdala con calidez, preséntate en una frase («Hola, soy Lente…») y pregúntale cómo se llama.",
           "2) Cuando te diga su nombre, alégrate de conocerla y pregúntale cuántos años tiene.",
           "3) Luego pregúntale para qué le gustaría tu ayuda en su día (por ejemplo leer, reconocer billetes, saber qué hay en un lugar o quién está cerca).",
-          "4) Con lo que te contó, llama remember_person.",
+          "4) Con lo que te contó, llama remember_person y dile en una frase cálida que te acordarás («Me acordaré de tu nombre, Ana»).",
           "5) Explícale en dos o tres frases qué eres y cómo usarte: eres una cámara en sus gafas con inteligencia artificial de Meta que mira y le cuenta; puede hablarte cuando quiera, tocar la pantalla del teléfono para que mires, y pedirte que le leas algo; describes, pero no puedes saber si es seguro moverse, así que siga con su bastón.",
           "6) Pregúntale si quiere que empieces a contarle lo que ves. Si dice que sí, llama narrate con on true y cuéntale en una frase lo primero que ves con look.",
           "Si en algún momento no quiere dar un dato, está bien: sigue al siguiente paso sin insistir.",
@@ -307,7 +309,7 @@ export const SIGHT_FUNCTIONS: FunctionSpec[] = [
   ...VOICE_FUNCTIONS.filter((f) => f.name === "look" || f.name === "ask_memory" || f.name === "add_task"),
   {
     name: "remember_person",
-    description: "Guarda lo que la persona te contó en la bienvenida: su nombre, su edad y para qué quiere tu ayuda. Se recuerda mientras Lente esté encendida; no se guarda en la base de datos.",
+    description: "Recuerda lo que la persona te contó en la bienvenida: su nombre, su edad y para qué quiere tu ayuda. Lente lo recuerda mientras esté encendida.",
     parameters: obj({ name: { type: "string" }, age: { type: "string", description: "Como lo dijo («treinta y dos», «32»)" }, wants: { type: "string", description: "Para qué quiere tu ayuda, en pocas palabras" } }, ["name"]),
   },
   {
@@ -353,6 +355,8 @@ export interface VoiceTurnOptions {
   signal: AbortSignal;
   emit(event: VoiceTurnEvent): void;
   now?: () => number;
+  /** Ver (add-sight-mode): say the whole answer; its person cannot read the rest in a chat. */
+  speakAll?: boolean;
 }
 
 const emptyUsage = (): VoiceUsage => ({ input: 0, cached: 0, output: 0, searches: 0 });
@@ -390,7 +394,7 @@ export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnRes
   const say = (text: string, commentary: boolean) => {
     if (cancelled()) return;
     if (!commentary) {
-      if (finalSentences >= MAX_SPOKEN_SENTENCES) return void (truncated = true);
+      if (!opts.speakAll && finalSentences >= MAX_SPOKEN_SENTENCES) return void (truncated = true);
       finalSentences++;
     }
     if (firstSentenceMs === undefined) firstSentenceMs = now() - started;

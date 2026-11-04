@@ -107,7 +107,7 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     runTurn: async (utterance, history, signal, emit) => {
       const [rules, attached] = await Promise.all([instructionsOnce(), attachFor(utterance)]);
       const model = responsesVoiceModel(deps.target, { instructions: rules, functions: persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS, webSearch: true });
-      const result = await runVoiceTurn({ model, tools: tools.handlers(), history, utterance, signal, emit, ...(attached ? { attached } : {}) });
+      const result = await runVoiceTurn({ model, tools: tools.handlers(), history, utterance, signal, emit, ...(attached ? { attached } : {}), ...(persona === "sight" ? { speakAll: true } : {}) });
       turns++;
       deps.onUsage(result.usage, 0);
       deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · ${attached ? `${attached.citable.size} memory lines attached · ` : ""} first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›`);

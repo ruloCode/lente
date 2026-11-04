@@ -223,3 +223,26 @@ test("Ver's companion: the welcome steps until it knows the person, then their n
   assert.match(known, /se llama PROBE Ana, tiene 40 años y quiere tu ayuda para leer cartas/);
   assert.deepEqual(SIGHT_FUNCTIONS.map((f) => f.name).sort(), ["add_task", "ask_memory", "look", "narrate", "quiet_mode", "remember_person", "where_am_i"]);
 });
+
+test("Ver never sends the person to read the chat, and talks about remembering in plain words", async () => {
+  const { sightInstructions, SIGHT_FUNCTIONS } = await import("../src/voice-agent.ts");
+  const base = { now: Date.UTC(2026, 10, 4), names: [], timeZone: "America/Bogota", persona: "sight" as const };
+  for (const text of [sightInstructions({ ...base, intro: true }), sightInstructions({ ...base, companion: { name: "PROBE Ana" } })]) {
+    assert.match(text, /no puede leer la pantalla/);
+    assert.match(text, /Nunca la mandes a leer el chat/);
+    // Every other mention of the chat is that rule; nothing tells her something is left there.
+    assert.doesNotMatch(text.replace(/Nunca la mandes a leer el chat[^.]*\./, ""), /\bchat\b|queda escrito|te lo dejo/i);
+    assert.doesNotMatch(text.replace(/Nunca digas «guardar tus datos»[^.]*\./, ""), /guardar tus datos|base de datos|\bguardando\b/i);
+    assert.match(text, /Me acordaré de tu nombre/);
+  }
+  const remember = SIGHT_FUNCTIONS.find((f) => f.name === "remember_person")!;
+  assert.doesNotMatch(remember.description, /guarda|base de datos/i);
+});
+
+test("Ver says a long answer whole, with no note about the chat", async () => {
+  const spoken: string[] = [];
+  const text = "Primera frase de prueba. Segunda frase de prueba. Tercera frase de prueba. Cuarta frase de prueba. Quinta frase.";
+  await runVoiceTurn({ model: scripted([{ text }]), tools: {}, history: [], utterance: "x", signal: new AbortController().signal, emit: (e) => e.kind === "sentence" && spoken.push(e.text), speakAll: true });
+  assert.equal(spoken.length, 5);
+  assert.ok(!spoken.includes(LONG_REPLY_NOTE));
+});
