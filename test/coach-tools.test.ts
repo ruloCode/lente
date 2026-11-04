@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COACH_FUNCTIONS, type VoiceModel, type VoiceTurnEvent, runVoiceTurn } from "../src/voice-agent.ts";
+import { COACH_FUNCTIONS, COACH_TAP_QUESTION, type VoiceModel, type VoiceTurnEvent, coachTapModel, runVoiceTurn } from "../src/voice-agent.ts";
 import { parsePhoneMessage } from "../src/voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "../src/voice-tools.ts";
 
@@ -36,6 +36,7 @@ test("start with persona coach keeps its language and mode; anything else stays 
   assert.deepEqual(parsePhoneMessage(JSON.stringify({ type: "start", persona: "coach", lang: "PT", mode: "tutor" })), { type: "start", persona: "coach", intro: false, mode: "tutor", lang: "pt" });
   assert.deepEqual(parsePhoneMessage(JSON.stringify({ type: "start", persona: "coach", lang: "pt", mode: "nope", intro: true })), { type: "start", persona: "coach", intro: true, mode: "tutor", lang: "pt" });
   assert.deepEqual(parsePhoneMessage(JSON.stringify({ type: "start", persona: "sight", intro: true })), { type: "start", persona: "sight", intro: true });
+  assert.deepEqual(parsePhoneMessage(JSON.stringify({ type: "look" })), { type: "look" });
 });
 
 test("pronounce says the phrase in Portuguese and shows its card", async () => {
@@ -78,4 +79,18 @@ test("the loop shows a tool's phrase card, says its line in its language, and ke
     { kind: "sentence", text: "Repítelo conmigo, despacio.", commentary: false },
   ]);
   assert.equal(result.text, "O garfo. Repítelo conmigo, despacio.");
+});
+
+test("a tap looks at once with no model call, and says the names as cards and Portuguese lines", async () => {
+  const run = async (seen: string) => {
+    const events: VoiceTurnEvent[] = [];
+    const tools = new VoiceTools(backend(seen).b).coachHandlers(session().coach);
+    const result = await runVoiceTurn({ model: coachTapModel(COACH_TAP_QUESTION), tools, history: [], utterance: COACH_TAP_QUESTION, signal: new AbortController().signal, emit: (e) => events.push(e) });
+    return { events: events.filter((e) => e.kind !== "tool"), result };
+  };
+  const named = await run("o garfo = el tenedor\na xícara = la taza");
+  assert.deepEqual(named.events.map((e) => (e.kind === "pronounce" ? `card:${e.text}` : e.kind === "sentence" ? `${e.lang}:${e.text}` : e.kind)), ["card:o garfo", "pt:Isso é um garfo. O garfo.", "card:a xícara", "pt:A xícara."]);
+  assert.deepEqual(named.result.tools, ["look"]);
+  const blurred = await run("?");
+  assert.deepEqual(blurred.events.map((e) => (e.kind === "sentence" ? e.text : e.kind)), ["No veo nada claro; acerca la cámara o busca más luz."]);
 });

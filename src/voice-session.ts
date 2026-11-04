@@ -54,6 +54,8 @@ export type PhoneMessage =
   | { type: "start"; persona: "sight" | "default" | "coach"; intro: boolean; lang?: string; mode?: CoachMode }
   /** Ver: the phone's answer to `locate`; never stored or logged. */
   | { type: "location"; id: string; ok: boolean; lat?: number; lon?: number; accuracy?: number; address?: string; place?: string; reason?: string }
+  /** The coach (add-language-coach decision 13): a tap on its look surface, «¿Qué es esto?». */
+  | { type: "look" }
   | { type: "end" };
 
 export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
@@ -69,6 +71,7 @@ export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
     case "bargeIn":
     case "pause":
     case "resume":
+    case "look":
     case "end":
       return { type: m.type };
     case "location": {
@@ -216,7 +219,17 @@ export class VoiceSession {
     this.running = this.startTurn(cue, true);
   }
 
-  private async startTurn(text: string, hidden = false): Promise<void> {
+  /**
+   * A turn the phone asked for with a tap (the coach's look): `text` is the wearer's question, answered by
+   * `runner` instead of the agent. It interrupts whatever Lente was saying.
+   */
+  ask(text: string, runner: VoiceSessionDeps["runTurn"]): void {
+    if (this.state === "paused") return;
+    if (this.busy) this.bargeIn("a tap");
+    this.running = this.startTurn(text, false, runner);
+  }
+
+  private async startTurn(text: string, hidden = false, runner: VoiceSessionDeps["runTurn"] = this.deps.runTurn): Promise<void> {
     const turn = ++this.turn;
     this.sent = 0;
     this.spoken = 0;
@@ -254,7 +267,7 @@ export class VoiceSession {
     const sources: VoiceSource[] = [];
     let result: VoiceTurnResult;
     try {
-      result = await this.deps.runTurn(text, prior, controller.signal, (e) => {
+      result = await runner(text, prior, controller.signal, (e) => {
         if (!live()) return;
         if (e.kind === "sentence") speak(e.text, e.commentary, e.lang);
         else if (e.kind === "pronounce") this.deps.send({ type: "pronounce", turn, text: e.text, meaning: e.meaning, lang: e.lang });

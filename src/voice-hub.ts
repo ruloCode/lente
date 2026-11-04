@@ -8,8 +8,8 @@ import { AsrSession, DEFAULT_LANGUAGE_BIAS } from "./asr-session.ts";
 import type { ChatLine, Chats } from "./chat-store.ts";
 import { COACH_INTRO_CUE, type CoachLanguage, type CoachMode, DEFAULT_BAND, checkRepeat, coachInstructions, coachLanguage, coachLanguageBias, sentenceLanguage } from "./coach.ts";
 import type { ChatTarget } from "./providers.ts";
-import { type AttachedMemory, COACH_FUNCTIONS, type Companion, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
-import { type PhoneMessage, type VoiceLine, VoiceSession, parsePhoneMessage } from "./voice-session.ts";
+import { type AttachedMemory, COACH_FUNCTIONS, COACH_TAP_QUESTION, type Companion, coachTapModel, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
+import { type PhoneMessage, type VoiceLine, VoiceSession, type VoiceSessionDeps, parsePhoneMessage } from "./voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "./voice-tools.ts";
 import { SpeculativeRecall } from "./voice-recall.ts";
 import { responsesVoiceModel } from "./voice-wire.ts";
@@ -113,22 +113,28 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     now: Date.now,
     log: deps.log,
     repeatOf: (text) => Boolean(coach && lastPhrase && checkRepeat(lastPhrase, text, coach.lang.code).result === "understood"),
-    runTurn: async (utterance, history, signal, emit) => {
-      const [rules, attached] = await Promise.all([instructionsOnce(), attachFor(utterance)]);
-      const on = coach;
-      heardNow = utterance;
-      const functions = on ? COACH_FUNCTIONS : persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS;
-      // The coach's sentences carry the language they are spoken in; its own tools tag theirs.
-      const tagged: typeof emit = on ? (e) => emit(e.kind === "sentence" && !e.lang ? { ...e, lang: sentenceLanguage(e.text, on.lang.code) } : e) : emit;
-      const handlers = on ? tools.coachHandlers({ lang: on.lang.code, band: DEFAULT_BAND, heard: () => heardNow, pronounced: (text) => (lastPhrase = text) }) : tools.handlers();
-      const model = responsesVoiceModel(deps.target, { instructions: rules, functions, webSearch: !on });
-      const result = await runVoiceTurn({ model, tools: handlers, history, utterance, signal, emit: tagged, ...(attached ? { attached } : {}), ...(persona === "sight" ? { speakAll: true } : {}) });
-      turns++;
-      deps.onUsage(result.usage, 0);
-      deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · ${attached ? `${attached.citable.size} memory lines attached · ` : ""} first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›`);
-      return result;
-    },
+    runTurn: (utterance, history, signal, emit) => runTurn(utterance, history, signal, emit, false),
   });
+
+  /**
+   * One turn. `tap`: the coach's look surface was tapped (add-language-coach 2.1, design decision 13), so the
+   * look runs at once without a model step to decide it, and its names come back as `pronounce` cards and lines.
+   */
+  async function runTurn(...[utterance, history, signal, emit, tap]: [...Parameters<VoiceSessionDeps["runTurn"]>, boolean]) {
+    const [rules, attached] = await Promise.all([instructionsOnce(), tap ? Promise.resolve(undefined) : attachFor(utterance)]);
+    const on = coach;
+    heardNow = utterance;
+    const functions = on ? COACH_FUNCTIONS : persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS;
+    // The coach's sentences carry the language they are spoken in; its own tools tag theirs.
+    const tagged: typeof emit = on ? (e) => emit(e.kind === "sentence" && !e.lang ? { ...e, lang: sentenceLanguage(e.text, on.lang.code) } : e) : emit;
+    const handlers = on ? tools.coachHandlers({ lang: on.lang.code, band: DEFAULT_BAND, heard: () => heardNow, pronounced: (text) => (lastPhrase = text) }) : tools.handlers();
+    const model = tap && on ? coachTapModel(utterance) : responsesVoiceModel(deps.target, { instructions: rules, functions, webSearch: !on });
+    const result = await runVoiceTurn({ model, tools: handlers, history, utterance, signal, emit: tagged, ...(attached ? { attached } : {}), ...(persona === "sight" ? { speakAll: true } : {}) });
+    turns++;
+    deps.onUsage(result.usage, 0);
+    deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · ${attached ? `${attached.citable.size} memory lines attached · ` : ""} first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›`);
+    return result;
+  }
 
   const asr = new AsrSession(
     deps.key,
@@ -187,6 +193,10 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     if (!message) return;
     if (message.type === "end") return close();
     if (message.type === "location") return void locating.get(message.id)?.(message);
+    if (message.type === "look") {
+      if (!coach) return deps.log("[voice] a look tap outside the coach is ignored");
+      return session.ask(COACH_TAP_QUESTION, (utterance, history, signal, emit) => runTurn(utterance, history, signal, emit, true));
+    }
     if (message.type === "start") {
       // Ver's companion or the language coach: new instructions for the session, and with `intro` Lente speaks first.
       intro = message.intro;

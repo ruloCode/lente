@@ -504,14 +504,23 @@ function readBody(req: IncomingMessage, max = 10_000): Promise<string> {
   });
 }
 
-async function speak(res: ServerResponse, text: string, voice?: string): Promise<void> {
+/** ElevenLabs' `voice_settings.speed` range; the coach's «Más despacio» asks below 1. */
+const TTS_SPEED_MIN = 0.7;
+const TTS_SPEED_MAX = 1.2;
+
+async function speak(res: ServerResponse, text: string, voice?: string, speed?: number): Promise<void> {
   if (!elevenKey) return void res.writeHead(404).end();
   const coach = voice ? elevenCoachVoices[voice] : undefined;
   const voiceId = coach?.id ?? (voice === "sight" ? elevenSightVoice : elevenVoice);
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`, {
     method: "POST",
     headers: { "xi-api-key": elevenKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
-    body: JSON.stringify({ text: text.slice(0, 500), model_id: "eleven_flash_v2_5", ...(coach ? { language_code: coach.language } : {}) }),
+    body: JSON.stringify({
+      text: text.slice(0, 500),
+      model_id: "eleven_flash_v2_5",
+      ...(coach ? { language_code: coach.language } : {}),
+      ...(typeof speed === "number" && Number.isFinite(speed) ? { voice_settings: { speed: Math.min(TTS_SPEED_MAX, Math.max(TTS_SPEED_MIN, speed)) } } : {}),
+    }),
   });
   if (!r.ok) {
     console.error(`[tts] ElevenLabs HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -3102,8 +3111,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       if (typeof text === "string") narration.narrated(text, Date.now());
       res.writeHead(204).end();
     } else if (req.method === "POST" && req.url === "/tts") {
-      const { text, voice } = JSON.parse((await readBody(req)) || "{}") as { text?: string; voice?: string };
-      await speak(res, text ?? "", voice);
+      const { text, voice, speed } = JSON.parse((await readBody(req)) || "{}") as { text?: string; voice?: string; speed?: number };
+      await speak(res, text ?? "", voice, speed);
     } else if (req.method === "POST" && req.url && ACTIONS[req.url]) {
       ACTIONS[req.url]();
       res.writeHead(204).end();

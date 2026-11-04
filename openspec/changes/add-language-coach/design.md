@@ -91,6 +91,11 @@ Tools (`COACH_FUNCTIONS`):
   - «Repetir» says `text` again in the `lang` voice, and «Más despacio» says it at 0.8×.
   - A coach look sends one `pronounce` per name, each followed by its sentence (for the first name in Portuguese, «Isso é um garfo. O garfo.»).
 - **`/tts`** takes `{ text, voice: "coach-pt" }` for a sentence whose `lang` is `pt`: Keren, a Brazilian voice (`ELEVENLABS_COACH_PT_VOICE_ID` overrides it), with `language_code: "pt"`. A Spanish sentence in a coach session uses the voice the phone already uses for the voice session. `coach-fr` waits for French's check.
+- **A tap on the look surface** sends `{ "type": "look" }` on the same session, as `add-language-coach`'s Android reading says.
+  - In a coach session it is the wearer's turn «¿Qué es esto?»: a `heard`, then the coach's `look` runs at once (`coachTapModel`, no model step to decide it).
+  - Each name comes back as a `pronounce` and its `reply` with `lang: "pt"`. With nothing named, one Spanish `reply` says why.
+  - Outside the coach it is ignored.
+- **`/tts` also takes an optional `speed`**, which goes to ElevenLabs as `voice_settings.speed`, clamped to 0.7–1.2. On 2026-11-04 `0.7` was accepted and gave longer audio. «Más despacio» may use it.
 - **`check_repeat`** needs no event. The tutor says whether it understood. A repeat of the phrase just pronounced is not dropped as Lente's own echo once the phone has finished speaking it (`REPEAT_ECHO_TAIL_MS`).
 
 ### 4. Placement and the estimate (`src/placement.ts`, pure)

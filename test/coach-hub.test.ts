@@ -99,6 +99,14 @@ test("the Portuguese tutor: the bias on start, a phrase said in Portuguese with 
   const turn2 = p.events.filter((e) => e.turn === 2);
   assert.deepEqual(turn2.filter((e) => e.type === "tool").map((e) => e.name), ["check_repeat"]);
   assert.deepEqual(turn2.filter((e) => e.type === "reply").map((e) => [e.text, e.lang]), [["¡Muy bien, te entendí perfecto!", "es"]]);
+
+  // A tap on the look surface is the wearer asking «¿Qué es esto?»; with no camera, Lente says so in Spanish.
+  p.send({ type: "look" });
+  await p.until(() => p.events.some((e) => e.type === "done" && e.turn === 3));
+  const turn3 = p.events.filter((e) => e.turn === 3);
+  assert.deepEqual(turn3.filter((e) => e.type === "heard").map((e) => e.text), ["¿Qué es esto?"]);
+  assert.deepEqual(turn3.filter((e) => e.type === "tool").map((e) => e.name), ["look"]);
+  assert.deepEqual(turn3.filter((e) => e.type === "reply").map((e) => [e.text, e.lang]), [["No pude ver: No hay cámara conectada.", "es"]]);
   p.send({ type: "end" });
 });
 

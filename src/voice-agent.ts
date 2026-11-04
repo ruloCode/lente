@@ -362,6 +362,29 @@ export const COACH_FUNCTIONS: FunctionSpec[] = [
   ...VOICE_FUNCTIONS.filter((f) => f.name === "ask_memory"),
 ];
 
+/** What a tap on the coach's look surface asks, as the wearer's turn. */
+export const COACH_TAP_QUESTION = "¿Qué es esto?";
+
+/**
+ * The coach's look by tap: a scripted model that calls `look` at once and, when it named nothing, says why
+ * in Spanish. No model call is spent deciding what a tap means.
+ */
+export function coachTapModel(question: string): VoiceModel {
+  return async (input, _signal, on) => {
+    const out = input.find((i): i is Extract<VoiceItem, { type: "function_call_output" }> => i.type === "function_call_output");
+    if (!out) {
+      const args = { question };
+      return { items: [{ type: "function_call", callId: "tap-look", name: "look", arguments: JSON.stringify(args) }], calls: [{ callId: "tap-look", name: "look", args }], sources: [], searches: [] };
+    }
+    let seen: { names?: unknown[]; error?: string } = {};
+    try {
+      seen = JSON.parse(out.output);
+    } catch {}
+    if (!seen.names?.length) on.text(seen.error ? `No pude ver: ${seen.error}` : "No veo nada claro; acerca la cámara o busca más luz.", false);
+    return { items: [], calls: [], sources: [], searches: [] };
+  };
+}
+
 // --- The loop -----------------------------------------------------------------------------------
 
 /** Memory lines attached before the wearer's turn (add-memory-engine 5.2): the developer item and what its ids point to. */
