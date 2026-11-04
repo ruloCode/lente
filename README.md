@@ -1,33 +1,124 @@
-# Lente
+<p align="center">
+  <img src="site/assets/og.jpg" width="100%" alt="Render of Lente: a small dark clip on the temple of thin gold-framed glasses">
+</p>
 
-**A real-time meeting copilot for people who work in their second language.**
+<h1 align="center">Lente</h1>
 
-A small clip on any pair of glasses hears the meeting and sees what you see. Lente knows who is speaking, notices when a question is aimed at you, and puts one line on your phone, 90 characters or less, that you can say right away: the **Dilo** card ("say it"), with its meaning in Spanish underneath. After the meeting it keeps the notes, the commitments and a searchable memory you can ask by text or by voice, and it hands the follow-up to an agent once you approve it.
+<p align="center">
+  <b>It sees, listens and remembers with you.</b><br>
+  A small clip for any pair of glasses, Meta's models and your phone: it reads a card aloud for someone who no longer sees well,<br>
+  gives you the line to say when a meeting question is for you, and remembers what matters, with its source.
+</p>
 
-- **Dilo:** when someone asks you something, a sentence you can say now.
-- **What it means:** a one-line explanation of a term or acronym you didn't catch.
-- **On screen:** what the slide, screen or whiteboard in front of you is showing.
-- **Talk with Lente:** ask your week out loud ("what did I promise Ana?") and get the answer with its sources.
-- **Afterwards:** notes, decisions, tasks with owners, how many times you were asked and the new words you heard.
+<p align="center">
+  <a href="https://rulocode.github.io/lente/"><b>Website</b></a> ·
+  <a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/app"><b>Try it: Sign in with Google</b></a> ·
+  <a href="https://github.com/ruloCode/lente/releases/latest/download/lente.apk"><b>Android app</b></a> ·
+  <a href="#run-it-locally"><b>Run it locally: <code>pnpm demo</code>, no keys</b></a>
+</p>
+<!-- TODO(orch) 18:30: add " · Video" (a link) to the line above once the owner gives the link. -->
 
-The same clip serves a second person. **Ver** is for someone who is blind or has low vision: a warm voice in Colombian Spanish that welcomes them, says one sentence at a time what is in front of them, reads text aloud when they ask, answers «¿qué tengo en la mano?» and «¿dónde estoy?», and never tells them to move or who someone is.
+<p align="center">
+  <img alt="Muse Spark 1.3" src="https://img.shields.io/badge/Meta-Muse%20Spark%201.3-0866FF">
+  <img alt="Muse Voice Transcribe" src="https://img.shields.io/badge/Meta-Muse%20Voice%20Transcribe-0866FF">
+  <img alt="Muse Spark Open" src="https://img.shields.io/badge/Meta-Muse%20Spark%20Open%20(open%20weights)-0866FF">
+  <img alt="863 tests" src="https://img.shields.io/badge/tests-863%20passing-2EA44F">
+  <img alt="Node 22, zero runtime dependencies" src="https://img.shields.io/badge/hub-Node%2022%20·%200%20runtime%20deps-333">
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/clip-XIAO%20ESP32--S3%20Sense-333">
+  <img alt="MIT" src="https://img.shields.io/badge/license-MIT-333">
+</p>
+
+> **Meta Global AI Developer Hackathon · Indie track · Theme: Build for Your World**
+> Built solo in ten days in Bogotá: every line in this repository was written during the hackathon, starting **2026-10-26**. See [What was built during the hackathon](#what-was-built-during-the-hackathon).
+
+## The problem
+
+**Think of someone you love who no longer sees well.** The card from a grandchild, the medicine label, the letter from the bank, the bus that is coming: it is all right in front of them, and none of it reaches them unless someone is there to read it. AI glasses for blind and low-vision people already exist, but they are expensive and mean buying new glasses. In Colombia alone, the 2018 census counted **1,948,332 people with difficulty seeing** ([INCI, citing DANE](https://www.inci.gov.co/sites/default/files/2021-11/OAJ-102-FM-064%20v6%20INVITACION%20PUBLICA.doc)).
+
+**And at work, the meeting moves faster than your second language.** *«Rulo, can we ship the beta on Friday?»* You understood the question and you know the answer, but while you build the sentence in English in your head, someone else answers and the decision is made without you. Millions of engineers, designers and founders work every day in English, their second language; for them the hard part is not vocabulary, it is **speed**. Live captions turn the meeting into a wall of text to read while it happens, and none of them tells you *this question is for you*. AI note-takers help afterwards, when the moment has passed.
+
+**Lente's answer: you don't need new glasses.** A camera, a microphone and your phone are enough when Meta's models do the seeing, the listening and the remembering. The clip is a Seeed XIAO ESP32-S3 Sense (US$ 13.90 at Seeed, [notes](docs/kb/camera-boards.md)) with a small battery in a case printed for any glasses. No clip? The phone does its job.
+
+## What Lente does
+
+### Ver: eyes for someone who no longer sees well
+
+A warm voice in Colombian Spanish that welcomes the person, learns their name and says what is in front of them, **one sentence at a time**. «Léeme este papel» reads it aloud; «¿qué tengo en la mano?» and «¿dónde estoy?» get an answer. **When nothing changes, it stays quiet**, so it never talks over the room. It describes and never guides: it never tells the person to move or that a path is safe, and never says who someone is. The Android screen is one large target (tap to look, long press to talk) and works with TalkBack.
 <!-- TODO(orch): after add-practice-mode lands (L3/L4, ~15:00), add after the Ver sentence:
 And **Practicar** turns the phone on the piano into a patient teacher: it hears each note on the phone itself, and Lente coaches you out loud after each try.
 -->
 
-**[Website](https://rulocode.github.io/lente/) · [Sign in with Google](https://drew-lizcano--lente-hub-hub.us-east.modal.run/app) · [Download for Android](https://github.com/ruloCode/lente/releases/latest/download/lente.apk)** (Android 10+, [release notes](https://github.com/ruloCode/lente/releases/tag/v0.2.0-hackathon)) · **[Run it locally](#run-it-locally)** in one command, no keys: `pnpm install && pnpm demo`
-<!-- TODO(orch) 18:30: add " · [Video](…)" to the line above once the owner gives the link. -->
+### At work: the line to say, in about three seconds
 
-![The clip's bench rig: a Seeed XIAO ESP32-S3 Sense with its camera, a LiPo charger and a switch](docs/promo/clip-rig-in-hand.png)
+<p align="center">
+  <img src="docs/promo/web-dilo-and-memory.webp" width="100%" alt="Lente's web app while recording: a Dilo card says «Yes, Friday works if QA signs off Thursday.» next to the live transcript of the question «Rulo, can we ship the beta on Friday?»; on the right, the chat answers «¿Qué le prometí a PROBE-Marco?» and cites the meeting it came from">
+</p>
+<p align="center"><sub>The web app during <code>pnpm demo</code>: a question aimed at the wearer appears in the live transcript and the <b>Dilo</b> card offers a line to say; on the right, Lente answers from memory and cites the meeting. Synthetic PROBE data and the stubbed Meta API, so the timings read 0.0 s; the real ones are under <a href="#measured">Measured</a>.</sub></p>
 
-> **Meta Global AI Developer Hackathon · Indie track · Theme: Build for Your World**
-> Every line in this repository was written during the hackathon, starting **2026-10-26**. See [What was built during the hackathon](#what-was-built-during-the-hackathon).
+The same clip works with you; you choose how: **Asistir**, **Recuerdo**, **Ver** or **Solo grabar**. In a meeting Lente knows who is speaking, and when a question is for you it puts one line on your phone, 90 characters or less, that you can say right away: the **Dilo** card ("say it"), with its meaning in Spanish underneath, **3.0 s p50 from the end of the question**.
 
-## The problem
+- **What it means:** a one-line explanation of a term or acronym you didn't catch.
+- **On screen:** what the slide, screen or whiteboard in front of you is showing.
+- **Recuerdo:** keeps the moments of your day; turn the wheel, tap one, and relive it.
+- **Afterwards:** notes, decisions, tasks with owners, how many times you were asked and the new words you heard.
 
-Millions of engineers, designers and founders work every day in English, their second language. In a live meeting the hard part isn't vocabulary, it's speed: someone asks you directly, a decision is being made, or an unfamiliar term comes up, and by the time you've translated in your head the moment has passed. You end up quiet in the meetings that decide your work.
+### Your memory and your agents
 
-Lente is built by one of those people, for the meetings he sits in every week.
+Everything stays in your memory, sealed per account: notes, decisions and tasks. Ask it by text or by voice («¿Qué se decidió sobre la beta?») and it answers **with the source**, or says «No lo encuentro» instead of guessing. When there is work to do, it hands it to **your agents**: Claude Code or Codex see what is pending through Lente's MCP server and, only after you approve it in «Por aprobar» on your phone, do it on your own computer.
+
+<table>
+  <tr>
+    <td width="50%"><img src="site/assets/app-reunion.webp" alt="A meeting in the web app: its summary, decisions and tasks, each with the moment it came from"></td>
+    <td width="50%"><img src="site/assets/app-apps.webp" alt="The Apps section of the web app: Dilo, Ver, Practicar and Idiomas, each with the permissions it asks for"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Every meeting, remembered with its source.</b> Notes, decisions and tasks; each item carries the turn it came from, and items without one are dropped.</sub></td>
+    <td><sub><b>Apps for the glasses.</b> Each app is a JSON manifest the hub interprets, never code, with its permissions in plain sight.</sub></td>
+  </tr>
+</table>
+
+## Built in ten days
+
+One person, in Bogotá: the clip and its firmware, the case, the hub, the Android app and the web app. **Muse Voice Transcribe** to hear and tell speakers apart, **Muse Spark 1.3** to see, talk and remember, and **Muse Spark Open** for the fast lane. 863 unit tests, every number measured by a script, and all of it open source.
+
+```mermaid
+flowchart LR
+    clip["Clip on your glasses<br/>mic + camera"] -- "audio and photos, Wi-Fi" --> hub["Lente hub<br/>Node 22, no runtime deps"]
+    phone["or the phone, or a Meet tab"] --> hub
+    hub -- realtime --> asr["Muse Voice Transcribe<br/>who is speaking"]
+    asr -- "was that question for you?" --> hub
+    hub -- "image + question" --> spark["Muse Spark 1.3<br/>see · say · remember"]
+    spark -- "one sentence, or silence" --> voice["Ver: spoken aloud"]
+    spark -- "a line + its meaning" --> card["Dilo card on your phone"]
+    hub --> memory["Sealed memory<br/>notes, tasks, sources"]
+    memory -- "ask by text or voice" --> spark
+    hub -- "after you approve" --> agents["Claude Code · Codex<br/>on your computer"]
+```
+
+<table>
+  <tr>
+    <td align="center" width="25%"><h3>3.0 s</h3><sub>question ends → Dilo card on the phone (p50)</sub></td>
+    <td align="center" width="25%"><h3>3.08 s</h3><sub>Ver: time to the first token of a description (p50, one-sentence prompt)</sub></td>
+    <td align="center" width="25%"><h3>90 of 105</h3><sub>memory answers right, with the right source; 25 of 25 traps refused</sub></td>
+    <td align="center" width="25%"><h3>863</h3><sub>unit tests, plus an end-to-end smoke test on every push</sub></td>
+  </tr>
+</table>
+<p align="center"><sub>Every number comes from a script run recorded in <a href="docs/benchmarks.md">docs/benchmarks.md</a>, on synthetic speech and memories.</sub></p>
+
+### The hardware
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/promo/clip-rig-square.webp" alt="The real bench rig in a hand: a Seeed XIAO ESP32-S3 Sense with its camera, a LiPo charger and a switch"></td>
+    <td width="33%"><img src="docs/promo/clip-on-glasses.webp" alt="Render of the parametric case clipped to the temple of a pair of glasses"></td>
+    <td width="33%"><img src="docs/promo/clip-exploded.webp" alt="Exploded render of the case: shell, board, battery and lid"></td>
+  </tr>
+  <tr>
+    <td><sub><b>The real clip</b>: a Seeed XIAO ESP32-S3 Sense with its camera and microphone, firmware in <a href="firmware/lente-clip"><code>firmware/lente-clip</code></a>.</sub></td>
+    <td><sub><b>A case for any glasses</b>, generated from code (<a href="hardware/"><code>hardware/</code></a>), with STL files to print. Render.</sub></td>
+    <td><sub><b>Exploded view</b> of the same parametric case. Render.</sub></td>
+  </tr>
+</table>
 
 ## How it uses Meta's models
 
