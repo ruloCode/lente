@@ -28,7 +28,7 @@
   /* docs/design/ios-kit/nav.css: springs sampled from a damped spring */
   --spring-snappy: linear(0, 0.0253 2.5%, 0.0916 5%, 0.172 7.5%, 0.2614 10%, 0.3528 12.5%, 0.4417 15%, 0.533 17.5%, 0.6082 20%, 0.6752 22.5%, 0.7338 25%, 0.789 27.5%, 0.8312 30%, 0.8666 32.5%, 0.8959 35%, 0.9221 37.5%, 0.9411 40%, 0.9563 42.5%, 0.9683 45%, 0.9784 47.5%, 0.9854 50%, 0.9907 52.5%, 0.995 55%, 0.9977 57.5%, 0.9996 60%, 1.0009 62.5%, 1.0018 65%, 1.0022 67.5%, 1.0024 70%, 1.0025 72.5%, 1.0024 75%, 1.0022 77.5%, 1.002 80%, 1.0018 82.5%, 1.0015 85%, 1.0013 87.5%, 1.0011 90%, 1.0009 92.5%, 1.0008 95%, 1.0006 97.5%, 1);
   /* The site's own surfaces: the alternate band, the cards on it, the stage under a device, and the
-     warm field of the hero render (sampled from the image, the same in both themes). */
+     warm field behind the hero photo (the same in both themes). */
   --band: #FFFFFF; --well: #F2F2F7; --warm: #F3ECE6;
   /* An elevation ladder for the site's cards: resting, raised, lifted (hover) */
   --lift-1: 0 1px 2px rgba(20, 30, 70, .05), 0 6px 16px -6px rgba(20, 30, 70, .10);
@@ -148,7 +148,7 @@ main > section.hero { padding-block: clamp(40px, 6vw, 80px) clamp(64px, 8vw, 112
 .render img { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; object-position: 50% 55%; transform-origin: 60% 50%; }
 @media (min-width: 900px) { .render img { aspect-ratio: 16 / 9; } }
 [data-theme="dark"] .render { box-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 40px 120px -40px rgba(243, 236, 230, .28); }
-/* The render's label sits on the warm field, so it keeps light glass in both themes */
+/* The hero photo's label keeps light glass in both themes */
 .badge { position: absolute; right: clamp(12px, 2vw, 24px); bottom: clamp(12px, 2vw, 24px); z-index: 1; font-size: 13px; font-weight: 600; letter-spacing: .01em; color: #3B332C; background: rgba(255, 255, 255, .72); padding: 6px 12px; border-radius: 999px; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: inset 0 0 0 .5px rgba(60, 40, 20, .14); }
 .qr-card { display: inline-flex; align-items: center; gap: var(--s2); padding: 10px 20px 10px 10px; border-radius: 22px; text-align: left;
   background: var(--nav-bg); -webkit-backdrop-filter: blur(20px) saturate(1.7); backdrop-filter: blur(20px) saturate(1.7); box-shadow: inset 0 0 0 .5px var(--nav-edge), var(--nav-shadow); }
@@ -300,8 +300,6 @@ main > section.film { padding-top: 0; }
 @media (min-width: 860px) { .pair { grid-template-columns: 1fr 1fr; } }
 .photo { margin: 0; position: relative; border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-2); transition: box-shadow 300ms var(--ease), transform 300ms var(--ease); }
 .photo img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: 1 / 1; }
-.photo--render { background: radial-gradient(70% 70% at 50% 45%, var(--tag), var(--surface)); }
-.photo--render img { object-fit: contain; padding: 8%; }
 .photo figcaption { position: absolute; left: var(--s2); bottom: var(--s2); font-size: 13px; font-weight: 600; color: var(--ink); background: var(--nav-bg); padding: 6px 12px; border-radius: 999px; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: inset 0 0 0 .5px var(--nav-edge); }
 .lists { display: grid; gap: var(--s3); margin-top: var(--s5); }
 @media (min-width: 860px) { .lists { grid-template-columns: 1fr 1fr; } }
@@ -343,7 +341,7 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
   .hero > .wrap > :nth-child(3) { animation-delay: calc(var(--intro-wait, 0ms) + 60ms); }
   .hero > .wrap > :nth-child(4) { animation-delay: calc(var(--intro-wait, 0ms) + 90ms); }
   .hero > .wrap > :nth-child(n + 5) { animation-delay: calc(var(--intro-wait, 0ms) + 120ms); }
-  /* Under the intro the headline waits for the layer to lift; the render is already there,
+  /* Under the intro the headline waits for the layer to lift; the hero photo is already there,
      painted, so the largest paint is not delayed */
   [data-intro] { --intro-wait: 1000ms; }
   [data-intro] .hero .product { animation: none; }

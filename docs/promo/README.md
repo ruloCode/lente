@@ -14,3 +14,5 @@ Illustrations generated during the hackathon (2026-10-26..28) with GPT Image 2.5
 People in these images are synthetic.
 
 `clip-rig-in-hand.png` is different: a real photo (2026-10-29) of the clip's first bench rig, the Seeed XIAO ESP32-S3 Sense with its camera, a 1S USB-C charger and a slide switch, held in the author's hand.
+
+`clip-on-gold-glasses.webp` is a real photo (2026-11-04) of the printed clip held to a pair of gold glasses with two rubber bands. The website's hero, share card (`site/assets/og.jpg`) and clip close-up are cut from it.
