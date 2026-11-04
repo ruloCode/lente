@@ -11,7 +11,7 @@ export const BM25_B = 0.75;
 /** Units the bit-code prefilter keeps for exact int8 rescoring. */
 export const VECTOR_PREFILTER = 200;
 
-export type UnitKind = "segment" | "seen" | "notes" | "card" | "fact" | "digest";
+export type UnitKind = "segment" | "seen" | "notes" | "card" | "fact" | "digest" | "practice";
 
 export interface MemoryUnit {
   /** An id today's chips understand: `s<day>:<n>`, `d<day>:<n>`, `m…`, `c<episode>:<n>`, `F<id>`, `day:…`. */

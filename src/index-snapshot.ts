@@ -10,7 +10,8 @@ import { type MemoryUnit, type Posting, Shard, type UnitKind } from "./memory-in
 const MAGIC = "LMIX";
 /** Bumped when the layout changes; an older snapshot is rebuilt, never read. */
 export const SNAPSHOT_FORMAT = 1;
-const KINDS: readonly UnitKind[] = ["segment", "seen", "notes", "card", "fact", "digest"];
+/** Stored by position: a new kind goes at the end, so older snapshots still read. */
+const KINDS: readonly UnitKind[] = ["segment", "seen", "notes", "card", "fact", "digest", "practice"];
 
 export class SnapshotError extends Error {
   constructor(message: string) {

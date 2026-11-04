@@ -202,8 +202,12 @@ export async function lookUp(plan: LookupPlan, loaders: TierLoaders, budget = LO
   entries.forEach((e, i) => {
     if (!("text" in e) || !e.text.trim()) return;
     const seen = e.kind === "live" || (e.kind === "cue" && e.label === "ON SCREEN");
-    if (e.kind !== "turn" && !seen) return;
     const id = `d${isoDay(e.at)}:${i + 1}`;
+    if (e.kind === "practice") {
+      candidates.push({ id, line: `${isoDay(e.at)} ${hhmm(e.at)} práctica: ${oneLine(e.text)}`, source: { id, kind: "heard", label: `Practicaste · ${hhmm(e.at)}`, at: e.at }, score: score(e.text, plan.terms), at: e.at });
+      return;
+    }
+    if (e.kind !== "turn" && !seen) return;
     const line = `${isoDay(e.at)} ${hhmm(e.at)} ${seen ? "la cámara vio" : `se oyó (${e.kind === "turn" ? e.speaker ?? "alguien" : ""})`}: ${oneLine(e.text)}`;
     candidates.push({ id, line, source: { id, kind: seen ? "seen" : "heard", label: `${seen ? "Lo viste" : "Lo escuchaste"} · ${hhmm(e.at)}`, at: e.at }, score: score(e.text, plan.terms), at: e.at });
   });

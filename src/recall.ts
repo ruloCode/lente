@@ -93,8 +93,8 @@ export function meetingUnits(m: Meeting, projectId: string | undefined): MemoryU
 }
 
 /**
- * One local day's entries outside meetings: speech as segments (`s<day>:<n>`), camera descriptions as
- * moments (`d<day>:<n>`). A description inside a project's meeting belongs to that project.
+ * One local day's entries outside meetings: speech as segments (`s<day>:<n>`), camera descriptions and
+ * piano practice as moments (`d<day>:<n>`). A description inside a project's meeting belongs to that project.
  */
 export function dayUnits(day: string, entries: readonly DayEntry[], meetings: readonly { startedAt: number; endedAt?: number; projectId?: string }[], now: number): MemoryUnit[] {
   const inMeeting = (at: number) => meetings.find((m) => at >= m.startedAt && at <= (m.endedAt ?? now));
@@ -110,6 +110,11 @@ export function dayUnits(day: string, entries: readonly DayEntry[], meetings: re
   let seen = 0;
   const moments: MemoryUnit[] = [];
   for (const e of entries) {
+    // Piano practice (add-practice-mode) shares the moments' numbering, so the runtime's `d<day>:` sweep covers it.
+    if (e.kind === "practice" && e.text.trim()) {
+      moments.push({ id: `d${day}:${++seen}`, kind: "practice", at: e.at, text: `Práctica: ${oneLine(e.text)}` });
+      continue;
+    }
     if (!((e.kind === "live" || (e.kind === "cue" && e.label === "ON SCREEN")) && e.text.trim())) continue;
     const projectId = inMeeting(e.at)?.projectId;
     moments.push({ id: `d${day}:${++seen}`, kind: "seen", at: e.at, ...(projectId ? { projectId } : {}), text: `La cámara vio: ${oneLine(e.text)}` });
@@ -140,6 +145,8 @@ export function sourceOf(u: MemoryUnit, timeZone: string): AskSource {
       return meetingId?.startsWith("m") ? { id: u.id, kind: "meeting", label: `${u.title ?? "Reunión"} · ${hhmm}`, at: u.at, meetingId, ...(turnId ? { turnId } : {}) } : { id: u.id, kind: "heard", label: `Lo escuchaste · ${hhmm}`, at: u.at };
     case "seen":
       return { id: u.id, kind: "seen", label: `Lo viste · ${hhmm}`, at: u.at };
+    case "practice":
+      return { id: u.id, kind: "heard", label: `Practicaste · ${hhmm}`, at: u.at };
     case "fact":
     case "card":
       return { id: u.id, kind: "fact", label: "Recuerdo", at: u.at, ...(meetingId ? { meetingId } : {}), ...(turnId ? { turnId } : {}) };

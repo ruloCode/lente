@@ -1,4 +1,4 @@
-// The day record, as text: turns, cues, summaries and what the camera described.
+// The day record, as text: turns, cues, summaries, what the camera described and piano practice.
 // One JSON line per entry in data/days/YYYY-MM-DD.jsonl (git-ignored). No audio, no photos.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -23,7 +23,9 @@ export type DayEntry =
   | { at: number; kind: "live"; text: string; stages?: Stages }
   | { at: number; kind: "summary"; text: string }
   /** An outside agent called one of Lente's tools (add-agent-bridge): which tool and which token, a fixed sentence, never content. */
-  | { at: number; kind: "agent"; tool: string; client: string; text: string };
+  | { at: number; kind: "agent"; tool: string; client: string; text: string }
+  /** A piano attempt (add-practice-mode): the lesson, its one-line Spanish summary and its count. No audio. */
+  | { at: number; kind: "practice"; lessonId: string; text: string; right: number; total: number };
 
 export function dayKey(at: number): string {
   const d = new Date(at);

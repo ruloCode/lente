@@ -103,9 +103,9 @@ export function buildMemory(input: { meetings: Meeting[]; day: DayEntry[]; facts
     if (push(`[${id}] Recuerdo: ${oneLine(f.text)}`)) sources.set(id, { id, kind: "fact", label: "Recuerdo", at: f.createdAt, meetingId: f.meetingId, turnId: f.evidence[0] });
   });
 
-  // Today outside meetings: what was heard and what the camera described, newest first.
+  // Today outside meetings: what was heard, what the camera described and piano practice, newest first.
   const inMeeting = (at: number) => input.meetings.some((m) => at >= m.startedAt && at <= (m.endedAt ?? Number.MAX_SAFE_INTEGER));
-  let heard = 0, seen = 0;
+  let heard = 0, seen = 0, practiced = 0;
   for (const e of [...input.day].reverse()) {
     if (e.kind === "turn" && !inMeeting(e.at) && e.text.trim()) {
       const id = `H${++heard}`;
@@ -113,6 +113,9 @@ export function buildMemory(input: { meetings: Meeting[]; day: DayEntry[]; facts
     } else if ((e.kind === "live" || (e.kind === "cue" && e.label === "ON SCREEN")) && e.text.trim()) {
       const id = `S${++seen}`;
       if (push(`[${id}] ${day(e.at)} ${hhmm(e.at)} la cámara vio: ${oneLine(e.text)}`)) sources.set(id, { id, kind: "seen", label: `Lo viste · ${hhmm(e.at)}`, at: e.at });
+    } else if (e.kind === "practice" && e.text.trim()) {
+      const id = `P${++practiced}`;
+      if (push(`[${id}] ${day(e.at)} ${hhmm(e.at)} práctica: ${oneLine(e.text)}`)) sources.set(id, { id, kind: "heard", label: `Practicaste · ${hhmm(e.at)}`, at: e.at });
     }
   }
 
