@@ -26,7 +26,7 @@ To verify on the first run: that `/chat/completions` streams on the Meta Model A
 
 | Target | OK | TTFT p50 | TTFT p95 | Total p50 |
 |---|---|---|---|---|
-| _pending first run_ | | | | |
+| _not run as a standalone bench; the eval below times the same path end to end_ | | | | |
 
 ## 2. Realtime transcription with diarization
 
@@ -46,7 +46,7 @@ Open questions this run answers:
 
 | Mode | Partial lag p50 | Finalize p50 | Finalize p95 | Speakers seen |
 |---|---|---|---|---|
-| _pending first run_ | | | | |
+| _not run as a standalone bench; the eval below times the same path end to end_ | | | | |
 
 Recordings and results stay local (`recordings/`, `results/` and `*.wav` are git-ignored). Only meetings recorded with everyone's consent are used.
 
