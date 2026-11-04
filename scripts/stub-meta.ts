@@ -163,6 +163,11 @@ export function startStubMeta(): Promise<StubMeta> {
         const text = body.includes("You read aloud") ? STUB_SIGHT_READ : body.includes("Previous description") ? "=" : body.includes("Answer their question") ? STUB_SIGHT_LOOK : STUB_SIGHT_LIVE;
         const usage = { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20 };
         sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text }, { type: "response.completed", response: { usage } }]);
+      } else if (req.url === "/v1/responses" && body.includes("piano teacher from Colombia coaching a beginner")) {
+        // The practice coach (add-practice-mode): a fixed line, another when it sees an earlier attempt today.
+        const text = body.includes("Antes, hoy:") ? STUB_COACH_BETTER : STUB_COACH;
+        const usage = { input_tokens: 300, input_tokens_details: { cached_tokens: 0 }, output_tokens: 25 };
+        sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text }, { type: "response.completed", response: { usage } }]);
       } else if (req.url === "/v1/responses") {
         const usage = { input_tokens: 120, input_tokens_details: { cached_tokens: 0 }, output_tokens: 12 };
         sse(res, [
@@ -203,6 +208,9 @@ function chatReply(body: string): string {
 export const STUB_SIGHT_LIVE = "Al frente hay una hoja que dice PROBE salida. A tu derecha, una taza.";
 export const STUB_SIGHT_LOOK = "Tienes en la mano una tarjeta PROBE de color azul.";
 export const STUB_SIGHT_READ = "PROBE título. Este es el primer párrafo de prueba. Este es el segundo.";
+
+export const STUB_COACH = "PROBE muy bien; repite la cuarta nota, Fa, más despacio.";
+export const STUB_COACH_BETTER = "PROBE mejoraste desde el intento anterior.";
 
 export const STUB_ASK_ANSWER = "Te preguntaron si la beta sale el viernes; respondiste que sí, si QA aprueba el jueves.";
 

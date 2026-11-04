@@ -100,6 +100,7 @@ import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
 import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
 import { NarrationGuard } from "./self-voice.ts";
 import type { Companion } from "./voice-agent.ts";
+import { COACH_MAX_TOKENS, LESSONS, coachMessages, earlierAttempts, practiceSummary, validateAttempt } from "./practice.ts";
 import { DEFAULT_LOOK_QUESTION, LOOK_DESCRIBE_MAX_CHARS, LOOK_READ_MAX_CHARS, parseSight, SIGHT_LIVE_PROMPT, SIGHT_READ_PROMPT, SIGHT_STALE_MS, sightLookPrompt } from "./sight.ts";
 import { type UsageSnapshot, UsageMeter, WEB_SEARCH_MODEL } from "./usage-meter.ts";
 
@@ -118,6 +119,8 @@ const LOOK_FRESH_MS = 1_500;
 const LOOK_TIMEOUT_MS = 8_000;
 /** «Sesión de invitado» turns itself off after this long. */
 const GUEST_MS = 3 * 60 * 60 * 1000;
+/** Largest `POST /practice/attempt` body: 64 expected and 64 played notes fit in a few kB. */
+const PRACTICE_BODY_MAX = 20_000;
 /** Days of the record (what was heard and seen outside meetings) the chat with Lente remembers. */
 const ASK_DAYS = 7;
 /**
@@ -2446,8 +2449,54 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     });
   }
 
+  // --- Practice (add-practice-mode) ----------------------------------------------------------
+
+  /**
+   * «Practicar»: the lessons, and an attempt the phone heard and matched itself (no audio comes here).
+   * An attempt is kept as one `practice` line (not in a guest session) and coached by Spark in one or
+   * two Spanish sentences, with today's earlier attempts at the lesson. Returns true when it answered.
+   */
+  async function practiceRoute(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+    if (req.method === "GET" && req.url === "/practice/lessons") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ lessons: LESSONS }));
+      return true;
+    }
+    if (!(req.method === "POST" && req.url === "/practice/attempt")) return false;
+    const refuse = (error: string) => void res.writeHead(400, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ error }));
+    let body: unknown;
+    try {
+      body = JSON.parse((await readBody(req, PRACTICE_BODY_MAX)) || "{}");
+    } catch {
+      refuse("the attempt is not JSON");
+      return true;
+    }
+    const checked = validateAttempt(body);
+    if (!checked.ok) {
+      refuse(checked.error);
+      return true;
+    }
+    const at = Date.now();
+    const summary = practiceSummary(checked.lesson, checked.attempt);
+    // A guest neither keeps an attempt nor hears about the wearer's.
+    const earlier = guest() ? [] : earlierAttempts(day.entries, checked.lesson.id, localDayStart(localDay(at, TIME_ZONE), TIME_ZONE));
+    const entry: DayEntry = { at, kind: "practice", lessonId: checked.lesson.id, text: summary.text, right: summary.right, total: summary.total };
+    if (!guest()) day.add(entry);
+    let line = "";
+    const started = performance.now();
+    try {
+      line = (await askSpark(coachMessages(summary.text, earlier), { label: "coach", stream: true, maxTokens: COACH_MAX_TOKENS })).replace(/\s+/g, " ").trim();
+      console.log(`[practice] coach ${Math.round(performance.now() - started)} ms · right=${summary.right} total=${summary.total} earlier=${earlier.length}`);
+    } catch (error) {
+      console.error(`[practice] coach failed: ${(error as Error).message.slice(0, 200)}`);
+    }
+    broadcast({ ...entry, line });
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify({ line, summary: summary.text }));
+    return true;
+  }
+
   /** The routes that act on this wearer's state; answers 404 for anything else. */
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (await practiceRoute(req, res)) return;
     if (req.method === "POST" && req.url === "/listen/on" && !status.listening && !mayListen()) {
       // LENTE_MAX_LISTENING: past the cap, starting to listen answers busy instead of overloading the hub.
       res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
