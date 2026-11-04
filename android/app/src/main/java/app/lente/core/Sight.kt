@@ -106,7 +106,8 @@ object Sight {
     fun isEcho(partial: String, said: List<String>): Boolean {
         val heard = tokens(partial)
         if (heard.isEmpty()) return false
-        return said.any { line ->
+        // A reply goes out a sentence at a time, so a partial may run across them: the lines joined count too.
+        return (said + said.joinToString(" ")).any { line ->
             val spoken = tokens(line).toSet()
             heard.count { it in spoken } >= kotlin.math.ceil(heard.size * ECHO_SHARE).toInt()
         }

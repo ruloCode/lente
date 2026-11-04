@@ -184,4 +184,10 @@ class SightTest {
         assertFalse(Sight.reconnects("Inicia sesión otra vez para hablar con Lente.", open = true, quiet = false, tries = 0))
         assertFalse(Sight.reconnects(null, open = true, quiet = false, tries = 0))
     }
+
+    @Test fun anEchoRunningAcrossTwoSentencesIsStillVersOwnVoice() {
+        val said = listOf("Hola, soy Lente, tu compañera para mirar contigo.", "¿Cómo te llamas?").fold(emptyList<String>(), Sight::remember)
+        assertTrue(Sight.isEcho("Hola, soy Lente. Tu compañera para mirar ¿Cómo te llamas?", said))
+        assertFalse(Sight.isEcho("Me llamo Ana y tengo treinta años", said))
+    }
 }
