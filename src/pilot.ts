@@ -187,6 +187,13 @@ const elevenVoice = process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
  * («Nathalia - Neutral, Sweet and Friendly»), chosen by the owner's ear over paisa-accented voices.
  */
 const elevenSightVoice = process.env.ELEVENLABS_SIGHT_VOICE_ID ?? "tTQzD8U9VSnJgfwC6HbY";
+/**
+ * The coach's Portuguese voice (add-language-coach 1.1): «Keren», a Brazilian voice from ElevenLabs' shared
+ * library; with `language_code: "pt"` its audio transcribed back word for word (docs/kb/meta-api.md «Languages»).
+ */
+const elevenCoachVoices: Readonly<Record<string, { id: string; language: string }>> = {
+  "coach-pt": { id: process.env.ELEVENLABS_COACH_PT_VOICE_ID ?? "33B4UnXyTNbgLmdEDh5P", language: "pt" },
+};
 
 const ON_SCREEN_PROMPT =
   "You are the eyes of someone in a meeting, seeing through a small camera on their glasses. " +
@@ -499,11 +506,12 @@ function readBody(req: IncomingMessage, max = 10_000): Promise<string> {
 
 async function speak(res: ServerResponse, text: string, voice?: string): Promise<void> {
   if (!elevenKey) return void res.writeHead(404).end();
-  const voiceId = voice === "sight" ? elevenSightVoice : elevenVoice;
+  const coach = voice ? elevenCoachVoices[voice] : undefined;
+  const voiceId = coach?.id ?? (voice === "sight" ? elevenSightVoice : elevenVoice);
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`, {
     method: "POST",
     headers: { "xi-api-key": elevenKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
-    body: JSON.stringify({ text: text.slice(0, 500), model_id: "eleven_flash_v2_5" }),
+    body: JSON.stringify({ text: text.slice(0, 500), model_id: "eleven_flash_v2_5", ...(coach ? { language_code: coach.language } : {}) }),
   });
   if (!r.ok) {
     console.error(`[tts] ElevenLabs HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -1866,7 +1874,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
    * One look: the wearer's question about a fresh frame, answered by Muse Spark 1.3 with the sight prompt.
    * `read` returns the frame's text. Shown and spoken on the phone as a «VER» card; returned for the voice agent.
    */
-  async function look(question: string, mode: "describe" | "read"): Promise<{ ok: boolean; text: string }> {
+  async function look(question: string, mode: "describe" | "read", coach?: { prompt: string }): Promise<{ ok: boolean; text: string }> {
     if (!key) return { ok: false, text: "Lente no tiene un modelo configurado." };
     const heardAt = Date.now();
     const frame = await freshFrame();
@@ -1876,13 +1884,14 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const started = performance.now();
     try {
       const reply = await callSpark([
-        { role: "system", content: mode === "read" ? SIGHT_READ_PROMPT : sightLookPrompt(question) },
+        { role: "system", content: coach ? coach.prompt : mode === "read" ? SIGHT_READ_PROMPT : sightLookPrompt(question) },
         { role: "user", content: [{ type: "text", text: question }, { type: "image_url", image_url: { url: photo } }] },
       ], { label: "look", stream: true, maxTokens: mode === "read" ? 2_000 : 800, allowIncomplete: true });
       const ms = Math.round(performance.now() - started);
-      const text = parseSight(reply.text, mode === "read" ? LOOK_READ_MAX_CHARS : LOOK_DESCRIBE_MAX_CHARS) ?? "No veo nada claro. Acerca la cámara o busca más luz.";
+      // The coach's look (add-language-coach) answers in name lines, which its tool reads; they stay lines.
+      const text = coach ? reply.text.trim().slice(0, LOOK_DESCRIBE_MAX_CHARS) : parseSight(reply.text, mode === "read" ? LOOK_READ_MAX_CHARS : LOOK_DESCRIBE_MAX_CHARS) ?? "No veo nada claro. Acerca la cámara o busca más luz.";
       const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
-      recordStaged({ at: Date.now(), kind: "cue", label: "VER", text, ms, stages }, { photo });
+      recordStaged({ at: Date.now(), kind: "cue", label: coach ? "IDIOMAS" : "VER", text: coach ? text.replace(/\s*\n\s*/g, " · ") : text, ms, stages }, { photo });
       console.log(`[look] ${ms} ms · ${Math.round(frame.length / 1024)} KB · ${mode} · ${said(text)}`);
       return { ok: true, text };
     } catch (error) {
@@ -2598,7 +2607,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       return ok;
     },
     openRecordSheet: openSheet,
-    look: (question, mode) => look(question, mode),
+    look: (question, mode, coach) => look(question, mode, coach),
     rememberPerson: (person) => {
       companion = person;
       console.log(`[sight] the companion met someone (${person.age ? "name and age" : "name"}${person.wants ? ", what they want" : ""})`);

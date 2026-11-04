@@ -109,7 +109,8 @@ export class AsrSession {
     });
     ws.addEventListener("message", (event) => this.onMessage(String(event.data)));
     ws.addEventListener("close", (event) => {
-      this.ready = false;
+      // A replaced session closing late must not mark the one that replaced it as not ready.
+      if (this.ws === ws) this.ready = false;
       // A stopped session closing late must not overwrite the status of the one that replaced it.
       if (this.stopped || this.ws !== ws) return;
       if (this.handlers.onIdleClose && Date.now() - this.lastSentAt >= IDLE_CLOSE_MS) {
@@ -141,6 +142,22 @@ export class AsrSession {
   private deliver(pcm: Buffer, sessionMs: number): void {
     this.streamMap.record(sessionMs);
     this.ws?.send(pcm);
+  }
+
+  /**
+   * A new language bias (the coach, add-language-coach). The bias is fixed per session («cannot change once
+   * a session is running», dev.meta.ai), so an open or opening session is replaced; queued audio goes to the new one.
+   */
+  setLanguages(languages: string[]): void {
+    if (languages.join() === this.languages.join()) return;
+    this.languages = languages;
+    if (this.stopped || !this.ws) return;
+    const old = this.ws;
+    this.ws = undefined;
+    this.ready = false;
+    if (old.readyState === WebSocket.OPEN) old.send(JSON.stringify({ type: "endStream" }));
+    old.close();
+    this.start();
   }
 
   /** Opens a session if none is open or opening (the first speech, or speech after an idle close). */

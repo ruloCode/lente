@@ -6,7 +6,21 @@
 
 import { TASK_OWNERS, type Task, type TaskOwner, ownerOf } from "./agent-tools.ts";
 import type { AskSource } from "./ask.ts";
+import { type Band, type CoachLang, checkRepeat, coachLookPrompt, parseNames, seenLine } from "./coach.ts";
 import type { ToolOutcome, VoiceSource, VoiceToolHandler } from "./voice-agent.ts";
+
+/** Longest phrase `pronounce` says, and its meaning. */
+const MAX_PHRASE_CHARS = 120;
+
+/** What the coach's tools need from their session (add-language-coach). */
+export interface CoachSession {
+  lang: CoachLang;
+  band: Band;
+  /** What the wearer said in the turn being answered. */
+  heard(): string;
+  /** The phrase just said, so the wearer's repeat of it is not taken for Lente's echo. */
+  pronounced(text: string): void;
+}
 
 /** Longest task title kept, as on the phone. */
 const MAX_TITLE_CHARS = 140;
@@ -42,7 +56,7 @@ export interface VoiceBackend {
   reassign(id: string, who: TaskOwner, otherName?: string): Promise<boolean>;
   openRecordSheet(choice: { projectId?: string; projectName?: string; camera: boolean }): void;
   /** Ver (add-sight-mode): a fresh frame from the glasses or the phone, and the answer to the question about it. */
-  look?(question: string, mode: "describe" | "read"): Promise<{ ok: boolean; text: string }>;
+  look?(question: string, mode: "describe" | "read", coach?: { prompt: string }): Promise<{ ok: boolean; text: string }>;
   /** Ver: what the person told Lente in the welcome (runtime memory only). */
   rememberPerson?(person: { name: string; age?: string; wants?: string }): void;
   /** Ver: the live narration on or off. */
@@ -127,6 +141,49 @@ export class VoiceTools {
 
   private unknownTask(v: unknown): ToolOutcome {
     return { result: { error: `no task ${str(v, 20) || "(empty)"} in this conversation; call list_tasks and use its ids` }, label: "Revisando tus tareas" };
+  }
+
+  /**
+   * The language coach's tools (add-language-coach 2.1): `pronounce` and the look say their phrases in
+   * the target language themselves; `check_repeat` compares the wearer's turn with the phrase.
+   */
+  coachHandlers(coach: CoachSession): Record<string, VoiceToolHandler> {
+    const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    const sentence = (s: string) => (/[.!?…]$/.test(s) ? capital(s) : `${capital(s)}.`);
+    return {
+      ask_memory: this.handlers().ask_memory!,
+      pronounce: (args) => {
+        const text = str(args.text, MAX_PHRASE_CHARS).replace(/^[«"“]|[»"”]$/g, "");
+        const meaning = str(args.meaning, MAX_PHRASE_CHARS);
+        if (!text) return { result: { error: "text is empty" }, label: "Pronunciando" };
+        coach.pronounced(text);
+        return {
+          result: { ok: true, said: text, note: "ya se dijo en voz alta con la voz del idioma; no la repitas" },
+          label: `«${text}»`,
+          say: [{ text: sentence(text), phrase: text, lang: coach.lang, meaning: meaning || text }],
+        };
+      },
+      look: async (args) => {
+        const question = str(args.question, 300) || "¿Qué es esto?";
+        if (!this.backend.look) return { result: { error: "no camera on this hub" }, label: "Mirando" };
+        const seen = await this.backend.look(question, "describe", { prompt: coachLookPrompt(coach.lang, coach.band) });
+        if (!seen.ok) return { result: { error: seen.text }, label: "Mirando por la cámara" };
+        const names = parseNames(seen.text);
+        if (!names.length) return { result: { ok: true, names: [], note: "no se ve nada claro; sugiere acercar la cámara o más luz" }, label: "Mirando por la cámara" };
+        coach.pronounced(names[0]!.text);
+        return {
+          result: { ok: true, names: names.map((n) => `${n.text} = ${n.meaning}`), note: "los nombres ya se dijeron en voz alta; no los repitas" },
+          label: names.map((n) => n.text).join(" · "),
+          say: names.map((n, i) => ({ text: seenLine(n, coach.lang, i === 0), phrase: n.text, lang: coach.lang, meaning: n.meaning })),
+        };
+      },
+      check_repeat: (args) => {
+        const expected = str(args.expected, MAX_PHRASE_CHARS);
+        if (!expected) return { result: { error: "expected is empty" }, label: "Escuchando" };
+        const verdict = checkRepeat(expected, coach.heard(), coach.lang);
+        return { result: { ...verdict, note: "dilo como si lo entendiste o no, nunca como un puntaje" }, label: verdict.result === "understood" ? "Te entendí" : "No te alcancé a entender" };
+      },
+    };
   }
 
   handlers(): Record<string, VoiceToolHandler> {

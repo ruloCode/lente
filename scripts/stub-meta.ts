@@ -81,7 +81,7 @@ function endpointing(send: (msg: object) => void, utterances: string[]) {
 }
 
 /** One realtime session: hello, then speechStart → speaker → speechComplete as the audio passes the marks. */
-function transcribe(socket: Duplex, utterances: string[] = []): void {
+function transcribe(socket: Duplex, utterances: string[] = [], sessions: StubMeta["asrSessions"] = []): void {
   const parser = new WsFrameParser();
   const send = (msg: object) => socket.write(encodeFrame(OPCODE.text, JSON.stringify(msg)));
   let configured = false;
@@ -102,10 +102,11 @@ function transcribe(socket: Duplex, utterances: string[] = []): void {
       if (m.opcode === OPCODE.close) return void socket.end(encodeFrame(OPCODE.close, Buffer.from([0x03, 0xe8])));
       if (m.opcode === OPCODE.ping) socket.write(encodeFrame(OPCODE.pong, m.payload));
       if (m.opcode === OPCODE.text) {
-        const msg = JSON.parse(m.payload.toString()) as { authorization?: unknown; type?: string; mode?: string };
+        const msg = JSON.parse(m.payload.toString()) as { authorization?: unknown; type?: string; mode?: string; languageBias?: string[] };
         if (!configured) {
           if (!msg.authorization) return void socket.end(encodeFrame(OPCODE.close, Buffer.from([0x03, 0xf0])));
           configured = true;
+          sessions.push({ mode: msg.mode, languageBias: msg.languageBias });
           if (msg.mode === "ENDPOINTING") endpoint = endpointing(send, utterances);
           send({ sessionId: "stub-session" });
         } else if (msg.type === "endStream") socket.end(encodeFrame(OPCODE.close, Buffer.from([0x03, 0xe8])));
@@ -143,12 +144,15 @@ export interface StubMeta {
   coachCutOffs: number;
   /** Each coach request's token cap and reasoning effort. */
   coachCalls: { maxTokens?: number; effort?: string }[];
+  /** Each realtime session's handshake: its mode and language bias (add-language-coach). */
+  asrSessions: { mode?: string; languageBias?: string[] }[];
 }
 
 export function startStubMeta(): Promise<StubMeta> {
   const requests: string[] = [];
   const utterances: string[] = [];
   const coachCalls: StubMeta["coachCalls"] = [];
+  const asrSessions: StubMeta["asrSessions"] = [];
   const stub = { coachCutOffs: 0 };
   const server = createServer((req, res) => {
     requests.push(`${req.method} ${req.url}`);
@@ -164,6 +168,10 @@ export function startStubMeta(): Promise<StubMeta> {
         const text = id ? `@answer\n${STUB_ASK_ANSWER} [[${id}]]` : "@none";
         const cut = text.length - (id ? id.length + 3 : 2);
         sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text.slice(0, 9) }, { type: "response.output_text.delta", delta: text.slice(9, cut) }, { type: "response.output_text.delta", delta: text.slice(cut) }, { type: "response.completed", response: { usage } }]);
+      } else if (req.url === "/v1/responses" && body.includes("You are a language tutor naming things")) {
+        // The language coach's look (add-language-coach): two name lines.
+        const usage = { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20 };
+        sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: STUB_COACH_NAMES }, { type: "response.completed", response: { usage } }]);
       } else if (req.url === "/v1/responses" && /eyes of a person who is blind|You read aloud for a person|what a blind person has in front/.test(body)) {
         // Ver (add-sight-mode): a description for the first live frame, "=" once a previous one exists, a reading, or a look.
         const text = body.includes("You read aloud") ? STUB_SIGHT_READ : body.includes("Previous description") ? "=" : body.includes("Answer their question") ? STUB_SIGHT_LOOK : STUB_SIGHT_LIVE;
@@ -201,9 +209,9 @@ export function startStubMeta(): Promise<StubMeta> {
     const key = req.headers["sec-websocket-key"];
     if (req.url !== "/v1/asr/realtime" || typeof key !== "string") return void socket.destroy();
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${acceptKey(key)}\r\n\r\n`);
-    transcribe(socket, utterances);
+    transcribe(socket, utterances, asrSessions);
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(Object.assign(stub, { server, port: (server.address() as AddressInfo).port, requests, utterances, coachCalls }))));
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(Object.assign(stub, { server, port: (server.address() as AddressInfo).port, requests, utterances, coachCalls, asrSessions }))));
 }
 
 /** "no" for the yes/no checks; for the chat with Lente, an answer citing the first line of its memory (or not found). */
@@ -240,7 +248,7 @@ type VoiceInput = { role?: string; type?: string; content?: unknown; name?: stri
 function isVoiceRequest(body: string): boolean {
   try {
     const req = JSON.parse(body) as { tools?: { name?: string }[] };
-    return Boolean(req.tools?.some((t) => t.name === "add_task"));
+    return Boolean(req.tools?.some((t) => t.name === "add_task" || t.name === "pronounce"));
   } catch {
     return false;
   }
@@ -285,12 +293,33 @@ function voiceDecision(input: VoiceInput): { commentary?: string; call?: { name:
   return { commentary: "Lo busco en tus reuniones.", call: { name: "ask_memory", args: { question: user } } };
 }
 
+export const STUB_COACH_NAMES = "o garfo = el tenedor\na xícara = la taza";
+
+/** The language coach (add-language-coach): «¿cómo se dice tenedor?», a look, and a repeat of «o garfo». */
+function coachDecision(input: VoiceInput): ReturnType<typeof voiceDecision> {
+  const last = input.at(-1);
+  const user = fold(String([...input].reverse().find((i) => i.role === "user")?.content ?? ""));
+  if (last?.type === "function_call_output") {
+    const name = input.find((i) => i.type === "function_call" && i.call_id === last.call_id)?.name;
+    const out = JSON.parse(last.output ?? "{}") as Record<string, any>;
+    if (name === "pronounce") return { text: ["Repítelo conmigo, despacio."] };
+    if (name === "look") return { text: [out.names?.length ? "Son el tenedor y la taza; repite el primero." : "No veo nada claro."] };
+    if (name === "check_repeat") return { text: [out.result === "understood" ? "¡Muy bien, te entendí perfecto!" : "No te alcancé a entender; ¿lo digo más despacio?"] };
+    return { text: ["Listo, sigamos practicando."] };
+  }
+  if (/abrir idiomas/.test(user)) return { text: ["¡Hola! Soy tu tutor de portugués. ¿Qué quieres practicar hoy?"] };
+  if (/como se dice tenedor/.test(user)) return { call: { name: "pronounce", args: { text: "o garfo", meaning: "el tenedor" } } };
+  if (/que es esto/.test(user)) return { call: { name: "look", args: { question: "¿Qué es esto?" } } };
+  if (/garfo/.test(user)) return { call: { name: "check_repeat", args: { expected: "o garfo" } } };
+  return { text: ["Muito bem! Você está aprendendo muito."] };
+}
+
 let stubCallSeq = 0;
 
 /** Streams the decision in the Responses API's event shapes (docs/kb/meta-api.md). */
 async function voiceReply(res: import("node:http").ServerResponse, body: string): Promise<void> {
-  const req = JSON.parse(body) as { input?: VoiceInput };
-  const d = voiceDecision(req.input ?? []);
+  const req = JSON.parse(body) as { input?: VoiceInput; tools?: { name?: string }[] };
+  const d = req.tools?.some((t) => t.name === "pronounce") ? coachDecision(req.input ?? []) : voiceDecision(req.input ?? []);
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   const write = (e: object) => res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
   let index = 0;

@@ -80,7 +80,7 @@ Tools (`COACH_FUNCTIONS`):
 `language_progress` is also added to the default voice's functions, so «¿cómo voy con el portugués?» works without opening the tutor.
 
 **The wire, as built on 2026-11-04 (the demo slice).** These fields add to the contract above and change none of it.
-- **The phone sends** `{ "type": "start", "persona": "coach", "lang": "pt", "mode": "tutor" }` first. A `lang` that has not passed task 1.1 (today: anything but `pt`), or a missing one, opens the default Lente, and the hub logs why. `mode` defaults to `tutor`.
+- **The phone sends** `{ "type": "start", "persona": "coach", "lang": "pt", "mode": "tutor" }` first. A `lang` that has not passed task 1.1 (today: anything but `pt`), or a missing one, opens the default Lente, and the hub logs why. `mode` defaults to `tutor`. With `intro: true` the tutor speaks first, as Ver's welcome does.
 - **`reply` in a coach session** is `{ type: "reply", turn, text, commentary, lang }`.
   - `lang` is `"es" | "pt" | "fr" | "en"`: the target when `likelyLanguage` says so, else `"es"` («unsure» counts as Spanish).
   - Every sentence is in one language. The tutor is told never to mix them in one sentence.

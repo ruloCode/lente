@@ -3,6 +3,8 @@
 // on the hub's stores (src/voice-tools.ts). The reply reaches the phone one sentence at a time so
 // its text-to-speech can start before the model has finished.
 
+import type { SpokenLang } from "./coach.ts";
+
 /** Model steps per turn: a tool, maybe a second, and the answer. */
 export const VOICE_MAX_STEPS = 4;
 /** Turns of the session the model sees (wearer and Lente, oldest dropped first). */
@@ -75,12 +77,20 @@ export interface ToolOutcome {
   sources?: VoiceSource[];
   /** Memory lines the model may cite as [[id]]: each becomes a chip only when the answer cites it. */
   citable?: ReadonlyMap<string, VoiceSource>;
+  /**
+   * The coach (add-language-coach): lines the tool says itself, in their language, before the model
+   * answers. One with a `meaning` is a phrase to learn and shows as a `pronounce` card first.
+   */
+  say?: { text: string; lang: SpokenLang; meaning?: string; phrase?: string }[];
 }
 
 export type VoiceToolHandler = (args: Record<string, unknown>) => Promise<ToolOutcome> | ToolOutcome;
 
 export type VoiceTurnEvent =
-  | { kind: "sentence"; text: string; commentary: boolean }
+  /** `lang`: the coach's sentences only (add-language-coach); other personas send none. */
+  | { kind: "sentence"; text: string; commentary: boolean; lang?: SpokenLang }
+  /** The coach: a phrase to show large, with its Spanish meaning; its sentence follows. */
+  | { kind: "pronounce"; text: string; meaning: string; lang: SpokenLang }
   | { kind: "tool"; name: string; label: string }
   | { kind: "sources"; sources: VoiceSource[] };
 
@@ -329,6 +339,29 @@ export const SIGHT_FUNCTIONS: FunctionSpec[] = [
   },
 ];
 
+/**
+ * The language coach's tools (add-language-coach design decision 3). `look` names things in the target
+ * language; `pronounce` and the look say their phrases themselves, in the target voice.
+ */
+export const COACH_FUNCTIONS: FunctionSpec[] = [
+  {
+    name: "pronounce",
+    description: "Dice en voz alta, con la voz del idioma que la persona aprende, una palabra o frase corta para aprender, y la muestra grande en el teléfono con su significado. Úsala para cada frase en ese idioma que la persona deba oír o repetir.",
+    parameters: obj({ text: { type: "string", description: "La frase en el idioma que aprende, con su artículo si es un sustantivo («o garfo»)" }, meaning: { type: "string", description: "Lo que significa, en español («el tenedor»)" } }, ["text", "meaning"]),
+  },
+  {
+    name: "look",
+    description: "Mira por la cámara de las gafas ahora y nombra hasta tres cosas que se ven, en el idioma que la persona aprende, con su artículo y su significado. Los nombres se dicen en voz alta solos.",
+    parameters: obj({ question: { type: "string", description: "La pregunta, como la dijo la persona («¿qué es esto?»)" } }, ["question"]),
+  },
+  {
+    name: "check_repeat",
+    description: "Compara lo que la persona acaba de decir con la frase que debía repetir. Devuelve understood si la transcripción tiene las palabras clave, o missed y las que faltaron. No es un puntaje de pronunciación.",
+    parameters: obj({ expected: { type: "string", description: "La frase que debía repetir, en el idioma que aprende" } }, ["expected"]),
+  },
+  ...VOICE_FUNCTIONS.filter((f) => f.name === "ask_memory"),
+];
+
 // --- The loop -----------------------------------------------------------------------------------
 
 /** Memory lines attached before the wearer's turn (add-memory-engine 5.2): the developer item and what its ids point to. */
@@ -382,13 +415,15 @@ export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnRes
   const sources: VoiceSource[] = [];
   const tools: string[] = [];
   let finalText = "";
+  /** What tools said themselves (the coach's phrases), kept in the chat before the answer. */
+  const toolSaid: string[] = [];
   let finalSentences = 0;
   let truncated = false;
   let firstTextMs: number | undefined;
   let firstSentenceMs: number | undefined;
   const cancelled = () => opts.signal.aborted;
   // The chat keeps the answer without its citation markers; the chips carry them.
-  const kept = () => finalText.replace(/\s*\[\[[^\]]*\]\]/g, "").replace(/[ \t]+([.,;:!?])/g, "$1").trim();
+  const kept = () => [...toolSaid, finalText.replace(/\s*\[\[[^\]]*\]\]/g, "").replace(/[ \t]+([.,;:!?])/g, "$1").trim()].filter(Boolean).join(" ");
   const result = (stopped: VoiceStop, steps: number, error?: string): VoiceTurnResult => ({ stopped, text: kept(), sources, tools, steps, usage, firstTextMs, firstSentenceMs, ...(error ? { error } : {}) });
 
   const say = (text: string, commentary: boolean) => {
@@ -475,6 +510,12 @@ export async function runVoiceTurn(opts: VoiceTurnOptions): Promise<VoiceTurnRes
       if (outcome.sources?.length) {
         sources.push(...outcome.sources);
         opts.emit({ kind: "sources", sources: outcome.sources });
+      }
+      for (const line of outcome.say ?? []) {
+        if (line.meaning) opts.emit({ kind: "pronounce", text: line.phrase ?? line.text, meaning: line.meaning, lang: line.lang });
+        if (firstSentenceMs === undefined) firstSentenceMs = now() - started;
+        toolSaid.push(line.text);
+        opts.emit({ kind: "sentence", text: line.text, commentary: false, lang: line.lang });
       }
       input.push({ type: "function_call_output", callId: call.callId, output: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result) });
     }

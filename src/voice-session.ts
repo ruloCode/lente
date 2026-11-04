@@ -3,11 +3,17 @@
 // only Lente's own voice coming back (the runtime's NarrationGuard). A pending "¿lo marco?" is
 // answered here, before any model call. Pure: the agent turn, the clock and the transport are injected.
 
+import type { CoachMode, SpokenLang } from "./coach.ts";
 import { words } from "./self-voice.ts";
 import { type VoiceItem, type VoiceSource, type VoiceTurnEvent, type VoiceTurnResult, confirmation } from "./voice-agent.ts";
 
 /** Words a partial needs before it can interrupt Lente: one word is too often a cough or a "mm". */
 export const BARGE_IN_MIN_WORDS = 2;
+/**
+ * The coach (add-language-coach): a turn that repeats the phrase Lente just said is the wearer's try,
+ * not Lente's echo, once this long has passed since the phone finished speaking.
+ */
+export const REPEAT_ECHO_TAIL_MS = 1_200;
 
 export type VoiceState = "listening" | "thinking" | "speaking" | "paused";
 
@@ -17,7 +23,10 @@ export type VoiceEvent =
   | { type: "partial"; text: string }
   | { type: "heard"; turn: number; text: string }
   | { type: "thinking"; turn: number }
-  | { type: "reply"; turn: number; text: string; commentary: boolean }
+  /** `lang`: in a coach session only, the language the sentence is spoken in. */
+  | { type: "reply"; turn: number; text: string; commentary: boolean; lang?: SpokenLang }
+  /** The coach: a phrase shown large with its meaning; the phone does not speak it, the next `reply` is it. */
+  | { type: "pronounce"; turn: number; text: string; meaning: string; lang: SpokenLang }
   | { type: "tool"; turn: number; name: string; label: string }
   | { type: "sources"; turn: number; sources: VoiceSource[] }
   | { type: "confirm"; turn: number; text: string }
@@ -41,7 +50,8 @@ export type PhoneMessage =
   | { type: "pause" }
   | { type: "resume" }
   /** Ver (add-sight-mode): who Lente is in this session, and whether it speaks first (the welcome). */
-  | { type: "start"; persona: "sight" | "default"; intro: boolean }
+  /** The coach (add-language-coach): also the target language as sent (checked by the hub) and the mode. */
+  | { type: "start"; persona: "sight" | "default" | "coach"; intro: boolean; lang?: string; mode?: CoachMode }
   /** Ver: the phone's answer to `locate`; never stored or logged. */
   | { type: "location"; id: string; ok: boolean; lat?: number; lon?: number; accuracy?: number; address?: string; place?: string; reason?: string }
   | { type: "end" };
@@ -71,7 +81,11 @@ export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
       return out;
     }
     case "start": {
-      const s = m as { persona?: unknown; intro?: unknown };
+      const s = m as { persona?: unknown; intro?: unknown; lang?: unknown; mode?: unknown };
+      if (s.persona === "coach") {
+        const mode: CoachMode = s.mode === "placement" || s.mode === "review" ? s.mode : "tutor";
+        return { type: "start", persona: "coach", intro: s.intro === true, mode, ...(typeof s.lang === "string" ? { lang: s.lang.trim().toLowerCase().slice(0, 8) } : {}) };
+      }
       return { type: "start", persona: s.persona === "sight" ? "sight" : "default", intro: s.intro === true };
     }
     default:
@@ -99,6 +113,8 @@ export interface VoiceSessionDeps {
   narration: { narrated(text: string, at: number): void; repeats(text: string, at: number): boolean };
   save(lines: VoiceLine[]): void;
   now(): number;
+  /** The coach: true for a turn that repeats the phrase just taught, which is not dropped as an echo after the tail. */
+  repeatOf?(text: string): boolean;
   log?(line: string): void;
 }
 
@@ -110,6 +126,8 @@ export class VoiceSession {
   /** Sentences sent for the current turn, and how many the phone said it has spoken. */
   private sent = 0;
   private spoken = 0;
+  /** When the state last became listening, for the coach's echo tail. */
+  private listeningSince = 0;
   private deps: VoiceSessionDeps;
   /** Each turn's run, so tests and the hub's close can wait for it. */
   running: Promise<void> = Promise.resolve();
@@ -121,6 +139,7 @@ export class VoiceSession {
   private setState(state: VoiceState): void {
     if (this.state === state) return;
     this.state = state;
+    if (state === "listening") this.listeningSince = this.deps.now();
     this.deps.send({ type: "state", state, turn: this.turn });
   }
 
@@ -149,7 +168,9 @@ export class VoiceSession {
 
   heardTurn(text: string): void {
     if (this.state === "paused" || !text.trim()) return;
-    if (this.deps.narration.repeats(text, this.deps.now())) {
+    const at = this.deps.now();
+    const tried = this.state === "listening" && at - this.listeningSince >= REPEAT_ECHO_TAIL_MS && this.deps.repeatOf?.(text) === true;
+    if (!tried && this.deps.narration.repeats(text, at)) {
       this.deps.log?.(`[voice] dropped a turn that repeats Lente's own voice (${text.length} chars)`);
       return;
     }
@@ -210,11 +231,11 @@ export class VoiceSession {
     if (!hidden) this.deps.save([{ role: "user", text, sources: [] }]);
     this.setState("thinking");
 
-    const speak = (line: string, commentary: boolean) => {
+    const speak = (line: string, commentary: boolean, lang?: SpokenLang) => {
       if (!live()) return;
       this.deps.narration.narrated(line, this.deps.now());
       this.sent++;
-      this.deps.send({ type: "reply", turn, text: line, commentary });
+      this.deps.send({ type: "reply", turn, text: line, commentary, ...(lang ? { lang } : {}) });
       this.setState("speaking");
     };
 
@@ -235,7 +256,8 @@ export class VoiceSession {
     try {
       result = await this.deps.runTurn(text, prior, controller.signal, (e) => {
         if (!live()) return;
-        if (e.kind === "sentence") speak(e.text, e.commentary);
+        if (e.kind === "sentence") speak(e.text, e.commentary, e.lang);
+        else if (e.kind === "pronounce") this.deps.send({ type: "pronounce", turn, text: e.text, meaning: e.meaning, lang: e.lang });
         else if (e.kind === "tool") this.deps.send({ type: "tool", turn, name: e.name, label: e.label });
         else {
           sources.push(...e.sources);

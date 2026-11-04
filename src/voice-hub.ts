@@ -6,8 +6,9 @@
 import { randomUUID } from "node:crypto";
 import { AsrSession, DEFAULT_LANGUAGE_BIAS } from "./asr-session.ts";
 import type { ChatLine, Chats } from "./chat-store.ts";
+import { COACH_INTRO_CUE, type CoachLanguage, type CoachMode, DEFAULT_BAND, checkRepeat, coachInstructions, coachLanguage, coachLanguageBias, sentenceLanguage } from "./coach.ts";
 import type { ChatTarget } from "./providers.ts";
-import { type AttachedMemory, type Companion, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
+import { type AttachedMemory, COACH_FUNCTIONS, type Companion, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
 import { type PhoneMessage, type VoiceLine, VoiceSession, parsePhoneMessage } from "./voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "./voice-tools.ts";
 import { SpeculativeRecall } from "./voice-recall.ts";
@@ -68,8 +69,13 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   };
   const tools = new VoiceTools(backend);
   /** Ver's companion (add-sight-mode) once the phone says so; the default Lente otherwise. */
-  let persona: "sight" | "default" = "default";
+  let persona: "sight" | "default" | "coach" = "default";
   let intro = false;
+  /** The language coach (add-language-coach): its verified target language and mode, once the phone asks for it. */
+  let coach: { lang: CoachLanguage; mode: CoachMode } | undefined;
+  /** What the wearer said in the turn being answered, and the phrase the coach last said, for check_repeat. */
+  let heardNow = "";
+  let lastPhrase = "";
   let turns = 0;
   const save = (lines: VoiceLine[]) => {
     const at = Date.now();
@@ -82,7 +88,9 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
   // (5.1): it is the cached prefix, so questions about who and what is current need no lookup.
   const instructionsOnce = () =>
     (instructions ??= Promise.all([
-      persona === "sight"
+      coach
+        ? Promise.resolve(coachInstructions({ lang: coach.lang, mode: coach.mode, band: DEFAULT_BAND, names: deps.names(), now: Date.now(), timeZone: deps.timeZone }))
+        : persona === "sight"
         ? Promise.resolve(voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, persona, intro, ...(deps.companion?.() ? { companion: deps.companion()! } : {}) }))
         : tools.projectRefs().then(
             (projects) => voiceInstructions({ names: deps.names(), now: Date.now(), timeZone: deps.timeZone, projects }),
@@ -104,10 +112,17 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     save,
     now: Date.now,
     log: deps.log,
+    repeatOf: (text) => Boolean(coach && lastPhrase && checkRepeat(lastPhrase, text, coach.lang.code).result === "understood"),
     runTurn: async (utterance, history, signal, emit) => {
       const [rules, attached] = await Promise.all([instructionsOnce(), attachFor(utterance)]);
-      const model = responsesVoiceModel(deps.target, { instructions: rules, functions: persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS, webSearch: true });
-      const result = await runVoiceTurn({ model, tools: tools.handlers(), history, utterance, signal, emit, ...(attached ? { attached } : {}), ...(persona === "sight" ? { speakAll: true } : {}) });
+      const on = coach;
+      heardNow = utterance;
+      const functions = on ? COACH_FUNCTIONS : persona === "sight" ? SIGHT_FUNCTIONS : VOICE_FUNCTIONS;
+      // The coach's sentences carry the language they are spoken in; its own tools tag theirs.
+      const tagged: typeof emit = on ? (e) => emit(e.kind === "sentence" && !e.lang ? { ...e, lang: sentenceLanguage(e.text, on.lang.code) } : e) : emit;
+      const handlers = on ? tools.coachHandlers({ lang: on.lang.code, band: DEFAULT_BAND, heard: () => heardNow, pronounced: (text) => (lastPhrase = text) }) : tools.handlers();
+      const model = responsesVoiceModel(deps.target, { instructions: rules, functions, webSearch: !on });
+      const result = await runVoiceTurn({ model, tools: handlers, history, utterance, signal, emit: tagged, ...(attached ? { attached } : {}), ...(persona === "sight" ? { speakAll: true } : {}) });
       turns++;
       deps.onUsage(result.usage, 0);
       deps.log(`[voice] turn ${turns} · ${result.stopped} · ${result.steps} step(s) · ${attached ? `${attached.citable.size} memory lines attached · ` : ""} first sentence ${result.firstSentenceMs === undefined ? "-" : Math.round(result.firstSentenceMs)} ms · tools ${result.tools.join(",") || "none"} · ‹${utterance.length} chars› → ‹${result.text.length} chars›`);
@@ -173,13 +188,23 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     if (message.type === "end") return close();
     if (message.type === "location") return void locating.get(message.id)?.(message);
     if (message.type === "start") {
-      // Ver's companion: new instructions for the session, and with the welcome Lente speaks first.
-      persona = message.persona;
+      // Ver's companion or the language coach: new instructions for the session, and with `intro` Lente speaks first.
       intro = message.intro;
+      coach = undefined;
+      persona = message.persona === "sight" ? "sight" : "default";
+      if (message.persona === "coach") {
+        const lang = coachLanguage(message.lang);
+        if (lang) {
+          coach = { lang, mode: message.mode ?? "tutor" };
+          persona = "coach";
+        } else deps.log(`[voice] coach refused: language «${message.lang ?? "none"}» has not passed its check; the default Lente answers`);
+      }
+      // The transcription bias is fixed per session, so a new one restarts it (add-language-coach 2.1).
+      asr.setLanguages(coach ? coachLanguageBias(coach.lang) : DEFAULT_LANGUAGE_BIAS);
       instructions = undefined;
       void instructionsOnce();
-      deps.log(`[voice] persona ${persona}${intro ? " · welcome" : ""}`);
-      if (intro) session.begin(SIGHT_INTRO_CUE);
+      deps.log(`[voice] persona ${persona}${coach ? ` · ${coach.lang.code} · ${coach.mode}` : ""}${intro ? " · welcome" : ""}`);
+      if (intro) session.begin(coach ? COACH_INTRO_CUE : SIGHT_INTRO_CUE);
       return;
     }
     session.phone(message);
