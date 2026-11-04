@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { type Server, createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -298,5 +298,48 @@ test("2.4 the sample: written on the first acceptance, it answers «¿Qué se de
   assert.deepEqual(await (await judge("/sample/delete", { method: "POST", body: "{}" })).json(), { ok: true, removed: 0 });
   // The owner, never asked for the terms, gets no sample.
   assert.deepEqual(((await (await fetch(`${hub.base}/projects`, as(OWNER, "probe-owner@example.com"))).json()) as { projects: unknown[] }).projects, []);
+  hub.stop();
+});
+
+test("2.5 media stays the owner's: a judge who accepted the preview terms records with the camera and every switch on, and no media object exists", { timeout: 40_000 }, async () => {
+  const dir = volume({});
+  const hub = await startHub({ LENTE_SIGNUP: "open", LENTE_SIGNUP_UNTIL: "2999-01-01", LENTE_VIDEO_FRAME_MS: "200" }, dir);
+  const photos = join(dir, "photos");
+  mkdirSync(photos);
+  writeFileSync(join(photos, "a.jpg"), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]));
+  const wav = Buffer.alloc(44 + 32_000);
+  wav.write("RIFF", 0); wav.writeUInt32LE(36 + 32_000, 4); wav.write("WAVEfmt ", 8); wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(16000, 24); wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(32_000, 40);
+  writeFileSync(join(dir, "silence.wav"), wav);
+  const port = new URL(hub.base).port;
+  const people = [[JUDGE, "probe-judge@example.com"], [OWNER, "probe-owner@example.com"]] as const;
+  assert.equal((await fetch(`${hub.base}/terms/accept`, as(JUDGE, "probe-judge@example.com", { method: "POST", body: "{}" }))).status, 200);
+  const streams = people.map(([sub, email]) => events(hub.base, sub, email));
+  for (const [sub, email] of people) {
+    children.push(spawn(process.execPath, ["scripts/fake-clip.ts", join(dir, "silence.wav"), "--photos", photos, "--host", "localhost", "--port", port, "--ws", "--token", token(sub, email), "--loop"], { stdio: "ignore" }));
+  }
+  for (const s of streams) await until(() => s.out.find((e) => e.kind === "status" && e.clip === true));
+  for (const [sub, email] of people) {
+    for (const path of ["/media/audio/on", "/media/photos/on", "/mode/camera", "/listen/on", "/live/on"]) {
+      assert.equal((await fetch(`${hub.base}${path}`, as(sub, email, { method: "POST" }))).status, 204, `${email} ${path}`);
+    }
+  }
+  // The owner's runtime keeps frames (the check works); the judge's keeps none and says so.
+  /** Media objects on a runtime's volume: files under media/ besides its index, and the index's records. */
+  const objects = (id: string) => {
+    const media = join(dir, "users", id, "media");
+    if (!existsSync(media)) return [];
+    const files = (readdirSync(media, { recursive: true }) as string[]).filter((f) => /\.(jpeg|adpcm|opus)$/.test(f));
+    const index = existsSync(join(media, "index.json")) ? (JSON.parse(readFileSync(join(media, "index.json"), "utf8")) as unknown[]) : [];
+    return [...files, ...index];
+  };
+  await until(() => objects(OWNER).length > 0 || undefined);
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.deepEqual(objects(JUDGE), [], "no media object for the judge");
+  const judgeStatus = streams[0]!.out.findLast((e) => e.kind === "status")!;
+  assert.deepEqual([judgeStatus.listening, judgeStatus.live, judgeStatus.media.switches, judgeStatus.media.keepingPhotos, judgeStatus.media.keepingAudio, judgeStatus.media.offered], [true, true, { audio: true, photos: true }, false, false, false]);
+  assert.ok(streams[0]!.out.some((e) => e.kind === "frame"), "the judge's camera was sending frames");
+  for (const s of streams) s.stop();
   hub.stop();
 });
