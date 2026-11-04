@@ -30,6 +30,11 @@
   /* The site's own surfaces: the alternate band, the cards on it, the stage under a device, and the
      warm field of the hero render (sampled from the image, the same in both themes). */
   --band: #FFFFFF; --well: #F2F2F7; --warm: #F3ECE6;
+  /* An elevation ladder for the site's cards: resting, raised, lifted (hover) */
+  --lift-1: 0 1px 2px rgba(20, 30, 70, .05), 0 6px 16px -6px rgba(20, 30, 70, .10);
+  --lift-2: 0 1px 2px rgba(20, 30, 70, .05), 0 16px 36px -14px rgba(20, 30, 70, .20);
+  --lift-3: 0 2px 4px rgba(20, 30, 70, .06), 0 32px 64px -24px rgba(20, 30, 70, .30);
+  --warm-shadow: 0 2px 6px rgba(80, 55, 30, .06), 0 48px 96px -48px rgba(80, 55, 30, .45);
   --stage: radial-gradient(100% 70% at 50% 0%, #DCE7FD, rgba(220, 231, 253, 0) 72%), linear-gradient(180deg, #F7F8FB, #ECEEF4);
   --device-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14), 0 0 0 1px rgba(10, 12, 22, .5), 0 48px 80px -32px rgba(20, 30, 70, .42), 0 16px 32px -12px rgba(20, 30, 70, .22);
   /* An 8 px spacing scale */
@@ -49,6 +54,7 @@
   --nav-shadow: 0 8px 24px rgba(0, 0, 0, .55);
   --ok-bg: #12382F; --ok-ink: #8CEBD0; --miss-bg: #3A1418;
   --band: #0E0E10; --well: #1C1C1E;
+  --lift-1: 0 1px 2px rgba(0, 0, 0, .6); --lift-2: 0 16px 36px -14px rgba(0, 0, 0, .8); --lift-3: 0 32px 64px -24px rgba(0, 0, 0, .9);
   --stage: radial-gradient(100% 70% at 50% 0%, #14233A, rgba(20, 35, 58, 0) 72%), linear-gradient(180deg, #121215, #070708);
   --device-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16), 0 0 0 1px rgba(255, 255, 255, .06), 0 48px 90px -32px rgba(0, 0, 0, .9);
 }
@@ -137,6 +143,7 @@ main > section.hero { padding-block: clamp(40px, 6vw, 80px) clamp(64px, 8vw, 112
 .hero .hint { margin-top: var(--s2); }
 .product { position: relative; margin: clamp(40px, 6vw, 72px) auto 0; max-width: var(--page); }
 .render { position: relative; margin: 0; border-radius: clamp(24px, 3vw, 40px); overflow: hidden; background: var(--warm); isolation: isolate; }
+.render { box-shadow: var(--warm-shadow); }
 .render::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 .5px rgba(60, 40, 20, .12); pointer-events: none; }
 .render img { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; object-position: 50% 55%; transform-origin: 60% 50%; }
 @media (min-width: 900px) { .render img { aspect-ratio: 16 / 9; } }
@@ -154,7 +161,7 @@ main > section.hero { padding-block: clamp(40px, 6vw, 80px) clamp(64px, 8vw, 112
 /* The video, right under the hero */
 main > section.film { padding-top: 0; }
 .video { margin: 0 auto; max-width: var(--page); }
-.video-frame { position: relative; aspect-ratio: 16 / 9; border-radius: clamp(24px, 3vw, 40px); overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 .5px var(--glass-edge); }
+.video-frame { position: relative; aspect-ratio: 16 / 9; border-radius: clamp(24px, 3vw, 40px); overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-2); }
 .video-frame iframe, .video-frame video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .video-frame .placeholder { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: var(--s2); text-align: center; padding: var(--s3); color: var(--muted); background: radial-gradient(80% 90% at 50% 0%, var(--tag), var(--surface)); }
 .play { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: var(--nav-bg); box-shadow: inset 0 0 0 .5px var(--nav-edge), var(--nav-shadow); color: var(--ink); }
@@ -177,7 +184,7 @@ main > section.film { padding-top: 0; }
 
 /* The stage and the device the interface stands on */
 .stage { margin: 0; }
-.stage-floor { display: grid; place-items: center; padding: clamp(32px, 5vw, 72px) clamp(16px, 4vw, 56px); border-radius: var(--radius-lg); background: var(--stage); box-shadow: inset 0 0 0 .5px var(--glass-edge); }
+.stage-floor { display: grid; place-items: center; padding: clamp(32px, 5vw, 72px) clamp(16px, 4vw, 56px); border-radius: var(--radius-lg); background: var(--stage); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-1); }
 .stage figcaption { margin-top: var(--s2); font-size: 14px; color: var(--muted); text-align: center; }
 .device { width: min(360px, 100%); padding: 10px; border-radius: 52px; background: linear-gradient(155deg, #3B3B40, #141416 42%, #2A2A2E); box-shadow: var(--device-shadow); }
 .screen { position: relative; display: grid; align-content: center; min-height: 540px; padding: 64px 14px 28px; border-radius: 42px; overflow: hidden; background: var(--bg); }
@@ -225,7 +232,7 @@ main > section.film { padding-top: 0; }
 .coach { margin-top: var(--s2); padding: 14px 16px; border-radius: 18px; background: var(--tag); color: var(--ink); font-size: 16px; line-height: 1.4; }
 
 /* Inset grouped lists (kit .l-group, .l-list, .l-row) */
-.group { max-width: 880px; margin-inline: auto; background: var(--card, var(--surface)); border-radius: var(--radius); box-shadow: inset 0 0 0 .5px var(--glass-edge); overflow: hidden; }
+.group { max-width: 880px; margin-inline: auto; background: var(--card, var(--surface)); border-radius: var(--radius); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-1); overflow: hidden; }
 .group > li { position: relative; display: grid; grid-template-columns: auto 1fr; gap: var(--s2); align-items: center; padding: 16px var(--s3); }
 .group > li + li::before { content: ""; position: absolute; left: 76px; right: 0; top: 0; height: 1px; background: var(--line); }
 .group.plain > li { grid-template-columns: 1fr; }
@@ -241,7 +248,8 @@ main > section.film { padding-top: 0; }
 
 /* Measured: number tiles */
 .stats { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); margin-top: var(--s8); }
-.stats > li { background: var(--card, var(--surface)); border-radius: var(--radius); padding: var(--s4) var(--s3) var(--s3); box-shadow: inset 0 0 0 .5px var(--glass-edge); display: grid; gap: 10px; align-content: start; }
+.stats > li { background: var(--card, var(--surface)); border-radius: var(--radius); padding: var(--s4) var(--s3) var(--s3); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-1); transition: box-shadow 300ms var(--ease), transform 300ms var(--ease); display: grid; gap: 10px; align-content: start; }
+.stats > li:hover, .photo:hover { box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-3); }
 .stats strong { font: 650 clamp(32px, 3vw, 44px)/1.05 var(--display); letter-spacing: -0.035em; font-variant-numeric: tabular-nums; }
 .stats .what { font-size: 17px; font-weight: 550; }
 .stats .run { font-size: 14px; color: var(--muted); }
@@ -252,7 +260,7 @@ main > section.film { padding-top: 0; }
 .try .group { max-width: none; }
 .asks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .asks li { font-size: 16px; background: var(--tag); color: var(--ink); border-radius: 999px; padding: 7px 14px; }
-.install { padding: var(--s4); border-radius: var(--radius-lg); background: var(--card, var(--surface)); box-shadow: inset 0 0 0 .5px var(--glass-edge); display: grid; gap: var(--s3); }
+.install { padding: var(--s4); border-radius: var(--radius-lg); background: var(--card, var(--surface)); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-1); display: grid; gap: var(--s3); }
 .install .qr { width: 180px; height: 180px; padding: 10px; border-radius: 20px; background: #fff; justify-self: center; box-shadow: inset 0 0 0 .5px rgba(10, 12, 22, .1); }
 .install ol { display: grid; gap: 12px; counter-reset: s; }
 .install ol li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; font-size: 16px; }
@@ -261,7 +269,7 @@ main > section.film { padding-top: 0; }
 /* The clip */
 .pair { display: grid; gap: var(--s3); }
 @media (min-width: 860px) { .pair { grid-template-columns: 1fr 1fr; } }
-.photo { margin: 0; position: relative; border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 .5px var(--glass-edge); }
+.photo { margin: 0; position: relative; border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-2); transition: box-shadow 300ms var(--ease), transform 300ms var(--ease); }
 .photo img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: 1 / 1; }
 .photo--render { background: radial-gradient(70% 70% at 50% 45%, var(--tag), var(--surface)); }
 .photo--render img { object-fit: contain; padding: 8%; }
@@ -335,11 +343,24 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
     .reveal > :nth-child(2) { animation-range: entry 8% entry 63%; }
     .reveal > :nth-child(3) { animation-range: entry 16% entry 71%; }
     .reveal > :nth-child(n + 4) { animation-range: entry 24% entry 79%; }
+    /* Headings and the big numbers come into focus: a short blur that clears as they rise */
+    .section-head > .title, .copy > .title, .stat strong { animation: focus linear both; animation-timeline: view(); animation-range: entry 5% entry 75%; }
+    /* The phones land on their stage: tilted back and lower, they settle flat as they come up */
+    .device { animation: land linear both; animation-timeline: view(); animation-range: entry 0% cover 45%; }
+    /* The video opens from a smaller, rounder frame */
+    .video-frame { animation: open linear both; animation-timeline: view(); animation-range: entry 0% cover 40%; }
+    /* The clip photos drift inside their frames: a gentle parallax */
+    .photo img { animation: drift linear both; animation-timeline: view(); animation-range: cover 0% cover 100%; }
+    /* The privacy checks draw themselves */
+    .checks svg path { stroke-dasharray: 21; animation: draw linear both; animation-timeline: view(); animation-range: entry 30% cover 35%; }
   }
   @supports (animation-timeline: scroll()) {
     /* The hero product settles a little closer as the page scrolls away from it */
     .render img { animation: closer linear both; animation-timeline: scroll(root); animation-range: 0 100vh; }
+    /* The navigation gains its shadow as the page leaves the top */
+    .capsule { animation: nav-lift linear both; animation-timeline: scroll(root); animation-range: 0 160px; }
   }
+  .stats > li:hover, .photo:hover { transform: translateY(-3px); }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
 @keyframes intro-base { from { opacity: 0; transform: scale(.82); } }
@@ -349,3 +370,9 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
 @keyframes intro-word { from { opacity: 0; letter-spacing: .25em; transform: translateX(-10px); } }
 @keyframes intro-lift { to { opacity: 0; visibility: hidden; } }
 @keyframes closer { to { transform: scale(1.05); } }
+@keyframes focus { from { opacity: 0; filter: blur(8px); transform: translateY(16px); } }
+@keyframes land { from { opacity: .3; transform: perspective(1400px) translateY(72px) rotateX(16deg) scale(.94); } }
+@keyframes open { from { opacity: .5; transform: scale(.9); border-radius: 64px; } }
+@keyframes drift { from { transform: translateY(-5%) scale(1.12); } to { transform: translateY(5%) scale(1.12); } }
+@keyframes draw { from { stroke-dashoffset: 21; } }
+@keyframes nav-lift { from { box-shadow: inset 0 0 0 .5px var(--nav-edge); } }
