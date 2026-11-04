@@ -1,6 +1,7 @@
-// ship-hackathon 5.1: the website in site/ stays plain, linked, light and honest: every relative link
-// and image resolves, images are small, each page names its language, and every measured number on
-// it is one that docs/benchmarks.md records.
+// ship-hackathon 5.1 (design 6 and 6b): the website in site/ stays plain, linked, light and honest:
+// every relative link and image resolves, images are small and sized, each page names its language
+// and both color schemes, a page with its images stays under 1 MB, the lifestyle renders (generated
+// people) stay out, and every measured number on it is one that docs/benchmarks.md records.
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -12,6 +13,10 @@ const SITE = fileURLToPath(new URL("../site/", import.meta.url));
 const BENCHMARKS = readFileSync(fileURLToPath(new URL("../docs/benchmarks.md", import.meta.url)), "utf8");
 /** The budget for one image on the site. */
 const IMAGE_MAX_BYTES = 200 * 1024;
+/** The budget for one page: its HTML, the stylesheet and every image it names. */
+const PAGE_MAX_BYTES = 1024 * 1024;
+/** GitHub Pages serves the project under this path; 404.html links from it, since it answers any URL. */
+const BASE_PATH = "/lente/";
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -25,20 +30,27 @@ const pages = files.filter((f) => f.endsWith(".html"));
 /** The page without its comments (the placeholders' instructions live in comments). */
 const visible = (html: string) => html.replace(/<!--[\s\S]*?-->/g, "");
 
-test("the site has the Spanish and English home pages and the short terms and privacy pages", () => {
-  for (const page of ["index.html", "en/index.html", "terminos/index.html", "privacidad/index.html"]) assert.ok(pages.includes(join(SITE, page)), page);
+test("the site has the Spanish and English home pages, the short terms and privacy pages, and a 404", () => {
+  for (const page of ["index.html", "en/index.html", "terminos/index.html", "privacidad/index.html", "404.html"]) assert.ok(pages.includes(join(SITE, page)), page);
 });
+
+/** Where a link or image on `page` points inside site/, or null when it leaves the site. */
+function target(page: string, url: string): string | null {
+  if (/^(https?:|mailto:|#)/.test(url)) return null;
+  const path = url.split("#")[0]!.split("?")[0]!;
+  let file = path.startsWith(BASE_PATH) ? join(SITE, path.slice(BASE_PATH.length)) : join(dirname(page), path);
+  if (path === "" || path.endsWith("/")) file = join(file, "index.html");
+  return file;
+}
 
 test("every relative link and image on the site resolves to a file in site/", () => {
   for (const page of pages) {
     const html = visible(readFileSync(page, "utf8"));
     for (const [, url] of html.matchAll(/(?:href|src|srcset)="([^"]+)"/g)) {
-      if (/^(https?:|mailto:|#)/.test(url!)) continue;
-      const path = url!.split("#")[0]!.split("?")[0]!;
-      let target = join(dirname(page), path);
-      if (path === "" || path.endsWith("/")) target = join(target, "index.html");
-      assert.ok(target.startsWith(SITE), `${relative(SITE, page)}: ${url} leaves site/`);
-      assert.ok(existsSync(target), `${relative(SITE, page)}: ${url} does not exist`);
+      const file = target(page, url!);
+      if (!file) continue;
+      assert.ok(file.startsWith(SITE), `${relative(SITE, page)}: ${url} leaves site/`);
+      assert.ok(existsSync(file), `${relative(SITE, page)}: ${url} does not exist`);
     }
   }
 });
@@ -50,7 +62,32 @@ test("pages name their language, every image has alt text, and there is no scrip
     assert.match(html, /<html lang="(es|en)">/, name);
     assert.match(html, /<main id="[a-z]+"/, `${name}: a main landmark`);
     assert.doesNotMatch(html, /<script/i, `${name}: plain HTML, no script`);
-    for (const [img] of html.matchAll(/<img\b[^>]*>/g)) assert.match(img!, /\balt="/, `${name}: ${img}`);
+    assert.doesNotMatch(html, /\sstyle="/, `${name}: no inline style`);
+    assert.equal(html.match(/<h1\b/g)?.length, 1, `${name}: one h1`);
+    assert.match(html, /<a class="skip" href="#/, `${name}: a skip link`);
+    assert.match(html, /<meta name="theme-color" content="#[0-9A-F]{6}" media="\(prefers-color-scheme: light\)">/, `${name}: theme-color for light`);
+    assert.match(html, /<meta name="theme-color" content="#[0-9A-F]{6}" media="\(prefers-color-scheme: dark\)">/, `${name}: theme-color for dark`);
+    for (const [img] of html.matchAll(/<img\b[^>]*>/g)) {
+      assert.match(img!, /\balt="/, `${name}: alt on ${img}`);
+      assert.match(img!, /\bwidth="\d+"/, `${name}: width on ${img}`);
+      assert.match(img!, /\bheight="\d+"/, `${name}: height on ${img}`);
+    }
+  }
+  for (const home of ["index.html", "en/index.html"]) assert.match(readFileSync(join(SITE, home), "utf8"), /fetchpriority="high"/, `${home}: the hero image loads first`);
+});
+
+test("each page with its stylesheet and images stays under 1 MB, and the lifestyle renders stay out", () => {
+  assert.deepEqual(files.filter((f) => /lifestyle-/.test(f)).map((f) => relative(SITE, f)), [], "no lifestyle-* file in site/");
+  for (const page of pages) {
+    const html = visible(readFileSync(page, "utf8"));
+    assert.doesNotMatch(html, /lifestyle-/, `${relative(SITE, page)}: uses a lifestyle render`);
+    const named = new Set<string>([page]);
+    for (const [, url] of html.matchAll(/(?:href|src|srcset)="([^"]+)"/g)) {
+      const file = target(page, url!);
+      if (file && /\.(css|png|jpe?g|webp|svg)$/.test(file) && existsSync(file)) named.add(file);
+    }
+    const bytes = [...named].reduce((sum, f) => sum + statSync(f).size, 0);
+    assert.ok(bytes < PAGE_MAX_BYTES, `${relative(SITE, page)} weighs ${bytes} bytes with what it loads`);
   }
 });
 

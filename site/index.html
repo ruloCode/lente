@@ -2,13 +2,14 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lente · Unas gafas que te ayudan a hablar, a ver y a recordar</title>
 <meta name="description" content="Lente es un clip para cualquier par de gafas y una app: te dice qué responder en una reunión, te describe lo que tienes delante y recuerda lo que pasó. Hecho con los modelos de Meta.">
 <link rel="canonical" href="https://rulocode.github.io/lente/">
 <link rel="alternate" hreflang="es" href="https://rulocode.github.io/lente/">
 <link rel="alternate" hreflang="en" href="https://rulocode.github.io/lente/en/">
 <link rel="alternate" hreflang="x-default" href="https://rulocode.github.io/lente/">
+<meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta property="og:type" content="website">
@@ -24,7 +25,7 @@
 <meta property="og:image:alt" content="El logo de Lente junto a unas gafas con el clip (render generado)">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
-<link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -32,19 +33,20 @@
 <a class="skip" href="#contenido">Saltar al contenido</a>
 
 <header class="top">
-  <div class="wrap">
-    <a class="brand" href="./" aria-label="Lente, inicio"><img src="assets/logo-mark.svg" alt="" width="32" height="32">Lente</a>
-    <nav aria-label="Secciones">
-      <ul>
-        <li><a href="#usos">Usos</a></li>
-        <li><a href="#modelos">Modelos de Meta</a></li>
-        <li><a href="#probar">Pruébalo</a></li>
-        <li><a href="#clip">El clip</a></li>
-        <li><a href="#privacidad">Privacidad</a></li>
-        <li class="lang-item"><a class="lang" href="en/" hreflang="en" lang="en">English</a></li>
-      </ul>
-    </nav>
-  </div>
+  <nav class="capsule" aria-label="Secciones">
+    <a class="brand" href="./"><img src="assets/mark.svg" alt="" width="28" height="28">Lente</a>
+    <div class="links">
+      <a href="#usos">Usos</a>
+      <a href="#modelos" class="wide-only">Modelos de Meta</a>
+      <a href="#probar">Pruébalo</a>
+      <a href="#clip" class="wide-only">El clip</a>
+      <a href="#privacidad" class="wide-only">Privacidad</a>
+    </div>
+    <div class="lang" role="group" aria-label="Idioma">
+      <span aria-current="page" lang="es" title="Español">ES</span>
+      <a href="en/" hreflang="en" lang="en" title="English">EN</a>
+    </div>
+  </nav>
 </header>
 
 <main id="contenido" tabindex="-1">
@@ -52,167 +54,212 @@
   <!-- 1. Hero -->
   <section class="hero" aria-labelledby="titulo">
     <div class="wrap">
-      <div class="hero-grid">
-        <div>
-          <p class="eyebrow">Meta Global AI Developer Hackathon · Indie track</p>
-          <h1 id="titulo">Unas gafas que te ayudan a hablar, a ver y a recordar</h1>
-          <p class="lead">Lente es un clip para cualquier par de gafas y una app en tu teléfono. Te dice qué responder cuando te preguntan algo, te describe lo que tienes delante y recuerda lo que pasó para que se lo preguntes después. Funciona con los modelos de Meta, y sin el clip también: el teléfono hace de micrófono y de cámara.</p>
-          <div class="actions">
-            <a class="btn primary" href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/app">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></svg>
-              Entrar con Google
-            </a>
-            <a class="btn" href="https://github.com/ruloCode/lente/releases/latest/download/lente.apk">
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>
-              Descargar para Android
-            </a>
-          </div>
-          <p class="small muted">La web funciona en cualquier navegador. La app pide Android 10 o superior; <a href="#instalar">cómo instalarla</a>.</p>
-        </div>
-        <figure class="photo">
-          <picture>
-            <source srcset="assets/clip-render-dark.webp" media="(prefers-color-scheme: dark)" width="1200" height="797">
-            <img src="assets/clip-render.webp" width="1200" height="800" alt="Unas gafas negras con el clip de Lente en la patilla derecha: una cámara pequeña y un punto de luz.">
-          </picture>
-          <figcaption>Render generado con GPT Image 2.5 (un concepto, no una foto). El clip real está <a href="#clip">más abajo</a>.</figcaption>
-        </figure>
+      <img class="mark" src="assets/mark.svg" alt="" width="72" height="72">
+      <p class="eyebrow">Meta Global AI Developer Hackathon · Indie track</p>
+      <h1 id="titulo" class="display">Unas gafas que te ayudan a hablar, a ver y a recordar</h1>
+      <p class="lead">Un clip para cualquier par de gafas y una app. Te dice qué responder, te describe lo que tienes delante y recuerda lo que pasó. Con los modelos de Meta.</p>
+      <div class="actions">
+        <a class="pill pill--accent" href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/app">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></svg>
+          Entrar con Google
+        </a>
+        <a class="pill pill--glass" href="https://github.com/ruloCode/lente/releases/latest/download/lente.apk">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>
+          Descargar para Android
+        </a>
       </div>
+      <p class="fine hint">La web funciona en cualquier navegador · la app pide Android 10 o superior · <a href="#instalar">cómo instalarla</a></p>
+      <div class="qr-card">
+        <img src="assets/qr-apk.svg" width="88" height="88" alt="Código QR que abre la descarga de lente.apk">
+        <p><strong>¿Estás en un computador?</strong> Escanéalo con tu Android para descargar la app.</p>
+      </div>
+      <figure class="render">
+        <picture>
+          <source srcset="assets/clip-dark.webp" media="(prefers-color-scheme: dark)" width="1440" height="956">
+          <img src="assets/clip-hero.webp" width="1440" height="960" fetchpriority="high" alt="Unas gafas negras con el clip de Lente en la patilla derecha: una cámara pequeña y un punto de luz.">
+        </picture>
+        <figcaption class="badge">Render generado</figcaption>
+      </figure>
 
       <!-- L5:VIDEO — when the link exists, replace the .placeholder div below with:
            <iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID" title="Lente: el video de la demo" loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
            and add the link to the caption. -->
       <figure class="video" aria-labelledby="video-cap">
         <div class="video-frame">
-          <div class="placeholder" data-placeholder="video">El video de la demo llega aquí el 4 de noviembre.</div>
+          <div class="placeholder" data-placeholder="video">
+            <span class="play" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12.5-7.5z"/></svg></span>
+            <span>El video de la demo llega aquí el 4 de noviembre.</span>
+          </div>
         </div>
         <figcaption id="video-cap">La demo: Dilo en una reunión, Ver con la cámara y Practicar al piano.</figcaption>
       </figure>
     </div>
   </section>
 
-  <!-- 2. Three uses -->
+  <!-- 2. Three uses, one per screen -->
   <section id="usos" aria-labelledby="usos-t">
     <div class="wrap">
-      <h2 id="usos-t">Tres usos, un mismo Lente</h2>
-      <p class="lead">Lente oye y ve lo que tú, recuerda lo que pasó y te habla. Cada número viene de una corrida medida, listada en <a href="https://github.com/ruloCode/lente/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
-      <div class="cards three">
-        <article class="card" aria-labelledby="dilo-t">
-          <!-- L5:SHOT inicio → <img src="assets/shot-inicio.webp" width="…" height="…" alt="Inicio en la app con una tarjeta DILO (cuenta de prueba, datos PROBE)"> -->
-          <div class="shot placeholder" data-placeholder="shot-inicio" role="img" aria-label="Captura pendiente: Inicio con una tarjeta Dilo">Captura pendiente: Inicio</div>
-          <h3 id="dilo-t">Dilo</h3>
-          <p class="for">En reuniones, en tu segundo idioma</p>
-          <p>Cuando alguien te pregunta algo a ti, Lente pone en tu teléfono una frase que puedes decir ya, con su significado en español debajo. Después quedan las notas, las decisiones y las tareas.</p>
-          <p class="number"><strong>3,02 s</strong> de mediana desde que termina la pregunta hasta la tarjeta en el teléfono (n = 17, eval sintético del 2026-10-28).</p>
-        </article>
-        <article class="card" aria-labelledby="ver-t">
-          <!-- L5:SHOT ver → <img src="assets/shot-ver.webp" width="…" height="…" alt="Ver describiendo lo que tiene delante (cuenta de prueba)"> -->
-          <div class="shot placeholder" data-placeholder="shot-ver" role="img" aria-label="Captura pendiente: Ver con una descripción">Captura pendiente: Ver</div>
-          <h3 id="ver-t">Ver</h3>
-          <p class="for">Para personas ciegas o con baja visión</p>
-          <p>Una compañera que habla. Toca la pantalla y te dice lo que tiene delante; pregúntale «¿qué tengo en la mano?» o «¿dónde estoy?». Puede narrar lo que cambia y quedarse callada grabando. No es un dispositivo médico ni de movilidad.</p>
-          <!-- L5:NUMBER ver — the baseline run (meeting prompt); swap in the sight-v2 run (ship-hackathon 6.3) once it is in docs/benchmarks.md. -->
-          <p class="number"><strong>3,36 s</strong> de mediana entre la foto del clip y su descripción en el teléfono (n = 35, el clip real con el hub en Modal, 2026-11-04).</p>
-        </article>
-        <!-- L5:PRACTICE — keep this card only if add-practice-mode 5.2 is green; its number comes from that run in docs/benchmarks.md. -->
-        <article class="card" aria-labelledby="practicar-t">
-          <!-- L5:SHOT practicar → <img src="assets/shot-practicar.webp" width="…" height="…" alt="Practicar a mitad de una lección (cuenta de prueba)"> -->
-          <div class="shot placeholder" data-placeholder="shot-practicar" role="img" aria-label="Captura pendiente: Practicar a mitad de una lección">Captura pendiente: Practicar</div>
-          <h3 id="practicar-t">Practicar</h3>
-          <p class="for">Al piano, en casa</p>
-          <p>El teléfono oye cada nota que tocas, sin mandar el audio a ningún lado, y marca cada nota de la lección. Al terminar, Muse Spark 1.3 te da una o dos frases de consejo con la voz de Lente.</p>
-          <p class="number pending" data-placeholder="number-practicar">El número llega con la medición en el piano.</p>
-        </article>
+      <div class="section-head">
+        <h2 id="usos-t" class="title">Un mismo Lente, tres momentos</h2>
+        <p class="lead">Oye y ve lo que tú, recuerda lo que pasó y te habla. Cada número viene de una corrida medida en <a href="https://github.com/ruloCode/lente/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
       </div>
     </div>
+
+    <article class="wrap feature reveal" aria-labelledby="dilo-t">
+      <div class="copy">
+        <p class="eyebrow">Dilo · en reuniones</p>
+        <h3 id="dilo-t" class="title">Una frase para decir, justo a tiempo.</h3>
+        <p class="lead">Cuando alguien te pregunta algo a ti en tu segundo idioma, Lente pone en tu teléfono una frase que puedes decir ya, con su significado en español debajo. Después quedan las notas, las decisiones y las tareas.</p>
+        <p class="stat"><strong>3,02 s</strong><span>de mediana desde que termina la pregunta hasta la tarjeta en el teléfono (n = 17, eval sintético del 2026-10-28).</span></p>
+      </div>
+      <!-- L5:SHOT inicio → after 14:30, add below the illustration: <img src="assets/shot-inicio.webp" width="…" height="…" loading="lazy" alt="Inicio en la app con una tarjeta DILO (cuenta de prueba, datos PROBE)"> -->
+      <figure class="stage">
+        <div class="stage-floor">
+          <div class="ui">
+            <p class="listen"><span class="dot" aria-hidden="true"></span>Escuchando · 12:48</p>
+            <div class="card">
+              <p class="tag">DILO</p>
+              <p class="say" lang="en">I can share an estimate by tomorrow morning.</p>
+              <p class="means">Puedo dar la estimación mañana por la mañana.</p>
+              <p class="asked">Te preguntó PROBE-Ana · 10:24</p>
+              <div class="card-actions" aria-hidden="true">
+                <span class="chip chip--accent"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 9h11v11H9zM5 15V4h11"/></svg>Copiar</span>
+                <span class="chip"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 0 1 14-5.3M20 4v5h-5M20 12a8 8 0 0 1-14 5.3M4 20v-5h5"/></svg>Otra</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Ilustración de la interfaz · datos de prueba</figcaption>
+      </figure>
+    </article>
+  </section>
+
+  <section aria-labelledby="ver-t">
+    <article class="wrap feature feature--flip reveal">
+      <div class="copy">
+        <p class="eyebrow">Ver · para personas ciegas o con baja visión</p>
+        <h3 id="ver-t" class="title">Te cuenta lo que tiene delante, cuando tú lo pides.</h3>
+        <p class="lead">Una compañera que habla. Tocas la pantalla y te describe lo que ve la cámara; le preguntas «¿qué tengo en la mano?» o «¿dónde estoy?» y te responde con voz. Puede narrar lo que cambia y quedarse callada grabando. Funciona con TalkBack.</p>
+        <p class="fine">Es un prototipo: no es un dispositivo médico ni de movilidad, y no reemplaza tu bastón, tu perro guía ni tu criterio.</p>
+        <!-- L5:NUMBER ver — the baseline run (meeting prompt); swap in the sight-v2 run (ship-hackathon 6.3) once it is in docs/benchmarks.md. -->
+        <p class="stat"><strong>3,36 s</strong><span>de mediana entre la foto del clip y su descripción en el teléfono (n = 35, el clip real con el hub en Modal, 2026-11-04).</span></p>
+      </div>
+      <!-- L5:SHOT ver → after 14:30, add below the illustration: <img src="assets/shot-ver.webp" width="…" height="…" loading="lazy" alt="Ver describiendo lo que tiene delante (cuenta de prueba)"> -->
+      <figure class="stage">
+        <div class="stage-floor">
+          <div class="ui">
+            <div class="ver">
+              <p class="state"><span class="dot" aria-hidden="true"></span>Ver · Narrando</p>
+              <p class="line">Al frente, una puerta azul. A tu derecha, una mesa con una taza.</p>
+              <p class="hints"><span>Toca: mirar</span><span>Mantén: pausar</span><span>Dos dedos: narración</span></p>
+            </div>
+          </div>
+        </div>
+        <figcaption>Ilustración de la interfaz · datos de prueba</figcaption>
+      </figure>
+    </article>
+  </section>
+
+  <!-- L5:PRACTICE — keep this section only if add-practice-mode 5.2 is green; its number comes from that run in docs/benchmarks.md. -->
+  <section aria-labelledby="practicar-t">
+    <article class="wrap feature reveal">
+      <div class="copy">
+        <p class="eyebrow">Practicar · al piano</p>
+        <h3 id="practicar-t" class="title">Un profesor paciente que oye cada nota.</h3>
+        <p class="lead">El teléfono oye la nota que tocas, sin mandar el audio a ningún lado, y marca cada nota de la lección. Al terminar, Muse Spark 1.3 te da una o dos frases de consejo con la voz de Lente.</p>
+        <p class="stat stat--pending" data-placeholder="number-practicar"><strong>Pronto</strong><span>El número llega con la medición en el piano.</span></p>
+      </div>
+      <!-- L5:SHOT practicar → after 14:30, add below the illustration: <img src="assets/shot-practicar.webp" width="…" height="…" loading="lazy" alt="Practicar a mitad de una lección (cuenta de prueba)"> -->
+      <figure class="stage">
+        <div class="stage-floor">
+          <div class="ui">
+            <div class="card">
+              <div class="lesson-head"><p class="tag">LECCIÓN 1</p><p class="fine">Otra vez · Siguiente</p></div>
+              <p class="say">Escala de Do mayor</p>
+              <ol class="notes" aria-label="Notas de la lección">
+                <li class="note note--ok"><b>Do</b><i aria-hidden="true">✓</i><span class="sr-only">, bien</span></li>
+                <li class="note note--ok"><b>Re</b><i aria-hidden="true">✓</i><span class="sr-only">, bien</span></li>
+                <li class="note note--ok"><b>Mi</b><i aria-hidden="true">✓</i><span class="sr-only">, bien</span></li>
+                <li class="note note--miss"><b>Fa</b><i aria-hidden="true">✗</i><span class="sr-only">, faltó</span></li>
+                <li class="note note--now" aria-current="step"><b>Sol</b><i aria-hidden="true">•</i><span class="sr-only">, ahora</span></li>
+                <li class="note"><b>La</b><i></i></li>
+                <li class="note"><b>Si</b><i></i></li>
+                <li class="note"><b>Do</b><i></i></li>
+              </ol>
+              <p class="hearing"><span class="fine">Ahora oigo</span><strong>Sol</strong></p>
+              <p class="coach">«Muy bien. Te saltaste el Fa en la cuarta nota; tócala otra vez más despacio.»</p>
+            </div>
+          </div>
+        </div>
+        <figcaption>Ilustración de la interfaz · datos de prueba</figcaption>
+      </figure>
+    </article>
   </section>
 
   <!-- 3. Meta's models -->
   <section id="modelos" aria-labelledby="modelos-t">
     <div class="wrap">
-      <h2 id="modelos-t">Cómo usa los modelos de Meta</h2>
-      <p class="lead">Cada modelo tiene su trabajo, y cada trabajo lo mide un script del repositorio.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th scope="col">Trabajo</th><th scope="col">Modelo y modo</th></tr></thead>
-          <tbody>
-            <tr><td>Oír la reunión y separar quién habla</td><td><code>muse-voice-transcribe-1.0</code>, <code>DIARIZATION</code>, en tiempo real</td></tr>
-            <tr><td>Oírte cuando le hablas a Lente</td><td><code>muse-voice-transcribe-1.0</code>, <code>ENDPOINTING</code></td></tr>
-            <tr><td>La frase Dilo y su significado en español</td><td><code>muse-spark-1.3</code>, razonamiento mínimo, en streaming</td></tr>
-            <tr><td>Ver lo que ve la cámara</td><td><code>muse-spark-1.3</code> con imagen</td></tr>
-            <tr><td>Conversar: el agente de voz con tus tareas, tu memoria y la web</td><td><code>muse-spark-1.3</code> con function calling y <code>web_search</code></td></tr>
-            <tr><td>Notas, decisiones, tareas y recuerdos</td><td><code>muse-spark-1.3</code> con salida estructurada</td></tr>
-            <tr><td>Responder desde tu memoria, con la fuente</td><td><code>muse-spark-1.3</code>, una llamada sobre un índice local</td></tr>
-            <tr><td>Consejos al piano</td><td><code>muse-spark-1.3</code></td></tr>
-            <tr><td>Carril rápido</td><td>Muse Spark Open en Baseten (pesos abiertos)</td></tr>
-          </tbody>
-        </table>
+      <div class="section-head reveal">
+        <p class="eyebrow">Modelos de Meta</p>
+        <h2 id="modelos-t" class="title">Cada modelo tiene su trabajo.</h2>
+        <p class="lead">Y cada trabajo lo mide un script del repositorio, con voces y memorias sintéticas, nunca con reuniones reales.</p>
       </div>
+      <ul class="group reveal">
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg></span><div><p class="row-title">Oír la reunión y separar quién habla</p><p class="row-sub"><code>muse-voice-transcribe-1.0</code> · <code>DIARIZATION</code>, en tiempo real</p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><div><p class="row-title">Oírte cuando le hablas a Lente</p><p class="row-sub"><code>muse-voice-transcribe-1.0</code> · <code>ENDPOINTING</code></p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 5h16v11H9l-5 4z"/></svg></span><div><p class="row-title">La frase Dilo y su significado en español</p><p class="row-sub"><code>muse-spark-1.3</code> · razonamiento mínimo, en streaming</p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z"/></svg></span><div><p class="row-title">Ver lo que ve la cámara</p><p class="row-sub"><code>muse-spark-1.3</code> con imagen</p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><div><p class="row-title">Conversar: el agente de voz con tus tareas, tu memoria y la web</p><p class="row-sub"><code>muse-spark-1.3</code> con function calling y <code>web_search</code></p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/></svg></span><div><p class="row-title">Notas, decisiones, tareas y recuerdos</p><p class="row-sub"><code>muse-spark-1.3</code> con salida estructurada</p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4"/></svg></span><div><p class="row-title">Responder desde tu memoria, con la fuente</p><p class="row-sub"><code>muse-spark-1.3</code> · una llamada sobre un índice local</p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0zM20 16a3 3 0 1 1-6 0a3 3 0 1 1 6 0z"/></svg></span><div><p class="row-title">Consejos al piano</p><p class="row-sub"><code>muse-spark-1.3</code></p></div></li>
+        <li><span class="tile" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span><div><p class="row-title">Carril rápido</p><p class="row-sub">Muse Spark Open en Baseten, pesos abiertos</p></div></li>
+      </ul>
 
-      <div class="table-wrap">
-        <table>
-          <caption>Medido</caption>
-          <thead><tr><th scope="col">Qué</th><th scope="col">Resultado</th><th scope="col">Corrida</th></tr></thead>
-          <tbody>
-            <tr><td>Termina la pregunta → tarjeta Dilo en el teléfono</td><td class="num">3,02 s p50 · 4,75 s p95</td><td>eval, 10 diálogos sintéticos, 2026-10-28</td></tr>
-            <tr><td>«¿Esta pregunta era para mí?»</td><td class="num">76 % precisión · 81 % recall</td><td>la misma corrida</td></tr>
-            <tr><td>Hablas con Lente: dejas de hablar → tu turno listo</td><td class="num">323 ms p50</td><td><code>scripts/bench-voice.ts</code>, 2026-11-02</td></tr>
-            <tr><td>Hablas con Lente: dejas de hablar → primera frase de la respuesta</td><td class="num">3,21 s p50</td><td>la misma corrida</td></tr>
-            <tr><td>Respuestas desde la memoria: correctas y con la fuente correcta</td><td class="num">90 de 105</td><td>eval de grounding, 2026-11-03</td></tr>
-            <tr><td>Respuestas desde la memoria: «No lo encuentro» ante preguntas trampa (fuera de la memoria · fuera del proyecto)</td><td class="num">15 de 15 · 10 de 10</td><td>la misma corrida</td></tr>
-            <tr><td>Ver: foto del clip → descripción en el teléfono</td><td class="num">3,36 s p50</td><td><code>scripts/bench-sight.ts</code>, el clip real, 2026-11-04</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="small muted">Todo con voces y memorias sintéticas, nunca con reuniones reales. Las corridas completas están en <a href="https://github.com/ruloCode/lente/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
+      <h3 class="group-label" id="medido">Medido</h3>
+      <ul class="stats" aria-labelledby="medido">
+        <li class="reveal"><strong>3,02 s</strong><span class="what">Termina la pregunta → tarjeta Dilo</span><span class="run">p50 · 4,75 s p95 · eval, 10 diálogos sintéticos, 2026-10-28</span></li>
+        <li class="reveal"><strong>76 % · 81 %</strong><span class="what">«¿Esta pregunta era para mí?»: precisión y recall</span><span class="run">la misma corrida</span></li>
+        <li class="reveal"><strong>323 ms</strong><span class="what">Dejas de hablar → tu turno está listo</span><span class="run">p50 · <code>scripts/bench-voice.ts</code>, 2026-11-02</span></li>
+        <li class="reveal"><strong>3,21 s</strong><span class="what">Dejas de hablar → primera frase de la respuesta</span><span class="run">p50 · la misma corrida</span></li>
+        <li class="reveal"><strong>90 de 105</strong><span class="what">Respuestas desde la memoria, correctas y con la fuente correcta</span><span class="run">eval de grounding, 2026-11-03</span></li>
+        <li class="reveal"><strong>15/15 · 10/10</strong><span class="what">«No lo encuentro» ante preguntas trampa: fuera de la memoria · fuera del proyecto</span><span class="run">la misma corrida</span></li>
+      </ul>
+      <p class="after center">Las corridas completas, con lo que salió mal, están en <a href="https://github.com/ruloCode/lente/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
     </div>
   </section>
 
   <!-- 4. Try it -->
   <section id="probar" aria-labelledby="probar-t">
     <div class="wrap">
-      <h2 id="probar-t">Pruébalo ya</h2>
-      <p class="lead">Durante la evaluación del hackathon cualquier cuenta de Google puede entrar. Tu memoria es solo tuya.</p>
-      <div class="cards two">
-        <div class="card">
-          <h3>En la web o en el teléfono</h3>
-          <ol class="steps">
-            <li><a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/app">Entra con Google</a> en la web, o instala la app de Android y toca «Iniciar sesión con Google».</li>
-            <li>Lee y acepta los términos de la vista previa. Es una sola vez.</li>
-            <li>Tu cuenta empieza con un ejemplo: el proyecto «PROBE · Proyecto de ejemplo», con dos reuniones inventadas, tareas y recuerdos. Pregúntale:
-              <ul class="ask">
-                <li>¿Qué se decidió sobre la beta?</li>
-                <li>¿Qué tareas tengo pendientes?</li>
-                <li>¿Qué puedes hacer por mí?</li>
-              </ul>
-            </li>
-            <li>Sin el clip: en la app, «Usar el teléfono» convierte su micrófono y su cámara en el clip. En la web, graba con el micrófono o la cámara de tu computadora, o con una pestaña de Meet o Zoom.</li>
-            <li>Cuando quieras, borra el ejemplo en Ajustes → «Borrar ejemplo», o tu cuenta entera con todos tus datos.</li>
-          </ol>
-          <p class="small muted">Hay un límite diario de uso por persona y otro para todos. Si llegas a él, Lente te avisa y puedes volver al día siguiente.</p>
-        </div>
-        <div class="card">
-          <!-- L5:SHOT chat → <img src="assets/shot-chat.webp" width="…" height="…" alt="El chat respondiendo desde el proyecto de ejemplo, con su fuente (cuenta de prueba)"> -->
-          <div class="shot wide placeholder" data-placeholder="shot-chat" role="img" aria-label="Captura pendiente: el chat respondiendo desde el ejemplo">Captura pendiente: el chat respondiendo desde el ejemplo</div>
-          <!-- L5:SHOT web → <img src="assets/shot-web.webp" width="…" height="…" alt="La app web de Lente en una computadora (cuenta de prueba)"> -->
-          <div class="shot wide placeholder" data-placeholder="shot-web" role="img" aria-label="Captura pendiente: la app web">Captura pendiente: la app web</div>
-        </div>
+      <div class="section-head reveal">
+        <p class="eyebrow">Pruébalo</p>
+        <h2 id="probar-t" class="title">Entra con tu cuenta de Google.</h2>
+        <p class="lead">Mientras el jurado evalúa, cualquier cuenta de Google puede entrar. Tu memoria es solo tuya.</p>
       </div>
-
-      <div class="card install-card" id="instalar" aria-labelledby="instalar-t">
-        <div class="install">
-          <div>
-            <h3 id="instalar-t">Instalar la app de Android</h3>
-            <ol class="steps">
-              <li>En tu Android, abre <a href="https://github.com/ruloCode/lente/releases/latest/download/lente.apk">lente.apk</a> o escanea el código.</li>
-              <li>Si Android lo pide, permite instalar apps de esa fuente (tu navegador o tus archivos) y toca «Instalar».</li>
-              <li>Abre Lente y toca «Iniciar sesión con Google».</li>
-            </ol>
-            <p class="small muted">Android 10 o superior. La app todavía no está en Google Play; las notas de cada versión están en <a href="https://github.com/ruloCode/lente/releases/latest">GitHub Releases</a>.</p>
-          </div>
-          <figure class="qr">
-            <img src="assets/qr-apk.svg" width="220" height="220" alt="Código QR que abre la descarga de lente.apk desde GitHub">
-            <figcaption>Escanéalo con la cámara</figcaption>
-          </figure>
+      <div class="try">
+        <div class="reveal">
+          <ol class="group">
+            <li><span class="tile tile--n" aria-hidden="true">1</span><div><p class="row-title">Entra</p><p class="row-sub"><a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/app">Con Google en la web</a>, o en la app de Android con «Iniciar sesión con Google».</p></div></li>
+            <li><span class="tile tile--n" aria-hidden="true">2</span><div><p class="row-title">Acepta los términos</p><p class="row-sub">Los de la vista previa, una sola vez.</p></div></li>
+            <li><span class="tile tile--n" aria-hidden="true">3</span><div><p class="row-title">Pregúntale al ejemplo</p><p class="row-sub">Tu cuenta empieza con «PROBE · Proyecto de ejemplo»: dos reuniones inventadas, tareas y recuerdos.</p>
+              <ul class="asks"><li>¿Qué se decidió sobre la beta?</li><li>¿Qué tareas tengo pendientes?</li><li>¿Qué puedes hacer por mí?</li></ul></div></li>
+            <li><span class="tile tile--n" aria-hidden="true">4</span><div><p class="row-title">Sin el clip</p><p class="row-sub">En la app, «Usar el teléfono» convierte su micrófono y su cámara en el clip. En la web, graba con el micrófono o la cámara de tu computador, o con una pestaña de Meet o Zoom.</p></div></li>
+            <li><span class="tile tile--n" aria-hidden="true">5</span><div><p class="row-title">Bórralo cuando quieras</p><p class="row-sub">Ajustes → «Borrar ejemplo», o tu cuenta entera con todos tus datos.</p></div></li>
+          </ol>
+          <p class="after">Hay un límite diario de uso por persona y otro para todos. Si llegas a él, Lente te avisa y puedes volver al día siguiente.</p>
+          <!-- L5:SHOT chat → after 14:30: <img src="assets/shot-chat.webp" width="…" height="…" loading="lazy" alt="El chat respondiendo desde el proyecto de ejemplo, con su fuente (cuenta de prueba)"> -->
+          <!-- L5:SHOT web → after 14:30: <img src="assets/shot-web.webp" width="…" height="…" loading="lazy" alt="La app web de Lente en un computador (cuenta de prueba)"> -->
+        </div>
+        <div class="install reveal" id="instalar" aria-labelledby="instalar-t">
+          <h3 id="instalar-t" class="subtitle">Instalar la app de Android</h3>
+          <img class="qr" src="assets/qr-apk.svg" width="180" height="180" loading="lazy" alt="Código QR que abre la descarga de lente.apk desde GitHub">
+          <ol>
+            <li><span>En tu Android, abre <a href="https://github.com/ruloCode/lente/releases/latest/download/lente.apk">lente.apk</a> o escanea el código.</span></li>
+            <li><span>Si Android lo pide, permite instalar apps de esa fuente (tu navegador o tus archivos) y toca «Instalar».</span></li>
+            <li><span>Abre Lente y toca «Iniciar sesión con Google».</span></li>
+          </ol>
+          <p class="fine">Android 10 o superior. Todavía no está en Google Play; las notas de cada versión están en <a href="https://github.com/ruloCode/lente/releases/latest">GitHub Releases</a>.</p>
         </div>
       </div>
     </div>
@@ -221,26 +268,37 @@
   <!-- 5. Build the clip -->
   <section id="clip" aria-labelledby="clip-t">
     <div class="wrap">
-      <h2 id="clip-t">Arma el clip</h2>
-      <p class="lead">Una placa pequeña con cámara y micrófono, una batería y una carcasa impresa en 3D que se sujeta a la patilla de cualquier par de gafas.</p>
-      <div class="split">
+      <div class="section-head reveal">
+        <p class="eyebrow">El clip</p>
+        <h2 id="clip-t" class="title">Ármalo tú. Se sujeta a cualquier par de gafas.</h2>
+        <p class="lead">Una placa pequeña con cámara y micrófono, una batería y una carcasa impresa en 3D.</p>
+      </div>
+      <div class="pair reveal">
         <figure class="photo">
           <img src="assets/clip-rig.webp" width="529" height="589" loading="lazy" alt="Una mano sostiene el primer montaje del clip: la placa Seeed XIAO ESP32-S3 Sense con su cámara, un cargador USB-C y un interruptor.">
-          <figcaption>Foto real del primer montaje del clip, 2026-10-29.</figcaption>
+          <figcaption>Foto real · el primer montaje, 2026-10-29</figcaption>
         </figure>
+        <figure class="photo photo--render">
+          <img src="assets/clip-macro.webp" width="900" height="900" loading="lazy" alt="El clip terminado, solo: una cápsula gris oscura con la lente, un punto de luz y la correa para la patilla.">
+          <figcaption>Render generado · hacia dónde va</figcaption>
+        </figure>
+      </div>
+      <div class="lists reveal">
         <div>
-          <h3>Piezas</h3>
-          <ul>
-            <li>Seeed XIAO ESP32-S3 Sense: cámara, micrófono y Wi-Fi en una placa.</li>
-            <li>Una batería LiPo de una celda y un cargador USB-C de una celda.</li>
-            <li>Un interruptor deslizante.</li>
-            <li>Opcional: un motor de vibración para avisos en silencio.</li>
+          <h3 class="group-label">Piezas</h3>
+          <ul class="group plain">
+            <li>Seeed XIAO ESP32-S3 Sense: cámara, micrófono y Wi-Fi en una placa</li>
+            <li>Una batería LiPo de una celda y su cargador USB-C</li>
+            <li>Un interruptor deslizante</li>
+            <li>Opcional: un motor de vibración para avisos en silencio</li>
           </ul>
-          <h3>Carcasa y firmware</h3>
-          <ul>
-            <li>Carcasas paramétricas en <a href="https://github.com/ruloCode/lente/tree/main/hardware">hardware/</a>, con los STL listos para imprimir (la v3 en <a href="https://github.com/ruloCode/lente/tree/main/hardware/clip-v3/out">hardware/clip-v3/out</a>) y un visor 3D.</li>
-            <li>El firmware en <a href="https://github.com/ruloCode/lente/tree/main/firmware/lente-clip">firmware/lente-clip</a>: audio y fotos por Wi-Fi, y el micrófono en su propia tarea para que una foto nunca corte la voz. Se carga con <code>arduino-cli</code>.</li>
-            <li>Una autoprueba del hardware en <a href="https://github.com/ruloCode/lente/tree/main/firmware/selftest">firmware/selftest</a>.</li>
+        </div>
+        <div>
+          <h3 class="group-label">Carcasa y firmware</h3>
+          <ul class="group plain">
+            <li><span>Carcasas paramétricas con STL listos para imprimir en <a href="https://github.com/ruloCode/lente/tree/main/hardware">hardware/</a> (la v3 en <a href="https://github.com/ruloCode/lente/tree/main/hardware/clip-v3/out">clip-v3/out</a>)</span></li>
+            <li><span>El firmware en <a href="https://github.com/ruloCode/lente/tree/main/firmware/lente-clip">firmware/lente-clip</a>: audio y fotos por Wi-Fi; se carga con <code>arduino-cli</code></span></li>
+            <li><span>Una autoprueba del hardware en <a href="https://github.com/ruloCode/lente/tree/main/firmware/selftest">firmware/selftest</a></span></li>
           </ul>
         </div>
       </div>
@@ -249,30 +307,33 @@
 
   <!-- 6. Built during the hackathon -->
   <section id="hackathon" aria-labelledby="hackathon-t">
-    <div class="wrap">
-      <h2 id="hackathon-t">Hecho durante el hackathon</h2>
-      <p class="lead">Todo el código del repositorio se escribió durante el hackathon, desde el 2026-10-26. Cada día de trabajo tiene su fila en el README.</p>
-      <ul>
-        <li><a href="https://github.com/ruloCode/lente#what-was-built-during-the-hackathon">Qué se construyó cada día</a> (la tabla del README).</li>
-        <li><a href="https://github.com/ruloCode/lente">El repositorio</a>, con licencia MIT.</li>
-        <li><a href="https://github.com/ruloCode/lente/tree/main/openspec">Las especificaciones</a>: cada función empezó como un cambio de OpenSpec con propuesta, diseño, especificación y tareas.</li>
-      </ul>
+    <div class="wrap center stack reveal">
+      <p class="eyebrow">Hecho durante el hackathon</p>
+      <h2 id="hackathon-t" class="title">Todo el código, escrito desde el 2026-10-26.</h2>
+      <p class="lead">Cada día de trabajo tiene su fila en el README. Cada función empezó como un cambio de OpenSpec, con propuesta, diseño, especificación y tareas.</p>
+      <div class="links-row">
+        <a class="pill pill--quiet" href="https://github.com/ruloCode/lente#what-was-built-during-the-hackathon">Qué se hizo cada día</a>
+        <a class="pill pill--quiet" href="https://github.com/ruloCode/lente">El repositorio</a>
+        <a class="pill pill--quiet" href="https://github.com/ruloCode/lente/tree/main/openspec">Las especificaciones</a>
+      </div>
     </div>
   </section>
 
   <!-- 7. Privacy -->
   <section id="privacidad" aria-labelledby="privacidad-t">
     <div class="wrap">
-      <h2 id="privacidad-t">Privacidad</h2>
-      <p class="lead">Los términos de la vista previa, en corto.</p>
-      <ul>
-        <li>Lente es un prototipo de hackathon. No es un dispositivo médico ni de movilidad.</li>
-        <li>Tu memoria se guarda como texto, cifrada con una llave solo tuya. El audio y las fotos se guardan solo para la cuenta del autor; las demás cuentas guardan solo texto.</li>
-        <li>Lente llama a la API de modelos de Meta con créditos gratuitos, que permiten usar el contenido para mejorar el producto. No compartas nada sensible.</li>
-        <li>Puedes borrar tu cuenta cuando quieras, y con ella todos tus datos.</li>
-        <li>¿Preguntas? Escríbenos en los <a href="https://github.com/ruloCode/lente/issues">issues del repositorio</a>.</li>
+      <div class="section-head reveal">
+        <p class="eyebrow">Privacidad</p>
+        <h2 id="privacidad-t" class="title">Tu memoria es tuya.</h2>
+        <p class="lead">Los términos de la vista previa, en corto.</p>
+      </div>
+      <ul class="group checks reveal">
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg><p>Se guarda como texto, cifrada con una llave solo tuya. El audio y las fotos se guardan solo para la cuenta del autor; las demás guardan solo texto.</p></li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg><p>Puedes borrar tu cuenta cuando quieras, y con ella todos tus datos.</p></li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg><p>Lente llama a la API de modelos de Meta con créditos gratuitos, que permiten usar el contenido para mejorar el producto. No compartas nada sensible.</p></li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg><p>Es un prototipo de hackathon, no un dispositivo médico ni de movilidad.</p></li>
       </ul>
-      <p>En corto: <a href="terminos/">Términos</a> · <a href="privacidad/">Privacidad</a>. El texto que aceptas al entrar está en el hub: <a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/terminos">términos</a> · <a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/privacidad">privacidad</a>.</p>
+      <p class="after">En corto: <a href="terminos/">Términos</a> · <a href="privacidad/">Privacidad</a>. El texto que aceptas al entrar está en el hub: <a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/terminos">términos</a> · <a href="https://drew-lizcano--lente-hub-hub.us-east.modal.run/privacidad">privacidad</a>. ¿Preguntas? En los <a href="https://github.com/ruloCode/lente/issues">issues del repositorio</a>.</p>
     </div>
   </section>
 
@@ -281,11 +342,13 @@
 <!-- 8. Footer -->
 <footer>
   <div class="wrap">
+    <img class="mark" src="assets/mark.svg" alt="" width="32" height="32" loading="lazy">
+    <p>Meta Global AI Developer Hackathon · Indie track · Build for Your World</p>
     <ul>
-      <li>Meta Global AI Developer Hackathon · Indie track · Build for Your World</li>
       <li><a href="https://github.com/ruloCode/lente">GitHub</a></li>
       <li><a href="https://github.com/ruloCode/lente/blob/main/LICENSE">Licencia MIT</a></li>
-      <li><a href="terminos/">Términos</a> · <a href="privacidad/">Privacidad</a></li>
+      <li><a href="terminos/">Términos</a></li>
+      <li><a href="privacidad/">Privacidad</a></li>
       <li><a href="en/" hreflang="en" lang="en">English</a></li>
     </ul>
   </div>

@@ -103,6 +103,18 @@ Sections, in order:
 
 Screenshots are taken only from an account with synthetic (PROBE) data, never the owner's.
 
+### 6b. Look and feel
+
+The website looks like Lente's own app on a bigger canvas, calm and confident, with the product as the hero.
+- **Tokens:** `site/styles.css` copies the values of `src/theme.ts` under the same custom-property names (the site has no build step), plus the iOS kit's navigation glass and spring curves (`docs/design/ios-kit/nav.css`). Light and dark come from `prefers-color-scheme`, with `color-scheme` and a `theme-color` per scheme. Text keeps the app's 7:1 pairs.
+- **Type and rhythm:** the system stacks only (no web fonts). Headings use the display stack with tight tracking and `clamp()` sizes; text is at most about 68 characters wide; spacing follows an 8 px scale; one idea per screen.
+- **Navigation:** the app's glass capsule, sticky and centered, with section anchors and an ES/EN switch.
+- **Hero:** the mark and «Lente», the one line, the clip render large (`clip-hero` in light, `clip-dark` in dark), two pill buttons («Entrar con Google» filled, «Descargar para Android» glass), and the QR code in a small glass card.
+- **The product as real UI:** the Dilo card, a Ver line and the Practicar note row are built in HTML and CSS from the app's components with synthetic text, captioned «Ilustración de la interfaz». The screenshot slots stay for the real captures.
+- **Images:** the renders from the premium pack, labelled «Render» where they could pass for photos; the lifestyle images (generated people) are left out; `clip-rig-in-hand` stays the one real photo, labelled as real.
+- **Motion:** CSS only, no script: a subtle reveal on scroll where the browser supports scroll-driven animations, and press and hover with the kit's spring curves; all of it off under `prefers-reduced-motion`.
+- **Performance:** every image has its size, the hero loads first (`fetchpriority="high"`) and the rest lazily, each image is under 200 KB and a page with its images under 1 MB. There is a `404.html` in the same look. `test/site.test.ts` checks these.
+
 ### 7. The APK
 
 - Built with `pnpm android:apk` on the owner's Mac. It is signed with the debug key whose SHA-1 the Android OAuth client must list. `-P lente.supabaseUrl/…` comes from `gradle.properties` as today.
