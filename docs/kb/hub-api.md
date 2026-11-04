@@ -84,6 +84,8 @@ Stage order: `heard, turn, asked, firstToken, done, sent, phone`.
 | `POST /narrated` | `{text}` | 204; the hub drops turns that repeat it |
 | `POST /tts` | `{text}` | 200 `audio/mpeg`, 404 without an ElevenLabs key, 502 |
 | `POST /help` | `{kind: aportar|pregunta|tema}` | 200 `{ok, kind, label, text, meaning?, ms}` (the card also arrives as a `cue`); `{ok:false, reason, message}` with 400, 409 or 502 |
+| `GET /apps` | | `{mode: builtin|open, apps: [{id, name, icon, developer, description, builtIn, soon, languages: [{code, name, soon}], permissions: [{id, label, sentence}], price}]}`; only the built-ins today (add-lens-apps) |
+| `GET /apps/:id` | | `{mode, app}`: the listing plus `version, persona, inputs[], tools[], lookPrompt?, content: [{id, title}], actions: {try, install, publish}` (all `"soon"` for now), or 404 `{error: "not_found"}` |
 
 Body-less `POST`s, all 204: `/listen/on`, `/listen/off`, `/session/stop` (ends the session clock, pauses, ends the meeting), `/look`, `/live/on`, `/live/off`, `/mode/camera`, `/mode/mic`, `/assist-mode/assist`, `/assist-mode/record`, `/summary`, `/cues/all`, `/cues/addressed`.
 

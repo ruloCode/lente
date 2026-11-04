@@ -274,3 +274,16 @@ All of it is marked `sample`, and «Borrar ejemplo» in Ajustes removes it and n
 - **The release** is a GitHub Release whose asset is named `lente.apk`, so `releases/latest/download/lente.apk` stays the same link from one version to the next (`v0.2.0-hackathon`, `versionName 0.2.0`).
   - It is built on the owner's Mac, signed with the key whose SHA-1 the Android OAuth client lists. Google sign-in refuses an APK signed with any other key.
   - **Rejected:** building the APK in CI (a different key, so sign-in fails) and the Play Store for now (that is `add-store-release`, after `add-consent`).
+
+### 2026-11-04 · Apps are data, never code (add-lens-apps)
+
+This revisits the 2026-10-28 line «No plugin store» («MCP is the extension surface»). That line was about running other people's code next to sealed memories and a live camera, and it still holds: Lente gains a catalog of apps, but an app is a JSON manifest the hub interprets, never something it runs.
+
+- **The manifest** (`src/app-manifest.ts`, pure): id, name, an icon from Lente's own set, description, languages, the inputs it asks for, a list of the hub's existing tools from a fixed allow-list, persona text, optional content items and a price model (`free` or `trial`). Every field has a named bound, an unknown field is an error, and `validateManifest` returns every problem at once with its field, in Spanish.
+- **Permissions are checked in code, not in a prompt.** Five permissions (Cámara, Micrófono, Ubicación, Leer tu memoria, Escribir en tu memoria). A manifest must ask for exactly what its inputs and tools need, and nothing more. The persona is checked for text that imitates the hub's own prompt (`personaProblems`), but the boundary is the tool list, enforced where the model is offered tools and again when a call arrives (P1).
+- **The built-ins are the first listings.** Dilo, Ver, Practicar and «Idiomas» are manifests in `apps/builtin/`, validated by the same function with `builtIn`. Only a built-in may bind to an engine (`dilo`, `ver`, `practicar`, `coach`), listen to the room, or use an engine's own tools. A test checks Ver's tools against `SIGHT_FUNCTIONS`, so a manifest that stops describing the code fails `pnpm test`.
+- **Today only the read-only catalog runs:** `GET /apps`, `GET /apps/:id` and the web app's «Apps» section, with Probar, Instalar and Publicar shown as «Pronto». `LENTE_APPS` defaults to `builtin`; `open` (P1) waits for installs, the review queue and `add-consent`'s sign-up gate.
+- **Rejected:**
+  - a JavaScript sandbox (isolated-vm, QuickJS in WebAssembly): a runtime dependency, and an escape on a hub that holds sealed memories and a live camera is the worst failure Lente could have;
+  - WebView mini-apps on the phone: a second permission model next to Android's, and a page can send whatever it reads anywhere;
+  - an MCP server per app: the developer's server would receive the person's words and frames. MCP stays the way the person's own agents reach Lente (`add-agent-bridge`), with tokens the person creates.
