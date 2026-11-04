@@ -31,6 +31,16 @@
 > **Meta Global AI Developer Hackathon · Indie track · Theme: Build for Your World**
 > Built solo in ten days in Bogotá: every line in this repository was written during the hackathon, starting **2026-10-26**. See [What was built during the hackathon](#what-was-built-during-the-hackathon).
 
+### Everything in one place
+
+| | |
+|---|---|
+| **Try it** | [Website (Español)](https://rulocode.github.io/lente/) · [Website (English)](https://rulocode.github.io/lente/en/) · [Web app, Sign in with Google](https://drew-lizcano--lente-hub-hub.us-east.modal.run/app) · [Android APK](https://github.com/ruloCode/lente/releases/latest/download/lente.apk) ([release notes](https://github.com/ruloCode/lente/releases/tag/v0.2.0-hackathon)) · [Run it locally](#run-it-locally) |
+| **The hardware** | [Parts, prices in Bogotá and wiring](hardware/README.md) · print files: [case base](hardware/clip-v3/out/clip-base.stl), [lid](hardware/clip-v3/out/clip-lid.stl), [HUD arm](hardware/clip-v3/out/hud-arm.stl), [3D assembly](hardware/clip-v3/out/assembly.glb) · [parametric model (`clip.py`)](hardware/clip-v3/clip.py) and [3D viewer](hardware/clip-v3/viewer.html) · [camera board research](docs/kb/camera-boards.md) · [firmware](firmware/lente-clip) · [clip ↔ hub protocol](docs/PROTOCOL.md) |
+| **How it works** | [Architecture](docs/architecture.md) · [Hub API](docs/kb/hub-api.md) · [Meta Model API as used](docs/kb/meta-api.md) · [Agents and MCP](docs/kb/agents.md) · [Decisions and the alternatives we rejected](docs/kb/decisions.md) |
+| **Proof** | [Every benchmark and the script behind it](docs/benchmarks.md) · [863 unit tests](test) · [specs of what Lente does](openspec/specs) and [what comes next](openspec/changes) · [day-by-day build log](#what-was-built-during-the-hackathon) · [CI](https://github.com/ruloCode/lente/actions) |
+| **Privacy** | [Terms](https://drew-lizcano--lente-hub-hub.us-east.modal.run/terminos) · [Privacy](https://drew-lizcano--lente-hub-hub.us-east.modal.run/privacidad) · [how memory is sealed](#measured) |
+
 ## The problem
 
 **Think of someone you love who no longer sees well.** The card from a grandchild, the medicine label, the letter from the bank, the bus that is coming: it is all right in front of them, and none of it reaches them unless someone is there to read it. AI glasses for blind and low-vision people already exist, but they are expensive and mean buying new glasses. In Colombia alone, the 2018 census counted **1,948,332 people with difficulty seeing** ([INCI, citing DANE](https://www.inci.gov.co/sites/default/files/2021-11/OAJ-102-FM-064%20v6%20INVITACION%20PUBLICA.doc)).
@@ -40,6 +50,22 @@
 **Lente's answer: you don't need new glasses.** A camera, a microphone and your phone are enough when Meta's models do the seeing, the listening and the remembering. The clip is a Seeed XIAO ESP32-S3 Sense (US$ 13.90 at Seeed, [notes](docs/kb/camera-boards.md)) with a small battery in a case printed for any glasses. No clip? The phone does its job.
 
 ## What Lente does
+
+<table>
+  <tr>
+    <td width="25%"><img src="docs/promo/android/sheet.webp" alt="Android app, the Grabar sheet: Asistir, Recuerdo, Solo grabar, Ver, Practicar and Idiomas, and a choice of clip or phone"></td>
+    <td width="25%"><img src="docs/promo/android/live.webp" alt="Android app while listening: a Dilo card says «Yes, Friday works if QA signs off Thursday.» above the live transcript «Rulo, can we ship the beta on Friday?»"></td>
+    <td width="25%"><img src="docs/promo/android/recuerdos.webp" alt="Android app, Recuerdos: yesterday's moment with Revivir, and a time wheel with a carousel of cards"></td>
+    <td width="25%"><img src="docs/promo/android/dispositivos.webp" alt="Android app, Dispositivos: the clip connected, with today's recorded time, tokens and approximate cost"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Choose how it helps:</b> Asistir, Recuerdo, Ver, Solo grabar, Practicar or a language tutor, with the clip or the phone.</sub></td>
+    <td><sub><b>Asistir:</b> the question was for you, so the Dilo card shows the line to say, with every stage timed.</sub></td>
+    <td><sub><b>Recuerdos:</b> the moments of your day; turn the wheel, tap one, relive it.</sub></td>
+    <td><sub><b>The clip:</b> connected, what it recorded today and what it cost.</sub></td>
+  </tr>
+</table>
+<p align="center"><sub>Real screens of the Lente Android app (debug build, on an emulator) connected to a local hub with the synthetic PROBE sample, a clip emulator and the stubbed Meta API, so no real person or meeting appears and the model timings read a few milliseconds; the real ones are under <a href="#measured">Measured</a>.</sub></p>
 
 ### Ver: eyes for someone who no longer sees well
 
@@ -76,6 +102,39 @@ Everything stays in your memory, sealed per account: notes, decisions and tasks.
     <td><sub><b>Apps for the glasses.</b> Each app is a JSON manifest the hub interprets, never code, with its permissions in plain sight.</sub></td>
   </tr>
 </table>
+
+## How it was built, by hand
+
+Filmed on a pocket camera while it happened, all during the hackathon. The board arrived on day two; the clip was soldered at an electronics shop in Bogotá on day four and was in its printed case that night.
+
+<table>
+  <tr>
+    <td width="25%"><img src="docs/promo/build/01-unbox.webp" alt="A hand holds the opened Seeed case with the XIAO ESP32-S3 Sense inside"></td>
+    <td width="25%"><img src="docs/promo/build/02-board.webp" alt="The XIAO ESP32-S3 Sense board from above, its OV3660 camera on a flex cable"></td>
+    <td width="25%"><img src="docs/promo/build/03-first-power.webp" alt="The board with a USB-C cable plugged in for its first power-on"></td>
+    <td width="25%"><img src="docs/promo/build/04-solder-charger.webp" alt="A soldering iron over a blue USB-C LiPo charger board"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Oct 27.</b> The Seeed XIAO ESP32-S3 Sense arrives: camera, microphone and Wi-Fi in 21 × 17.8 mm.</sub></td>
+    <td><sub><b>Oct 27.</b> The OV3660 camera on its flex cable, before anything is soldered.</sub></td>
+    <td><sub><b>Oct 27.</b> First power-on over USB-C.</sub></td>
+    <td><sub><b>Oct 29.</b> At an electronics shop: soldering the 1S USB-C charger.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/promo/build/05-solder-board.webp" alt="Hands solder wires to the clip's board with a soldering iron"></td>
+    <td><img src="docs/promo/build/06-assembled.webp" alt="The assembled clip electronics in a hand: board, charger, switch and a yellow LiPo battery"></td>
+    <td><img src="docs/promo/build/07-printed-case.webp" alt="Hands unwrap a black 3D-printed case with a round hole for the camera"></td>
+    <td><img src="docs/promo/build/08-in-the-case.webp" alt="The finished clip in its printed case, held in a hand"></td>
+  </tr>
+  <tr>
+    <td><sub><b>Oct 29.</b> Battery, switch and charger wired to the board.</sub></td>
+    <td><sub><b>Oct 29.</b> The first working bench rig: it runs on its own battery.</sub></td>
+    <td><sub><b>Oct 29, night.</b> The printed case, modelled in code around the real parts (<a href="hardware/clip-v3/clip.py"><code>clip-v3/clip.py</code></a>).</sub></td>
+    <td><sub><b>Oct 29, night.</b> Everything inside: the clip that is in the video.</sub></td>
+  </tr>
+</table>
+
+Print it yourself: the [base](hardware/clip-v3/out/clip-base.stl) and [lid](hardware/clip-v3/out/clip-lid.stl) STL files, the parts list with where to buy them in Bogotá and the wiring in [hardware/README.md](hardware/README.md), and the firmware in [firmware/lente-clip](firmware/lente-clip).
 
 ## Built in ten days
 
