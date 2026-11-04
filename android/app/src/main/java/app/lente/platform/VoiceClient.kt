@@ -83,7 +83,11 @@ class VoiceClient(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = closed(null)
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "voice socket failed: ${t.message}")
-                closed(if (response?.code == 401) "Inicia sesión otra vez para hablar con Lente." else "Se perdió la conexión con la computadora.")
+                closed(when (response?.code) {
+                    401 -> "Inicia sesión otra vez para hablar con Lente."
+                    app.lente.core.Terms.PRECONDITION_REQUIRED -> "Acepta los términos de la prueba para hablar con Lente."
+                    else -> "Se perdió la conexión con la computadora."
+                })
             }
         },
     )

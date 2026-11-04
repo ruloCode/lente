@@ -45,6 +45,8 @@ class HubClient(
     private val bearer: suspend () -> String? = { null },
     private val refresh: suspend () -> String? = { null },
     private val signedOut: suspend () -> Unit = {},
+    /** Every answer's status and body, so a 428 `needsTerms` from any data route opens the terms (ship-hackathon 3.1). */
+    private val onAnswer: (Int, String) -> Unit = { _, _ -> },
 ) {
     private val http = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     /** The event stream stays open; the hub's 15 s keep-alive keeps reads under this timeout. */
@@ -62,10 +64,12 @@ class HubClient(
         AuthRetry.header(bearer())?.let { (k, v) -> put(k, v) }
     }
 
-    suspend fun get(path: String): Answer = AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).get().build()) }, signedOut)
+    suspend fun get(path: String): Answer = AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).get().build()) }, signedOut).also(::seen)
 
     suspend fun post(path: String, body: JSONObject? = null): Answer =
-        AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).post((body?.toString() ?: "").toRequestBody(json)).build()) }, signedOut)
+        AuthRetry.run(bearer, refresh, Answer::code, { call(request(path, it).post((body?.toString() ?: "").toRequestBody(json)).build()) }, signedOut).also(::seen)
+
+    private fun seen(a: Answer) { if (a.code == PRECONDITION_REQUIRED) onAnswer(a.code, a.text) }
 
     /**
      * `POST` that accepts an event stream (add-memory-engine 4.1): each named event goes to `onEvent` as
@@ -95,7 +99,7 @@ class HubClient(
                     Answer(0, e.message ?: "no connection")
                 }
             }
-        }, signedOut)
+        }, signedOut).also(::seen)
 
     private suspend fun call(req: Request): Answer = withContext(Dispatchers.IO) {
         try {
@@ -166,6 +170,11 @@ class HubClient(
                         emit(Stream.Unpaired)
                         return@flow
                     }
+                    if (res.code == PRECONDITION_REQUIRED) {
+                        // The terms first: the screen opens, and the stream comes back once they are accepted.
+                        onAnswer(res.code, res.body.string())
+                        throw IOException("the hub asks for the terms first")
+                    }
                     if (!res.isSuccessful) throw IOException("the hub answered ${res.code} on /events")
                     emit(Stream.Open)
                     backoff = FIRST_RETRY_MS
@@ -195,5 +204,6 @@ class HubClient(
     companion object {
         const val FIRST_RETRY_MS = 1_000L
         const val MAX_RETRY_MS = 10_000L
+        const val PRECONDITION_REQUIRED = app.lente.core.Terms.PRECONDITION_REQUIRED
     }
 }

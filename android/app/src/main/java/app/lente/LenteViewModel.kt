@@ -11,6 +11,8 @@ import androidx.lifecycle.viewModelScope
 import app.lente.capture.Capture
 import app.lente.capture.CaptureService
 import app.lente.core.Account
+import app.lente.core.Terms
+import app.lente.core.TermsGate
 import app.lente.core.AskStream
 import app.lente.core.Briefing
 import app.lente.core.ChatJson
@@ -97,8 +99,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     /** The signed-in Google account, when there is one (add-accounts 7.1); a laptop hub needs none. */
     val account = GoogleAccount.of(app)
 
-    /** A client for a hub: the pairing cookie, and the account's bearer with one refresh after a 401. */
-    private fun hubClient(base: String) = HubClient(base, { prefs.cookie }, { account.accessToken() }, { account.refreshAfter401() }, { account.signOut() })
+    /** The preview terms (ship-hackathon 3.1): open while the hub answers 428 `needsTerms` for this account. */
+    val terms = MutableStateFlow(TermsGate())
+
+    /** A client for a hub: the pairing cookie, and the account's bearer with one refresh after a 401; a 428 opens the terms. */
+    private fun hubClient(base: String) = HubClient(base, { prefs.cookie }, { account.accessToken() }, { account.refreshAfter401() }, { signedOutByHub() }, ::termsAnswer)
     private var client: HubClient? = null
     private var stream: Job? = null
 
@@ -139,7 +144,8 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     val hubAddress get() = client?.base ?: prefs.hub
 
     init {
-        prefs.hub?.let { connect(it) }
+        // A signed-in phone with no hub yet follows the cloud hub it signed in to (ship-hackathon 3.1).
+        (prefs.hub ?: BuildConfig.CLOUD_HUB.takeIf { account.signedIn && it.isNotEmpty() }?.also { prefs.hub = it })?.let { connect(it) }
     }
 
     // --- Connection -------------------------------------------------------------------------
@@ -663,8 +669,11 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     fun signIn(activity: Activity) = viewModelScope.launch {
         try {
             account.signIn(activity)
+            // A fresh install signs in to the cloud hub: no address to type, no pairing, no intro.
+            val base = client?.base ?: BuildConfig.CLOUD_HUB.also { prefs.hub = it }
+            prefs.welcomed = true
+            connect(base)
             signedIn.value = true
-            client?.base?.let(::connect)
             loadAccount()
         } catch (e: SignInFailed) {
             say(e.message ?: "No se pudo iniciar sesión.")
@@ -782,8 +791,40 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         if (it.ok) { signOut(); say("Tu cuenta y tu memoria se borraron.") } else failed(it, "borrar tu cuenta")
     }
 
+    /** The hub refused the session and its refresh: the account is gone from the phone. */
+    private fun signedOutByHub() {
+        account.signOut()
+        signedIn.value = false
+        terms.value = Terms.signedOut(terms.value)
+    }
+
+    /** Any hub answer: a 428 `needsTerms` opens the terms screen, and its summary is fetched once. */
+    private fun termsAnswer(code: Int, body: String) {
+        val before = terms.value
+        val after = Terms.answered(before, code, body)
+        if (after == before) return
+        terms.value = after
+        if (!before.needed) viewModelScope.launch { client?.get("/terms")?.takeIf { it.ok }?.let { a -> terms.value = Terms.view(terms.value, a.text) } }
+    }
+
+    /** «Acepto»: the version the hub asked for; accepted, the stream and the screens load again. */
+    fun acceptTerms() {
+        val c = client ?: return
+        if (terms.value.accepting) return
+        terms.value = Terms.accepting(terms.value)
+        viewModelScope.launch {
+            val a = c.post("/terms/accept", Terms.acceptBody(terms.value))
+            terms.value = Terms.accepted(terms.value, a.code, a.text)
+            if (!terms.value.needed) { connect(c.base); loadAccount() }
+        }
+    }
+
+    /** «Borrar ejemplo»: the sample project the hub wrote on the first sign-in; the wearer's own data stays. */
+    fun deleteSample() = post("/sample/delete") { if (it.ok) say("Ejemplo borrado") else failed(it, "borrar el ejemplo") }
+
     fun signOut() {
         account.signOut()
+        terms.value = Terms.signedOut(terms.value)
         signedIn.value = false
         accountInfo.value = null
         devices.value = emptyList()

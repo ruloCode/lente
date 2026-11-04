@@ -510,6 +510,8 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
             SwitchRow("Sesión de invitado", s.guest, vm::setGuest, hint = if (s.guest) app.lente.core.Sight.GUEST else "No guarda audio, fotos ni el día", tag = "set-guest", leading = { RowGlyph(Glyph.Person) })
             Hairline()
             SetRow(Glyph.Trash, "Borrar toda la memoria", danger = true) { open("wipe") }
+            // ship-hackathon 3.1: the sample project the hub writes on the first sign-in goes with one tap; the wearer's own data stays.
+            if (signedIn) { Hairline(); SetRow(Glyph.Trash, "Borrar ejemplo", hint = "El proyecto PROBE de muestra", onClick = vm::deleteSample) }
             if (signedIn) { Hairline(); AccountDataRows(vm, open) }
         }
         Text("Lente guarda el texto; el audio y las fotos, solo con «Guardar audio» y «Guardar fotos» activados. Los precios del gasto son los de lista.", style = Type.caption, color = c.muted, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))

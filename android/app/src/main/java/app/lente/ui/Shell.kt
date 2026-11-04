@@ -64,6 +64,9 @@ import app.lente.Screen
 import app.lente.capture.Capture
 import app.lente.core.RecordChoice
 import app.lente.core.Copy
+import app.lente.core.Opening
+import app.lente.core.Gate
+import app.lente.BuildConfig
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -71,12 +74,23 @@ import kotlinx.coroutines.launch
 fun LenteRoot(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit, askSight: ((Boolean) -> Unit) -> Unit = askMicrophone) {
     val c = Lente.c
     var welcomed by remember { mutableStateOf(vm.prefs.welcomed && vm.prefs.hub != null) }
+    /** «Usar Lente en mi computadora» on the sign-in screen: the intro with its pairing step instead. */
+    var computer by remember { mutableStateOf(false) }
     val link by vm.link.collectAsState()
+    val signedIn by vm.signedIn.collectAsState()
+    val terms by vm.terms.collectAsState()
+    // ship-hackathon 3.1: a build with sign-in opens on «Iniciar sesión con Google», never on pairing; then the terms.
+    val gate = Opening.gate(
+        configured = vm.account.configured && !computer, signedIn = signedIn, hub = vm.hubAddress, cloudHub = BuildConfig.CLOUD_HUB,
+        // Signing in marks the intro done (prefs), which this screen's own flag learns on the next sign-in change.
+        welcomed = welcomed || (signedIn && vm.prefs.welcomed && vm.prefs.hub != null), connected = link != Link.None, terms = terms.needed,
+    )
     Box(Modifier.fillMaxSize().background(c.bg).semantics { testTagsAsResourceId = true }) {
-        if (!welcomed || link == Link.None) {
-            Intro(vm, onDone = { vm.prefs.welcomed = true; welcomed = true })
-        } else {
-            Shell(vm, askMicrophone, askSight, replayIntro = { vm.prefs.welcomed = false; welcomed = false })
+        when (gate) {
+            Gate.SignIn -> SignInScreen(vm, useComputer = { computer = true })
+            Gate.Terms -> TermsScreen(vm)
+            Gate.Intro -> Intro(vm, onDone = { vm.prefs.welcomed = true; welcomed = true })
+            Gate.App -> Shell(vm, askMicrophone, askSight, replayIntro = { vm.prefs.welcomed = false; welcomed = false })
         }
     }
 }

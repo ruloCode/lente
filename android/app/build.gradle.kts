@@ -21,6 +21,8 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"${prop("lente.supabaseUrl")}\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"${prop("lente.supabasePublishableKey")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${prop("lente.googleWebClientId")}\"")
+        // ship-hackathon 3.1: the hub a fresh install signs in to (the public Modal app), never asked for.
+        buildConfigField("String", "CLOUD_HUB", "\"${prop("lente.cloudHub").ifEmpty { "https://drew-lizcano--lente-hub-hub.us-east.modal.run" }}\"")
     }
     buildTypes {
         release {
