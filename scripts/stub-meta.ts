@@ -158,6 +158,11 @@ export function startStubMeta(): Promise<StubMeta> {
         const text = id ? `@answer\n${STUB_ASK_ANSWER} [[${id}]]` : "@none";
         const cut = text.length - (id ? id.length + 3 : 2);
         sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text.slice(0, 9) }, { type: "response.output_text.delta", delta: text.slice(9, cut) }, { type: "response.output_text.delta", delta: text.slice(cut) }, { type: "response.completed", response: { usage } }]);
+      } else if (req.url === "/v1/responses" && /eyes of a person who is blind|You read aloud for a person/.test(body)) {
+        // Ver (add-sight-mode): a description for the first live frame, "=" once a previous one exists, a reading, or a look.
+        const text = body.includes("You read aloud") ? STUB_SIGHT_READ : body.includes("Previous description") ? "=" : body.includes("Answer their question") ? STUB_SIGHT_LOOK : STUB_SIGHT_LIVE;
+        const usage = { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20 };
+        sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text }, { type: "response.completed", response: { usage } }]);
       } else if (req.url === "/v1/responses") {
         const usage = { input_tokens: 120, input_tokens_details: { cached_tokens: 0 }, output_tokens: 12 };
         sse(res, [
@@ -194,6 +199,10 @@ function chatReply(body: string): string {
   const id = String(req.messages?.[0]?.content ?? "").match(/\n\[([A-Z]\d+(?:\.t\d+)?)\]/)?.[1];
   return JSON.stringify(id ? { found: true, answer: STUB_ASK_ANSWER, sources: [id] } : { found: false, answer: "", sources: [] });
 }
+
+export const STUB_SIGHT_LIVE = "Al frente hay una hoja que dice PROBE salida. A tu derecha, una taza.";
+export const STUB_SIGHT_LOOK = "Tienes en la mano una tarjeta PROBE de color azul.";
+export const STUB_SIGHT_READ = "PROBE título. Este es el primer párrafo de prueba. Este es el segundo.";
 
 export const STUB_ASK_ANSWER = "Te preguntaron si la beta sale el viernes; respondiste que sí, si QA aprueba el jueves.";
 
@@ -235,8 +244,10 @@ function voiceDecision(input: VoiceInput): { commentary?: string; call?: { name:
     if (name === "delegate") return { text: ["Lo dejé en Tareas, esperando tu aprobación."] };
     if (name === "start_recording") return { text: ["Te abrí la hoja de grabación; toca Grabar cuando quieras."] };
     if (name === "list_tasks") return { text: [`Tienes ${out.total ?? 0} tareas abiertas.`] };
+    if (name === "look") return { text: [String(out.seen ?? out.error ?? "No pude ver.")] };
     return { text: ["Listo."] };
   }
+  if (/en la mano|leeme|que hay frente/.test(user)) return { commentary: "Déjame ver.", call: { name: "look", args: { question: user, mode: /leeme/.test(user) ? "read" : "describe" } } };
   if (/agrega|anota/.test(user)) {
     const args = /llame a ana/.test(user) ? { title: "Llamar a Ana", who: "me", due: "viernes" } : { title: user.replace(/^.*?(agrega|anota)( que)?\s*/, "").slice(0, 60) || "PROBE tarea", who: "me" };
     return { commentary: "Lo anoto en tu lista.", call: { name: "add_task", args } };

@@ -193,3 +193,15 @@ test("cancelling mid-answer emits nothing more and runs no tool", async () => {
   assert.equal(spoken.length, 1);
   assert.equal(toolRan, false);
 });
+
+test("look is a voice tool, and the instructions say to look, read whole, and never guide movement or identify people", async () => {
+  const { VOICE_FUNCTIONS: fns, voiceInstructions: instr } = await import("../src/voice-agent.ts");
+  const look = fns.find((f) => f.name === "look");
+  assert.ok(look);
+  assert.deepEqual((look.parameters as any).required, ["question"]);
+  const text = instr({ now: Date.UTC(2026, 10, 4), names: [], timeZone: "America/Bogota" } as any);
+  assert.match(text, /usa look/);
+  assert.match(text, /léela completa/);
+  assert.match(text, /Nunca le digas a la persona que se mueva/);
+  assert.match(text, /nunca identifiques a nadie/);
+});

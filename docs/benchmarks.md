@@ -395,3 +395,18 @@ The first text missed the 1.2 s target, as in 3.5: the time goes to the model be
 ### Media storage per recorded hour (add-media-archive 4.3, partly)
 
 The 2-hour Solo grabar run kept the speech audio of every closed segment as ADPCM: 188 objects, **36 MB for 96.6 minutes of audio received**, about **22 MB per recorded hour**. That is below the 28.8 MB an hour of continuous speech takes (1.2), because the silence gate keeps only speech. The run had no frames: the clip emulator sends no photos. Battery with frames on and off is still to measure on the clip, on battery.
+
+## Sight mode (add-sight-mode) — 2026-11-04
+
+`modal app logs lente-hub -f </dev/null | node scripts/bench-sight.ts --seconds 120 --skip 5 --label baseline` (task 1.2). The bench reads the hub's own timing lines (`[live] … ms` per model call, `[stages] live …` per description shown) and stamps them as they arrive; it keeps lengths and times only. The real clip (XIAO ESP32-S3 Sense, XGA JPEG, about 33 KB a frame) connected to the hub on Modal over home Wi-Fi, looking at the owner's desk; the owner's Samsung showing the descriptions. Model: Muse Spark 1.3, minimal effort, streamed over the Responses API, with the meeting's `LIVE_PROMPT` (before any sight change). One run of 125 s.
+
+| Measure (baseline, `LIVE_PROMPT`) | n | p50 | p90 | Max |
+|---|---|---|---|---|
+| Live: model call | 36 | 2.30 s | 5.82 s | 11.80 s |
+| Live: frame on the hub → shown on the phone | 35 | 3.36 s | 6.84 s | 12.11 s |
+| Live: between descriptions shown | 34 | 2.76 s | 6.09 s | 12.51 s |
+
+What this says:
+- A description reaches the phone about 3.4 s after its frame at the median. The model call is most of it (2.3 s); the rest is the frame waiting while the previous call finishes.
+- The tail is long: one in ten descriptions took over 6.8 s, the slowest 12 s. For someone who cannot see, a description of what was there 10 s ago is worse than silence, so Ver drops any description that arrives more than 6 s after its frame (`SIGHT_STALE_MS`) and logs it as `stale`.
+- The meeting prompt never stays silent (0 of 36 unchanged): it always says something, even when the view did not change. Ver's prompt answers `=` then, and nothing is spoken.

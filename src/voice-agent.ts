@@ -198,6 +198,8 @@ export function voiceInstructions(ctx: VoiceContext): string {
     "Antes de llamar una herramienta puedes decir una frase corta de lo que vas a revisar («Lo busco en tus reuniones»), nunca que ya lo hiciste.",
     "Para completar, borrar o reasignar una tarea usa su id (t1, t2…) de list_tasks o add_task. complete_task y delete_task no actúan: devuelven una pregunta de confirmación que debes hacer tal cual.",
     "start_recording solo abre la hoja de grabación en el teléfono; la persona toca Grabar. delegate deja el trabajo como tarea para Lente; no se ejecuta nada sin su aprobación.",
+    "Cuando pregunta por lo que tiene enfrente o en la mano, por un billete, un letrero o un color, o pide que le leas algo, usa look (mode read para leer un texto) y di su respuesta tal cual; si es una lectura, léela completa aunque pase de tres frases. No recuerdes de memoria lo que hay frente a la persona: mira.",
+    "Nunca le digas a la persona que se mueva, cruce, avance o espere, ni que un camino es seguro, y nunca identifiques a nadie por su cara.",
     "Nunca envías correos ni mensajes ni prometes hacerlo.",
     ctx.projects?.length ? `Proyectos activos: ${ctx.projects.slice(0, MAX_INSTRUCTION_PROJECTS).map((p) => `${p.id} ${p.name}`).join("; ")}.` : "",
   ].filter(Boolean).join("\n");
@@ -238,6 +240,11 @@ export const VOICE_FUNCTIONS: FunctionSpec[] = [
     name: "start_recording",
     description: "Abre la hoja de grabación en el teléfono con el proyecto y la cámara elegidos. No graba: la persona toca Grabar.",
     parameters: obj({ project: { type: "string", description: "Id de proyecto (p1…)" }, camera: { type: "boolean" } }),
+  },
+  {
+    name: "look",
+    description: "Mira por la cámara de las gafas (o del teléfono) ahora y responde la pregunta de la persona sobre lo que hay enfrente. mode read devuelve todo el texto que se ve.",
+    parameters: obj({ question: { type: "string", description: "La pregunta, como la dijo la persona («¿qué tengo en la mano?»)" }, mode: { type: "string", enum: ["describe", "read"] } }, ["question"]),
   },
   {
     name: "delegate",

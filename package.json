@@ -20,6 +20,7 @@
     "bench:cache": "node --env-file-if-exists=.env scripts/bench-cache.ts",
     "bench:help": "node --env-file-if-exists=.env scripts/bench-help.ts",
     "bench:live-view": "node scripts/bench-live-view.ts",
+    "bench:sight": "node scripts/bench-sight.ts",
     "bench:voice": "node --env-file-if-exists=.env scripts/bench-voice.ts",
     "test": "node --test test/*.test.ts",
     "gen:fixtures": "node scripts/gen-fixtures-header.ts",

@@ -103,3 +103,19 @@ test("ask_memory passes the project and returns chips; start_recording opens the
   assert.match(JSON.stringify(d.result), /nothing has run/);
   assert.ok(!calls.some((c) => c.startsWith("done:") || c.startsWith("remove:")), "delegating runs nothing");
 });
+
+test("look: describe and read reach the backend; no camera on the hub is an error the agent can say", async () => {
+  const { b } = backend();
+  const seen: string[] = [];
+  b.look = async (q, mode) => (seen.push(`${mode}:${q}`), { ok: true, text: "PROBE una taza azul" });
+  const h = new VoiceTools(b).handlers();
+  const out = await h.look({ question: "¿qué tengo en la mano?" });
+  assert.deepEqual(out.result, { ok: true, seen: "PROBE una taza azul" });
+  assert.equal(out.label, "Mirando por la cámara");
+  await h.look({ question: "léeme este papel", mode: "read" });
+  assert.deepEqual(seen, ["describe:¿qué tengo en la mano?", "read:léeme este papel"]);
+  b.look = async () => ({ ok: false, text: "No hay cámara conectada." });
+  assert.deepEqual((await h.look({ question: "¿qué ves?" })).result, { error: "No hay cámara conectada." });
+  delete b.look;
+  assert.deepEqual((await new VoiceTools(b).handlers().look({ question: "¿qué ves?" })).result, { error: "no camera on this hub" });
+});

@@ -41,6 +41,8 @@ export interface VoiceBackend {
   remove(id: string): Promise<boolean>;
   reassign(id: string, who: TaskOwner, otherName?: string): Promise<boolean>;
   openRecordSheet(choice: { projectId?: string; projectName?: string; camera: boolean }): void;
+  /** Ver (add-sight-mode): a fresh frame from the glasses or the phone, and the answer to the question about it. */
+  look?(question: string, mode: "describe" | "read"): Promise<{ ok: boolean; text: string }>;
 }
 
 export interface PendingAction {
@@ -194,6 +196,13 @@ export class VoiceTools {
         const camera = args.camera === true;
         this.backend.openRecordSheet({ ...(project ? { projectId: project.id, projectName: project.name } : {}), camera });
         return { result: { ok: true, opened: "record sheet", recording: false, project: project?.name ?? null, camera, note: "nothing records until the wearer taps Grabar" }, label: "Hoja de grabación abierta" };
+      },
+      look: async (args) => {
+        const question = str(args.question, 300) || "¿Qué hay frente a mí?";
+        const mode = args.mode === "read" ? "read" : "describe";
+        if (!this.backend.look) return { result: { error: "no camera on this hub" }, label: "Mirando" };
+        const seen = await this.backend.look(question, mode);
+        return { result: seen.ok ? { ok: true, seen: seen.text } : { error: seen.text }, label: mode === "read" ? "Leyendo lo que ves" : "Mirando por la cámara" };
       },
       delegate: async (args) => {
         const instruction = str(args.instruction, MAX_TITLE_CHARS - 20);

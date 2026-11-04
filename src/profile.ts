@@ -7,7 +7,7 @@ import { parseNames } from "./addressing.ts";
 import { DEFAULT_SETTINGS, type NotificationSettings, parseSettings } from "./notifications.ts";
 
 /** Asistir: cues on. Solo grabar: record the day as text and learn from it, no real-time cues. */
-export type AssistMode = "assist" | "record";
+export type AssistMode = "assist" | "record" | "sight";
 
 export const MEDIA_RETENTIONS = [7, 30, 90] as const;
 export type MediaRetention = (typeof MEDIA_RETENTIONS)[number];
@@ -34,7 +34,7 @@ export class ProfileStore {
       this.mediaRetentionDays = MEDIA_RETENTIONS.includes(saved.mediaRetentionDays as MediaRetention) ? (saved.mediaRetentionDays as MediaRetention) : 30;
       this.notifications = parseSettings(saved.notifications);
       this.everyQuestion = saved.everyQuestion === true;
-      this.assistMode = saved.assistMode === "record" ? "record" : "assist";
+      this.assistMode = saved.assistMode === "record" || saved.assistMode === "sight" ? saved.assistMode : "assist";
       if (Array.isArray(saved.names)) this.names = parseNames(saved.names.filter((n) => typeof n === "string").join(","));
     } catch (error) {
       console.error(`[profile] could not read ${file}: ${(error as Error).message}`);

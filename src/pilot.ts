@@ -99,6 +99,7 @@ import { HELP_REFUSALS, type HelpOutcome, requestHelp } from "./help.ts";
 import { GATE_DEFAULTS, SilenceGate } from "./silence-gate.ts";
 import { IDLE_PAUSE_MIN, IdleWatch } from "./idle-pause.ts";
 import { NarrationGuard } from "./self-voice.ts";
+import { DEFAULT_LOOK_QUESTION, LOOK_DESCRIBE_MAX_CHARS, LOOK_READ_MAX_CHARS, parseSight, SIGHT_LIVE_PROMPT, SIGHT_READ_PROMPT, SIGHT_STALE_MS, sightLookPrompt } from "./sight.ts";
 import { type UsageSnapshot, UsageMeter, WEB_SEARCH_MODEL } from "./usage-meter.ts";
 
 const DEVICE_PORT = Number(process.env.PILOT_DEVICE_PORT ?? 7070);
@@ -110,6 +111,12 @@ const FRAME_MS = 80;
 const FRAME_BYTES = (16000 * 2 * FRAME_MS) / 1000;
 /** Live view: wait between a frame arriving and asking for the next; frames show as they come, the model describes the newest. */
 const LIVE_FRAME_GAP_MS = 600;
+/** Ver (add-sight-mode): a look reuses a frame this fresh instead of asking for a new one. */
+const LOOK_FRESH_MS = 1_500;
+/** A look gives up when no frame arrived by then. */
+const LOOK_TIMEOUT_MS = 8_000;
+/** «Sesión de invitado» turns itself off after this long. */
+const GUEST_MS = 3 * 60 * 60 * 1000;
 /** Days of the record (what was heard and seen outside meetings) the chat with Lente remembers. */
 const ASK_DAYS = 7;
 /**
@@ -576,8 +583,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     names: profile.names,
     /** Testing: cue on every question, not only those aimed at the wearer. */
     everyQuestion: profile.everyQuestion,
-    /** Asistir (cues) or Solo grabar (record and learn, no cues). */
+    /** Asistir (cues), Solo grabar (record and learn, no cues) or Ver (describe aloud, add-sight-mode). */
     assistMode: profile.assistMode,
+    /** «Sesión de invitado»: nothing is kept (no media, day entries, chat or memory) until it ends. */
+    guest: false,
     /** Speaker label of the wearer in this transcription session, once known. */
     wearer: "",
     /** Why the last clip was refused (old firmware, bad hello); cleared by the next good hello. */
@@ -593,7 +602,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   // can say their accepted terms describe media, so not yet.
   const mediaStore: MediaStore | undefined = sealed ? sealed.sealed.media : new FileMedia(join(dataDir, "media"));
   const isOwner = userId === LOCAL_OWNER || (process.env.LENTE_OWNER_USER_ID !== undefined && userId === process.env.LENTE_OWNER_USER_ID);
-  const mediaOn = (kind: "audio" | "photos") => Boolean(mediaStore) && Date.now() >= mediaPausedUntil && mediaAllowed(kind, { env: process.env.LENTE_MEDIA, switches: profile.media, isOwner, acceptedMediaTerms: false });
+  /** «Sesión de invitado» (add-sight-mode): until this moment nothing is kept. */
+  let guestUntil = 0;
+  const guest = () => Date.now() < guestUntil;
+  const mediaOn = (kind: "audio" | "photos") => !guest() && Boolean(mediaStore) && Date.now() >= mediaPausedUntil && mediaAllowed(kind, { env: process.env.LENTE_MEDIA, switches: profile.media, isOwner, acceptedMediaTerms: false });
   const segmentAudio = new SegmentAudio();
   const keyframes = new KeyframePicker();
   /** Media this runtime kept, as `kind:ref`, so chips can say what can be played. */
@@ -683,7 +695,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   /** Broadcast and keep it in the day's record. */
   function record(entry: DayEntry, extra: object = {}): void {
-    day.add(entry);
+    if (!guest()) day.add(entry);
     broadcast({ ...entry, ...extra });
   }
 
@@ -700,7 +712,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const id = `s${++stagedSeq}`;
     entry.stages = { ...entry.stages, sent: Date.now() };
     broadcast({ ...entry, ...extra, id });
-    if (!clients.size) return void day.add(entry);
+    if (!clients.size) return void (guest() || day.add(entry));
     awaitingAck.set(id, { entry, timer: setTimeout(() => keepStaged(id), PHONE_ACK_WAIT_MS) });
   }
 
@@ -714,7 +726,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       entry.stages = { ...entry.stages, phone: phoneAt };
       broadcast({ kind: "stages", id, stages: entry.stages });
     }
-    day.add(entry);
+    if (!guest()) day.add(entry);
     if (entry.stages) console.log(`[stages] ${entry.kind}${"label" in entry ? ` ${entry.label}` : ""} · ${formatStages(entry.stages)} ms`);
   }
 
@@ -851,11 +863,11 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const speaker = await labelOf(turn);
     const now = spokeAt ?? Date.now();
     const asked: AddressTurn = { speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
-    if (profile.assistMode === "record") {
-      // Solo grabar: the free rules still mark questions for the wearer; no model check, no cue.
+    if (profile.assistMode !== "assist") {
+      // Solo grabar and Ver: the free rules still mark questions for the wearer; no model check, no cue.
       const d = isAddressed(asked, earlier, wearerTracker.wearer(), profile.names);
       const verdict = d.verdict === "addressed" ? "addressed" : "not-addressed";
-      console.log(`[address] ${verdict} · ${d.rule} · record only`);
+      console.log(`[address] ${verdict} · ${d.rule} · ${profile.assistMode === "sight" ? "sight" : "record only"}`);
       broadcast({ kind: "address", turnId: turn.turnId, verdict, rule: d.rule });
       if (verdict === "addressed") flagAddressed(turn.turnId);
       return;
@@ -1587,8 +1599,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const started = performance.now();
     try {
       if (!key) return; // the frame is already on the phones; nothing describes it
+      const sight = profile.assistMode === "sight";
       const reply = await callSpark([
-        { role: "system", content: LIVE_PROMPT },
+        { role: "system", content: sight ? SIGHT_LIVE_PROMPT : LIVE_PROMPT },
         {
           role: "user",
           content: [
@@ -1598,7 +1611,16 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         },
       ], { label: "live", stream: true });
       const ms = Math.round(performance.now() - started);
-      const text = toCue(reply.text, 120);
+      // Ver says nothing when the view did not change (the model answers "="); the meeting view keeps one short line.
+      const text = sight ? parseSight(reply.text) : toCue(reply.text, 120);
+      if (sight && !text) {
+        console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · unchanged`);
+        return;
+      }
+      if (sight && Date.now() - heardAt > SIGHT_STALE_MS) {
+        console.log(`[live] ${ms} ms · ${Math.round(jpeg.length / 1024)} KB · stale, not said (${Date.now() - heardAt} ms after its frame)`);
+        return;
+      }
       if (text && text !== lastLive) {
         lastLive = text;
         const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
@@ -1622,6 +1644,67 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     }
   }
 
+  // --- Ver: a look by tap or by voice (add-sight-mode) --------------------------------------------------
+
+  /** The newest frame from the device, live or still. */
+  let lastFrame: { jpeg: Buffer; at: number } | undefined;
+  /** Looks waiting for the next frame. */
+  const frameWaiters: ((jpeg: Buffer) => void)[] = [];
+
+  /** A frame no older than LOOK_FRESH_MS, or a new still from the device; undefined with no device or no answer. */
+  async function freshFrame(): Promise<Buffer | "no-device" | "timeout"> {
+    if (lastFrame && Date.now() - lastFrame.at <= LOOK_FRESH_MS) return lastFrame.jpeg;
+    if (!device) return "no-device";
+    if (status.mode === "mic") setMode("camera");
+    const frame = new Promise<Buffer>((resolve) => frameWaiters.push(resolve));
+    // With live reads on, the next live frame comes on its own; otherwise ask for a still.
+    if (!status.live) device.write("P");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => (timer = setTimeout(() => resolve("timeout"), LOOK_TIMEOUT_MS)));
+    const out = await Promise.race([frame, timeout]);
+    clearTimeout(timer);
+    return out;
+  }
+
+  /**
+   * One look: the wearer's question about a fresh frame, answered by Muse Spark 1.3 with the sight prompt.
+   * `read` returns the frame's text. Shown and spoken on the phone as a «VER» card; returned for the voice agent.
+   */
+  async function look(question: string, mode: "describe" | "read"): Promise<{ ok: boolean; text: string }> {
+    if (!key) return { ok: false, text: "Lente no tiene un modelo configurado." };
+    const heardAt = Date.now();
+    const frame = await freshFrame();
+    if (frame === "no-device") return { ok: false, text: "No hay cámara conectada." };
+    if (frame === "timeout") return { ok: false, text: "No pude ver: la cámara no respondió." };
+    const photo = `data:image/jpeg;base64,${frame.toString("base64")}`;
+    const started = performance.now();
+    try {
+      const reply = await callSpark([
+        { role: "system", content: mode === "read" ? SIGHT_READ_PROMPT : sightLookPrompt(question) },
+        { role: "user", content: [{ type: "text", text: question }, { type: "image_url", image_url: { url: photo } }] },
+      ], { label: "look", stream: true, maxTokens: mode === "read" ? 900 : 300 });
+      const ms = Math.round(performance.now() - started);
+      const text = parseSight(reply.text, mode === "read" ? LOOK_READ_MAX_CHARS : LOOK_DESCRIBE_MAX_CHARS) ?? "No veo nada claro. Acerca la cámara o busca más luz.";
+      const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
+      recordStaged({ at: Date.now(), kind: "cue", label: "VER", text, ms, stages }, { photo });
+      console.log(`[look] ${ms} ms · ${Math.round(frame.length / 1024)} KB · ${mode} · ${said(text)}`);
+      return { ok: true, text };
+    } catch (error) {
+      console.error(`[look] failed: ${(error as Error).message.slice(0, 200)}`);
+      return { ok: false, text: "No pude ver: el modelo no respondió. Intenta otra vez." };
+    }
+  }
+
+  function setGuest(on: boolean): void {
+    guestUntil = on ? Date.now() + GUEST_MS : 0;
+    setStatus({ guest: on });
+    console.log(`[guest] ${on ? "on: nothing is kept" : "off"}`);
+  }
+
+  every(() => {
+    if (status.guest && !guest()) setGuest(false);
+  }, 60_000);
+
   // --- Controls from the phone ---------------------------------------------------------------------
 
   function setMode(mode: Mode): void {
@@ -1640,12 +1723,22 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     if (on) requestLiveFrame();
   }
 
+  /** Whether live reads were on before Ver turned them on, so leaving Ver puts them back. */
+  let liveBeforeSight = false;
+
   function setAssistMode(mode: AssistMode): void {
     if (mode === profile.assistMode) return;
+    const leavingSight = profile.assistMode === "sight";
     profile.setAssistMode(mode);
     setStatus({ assistMode: mode });
     if (mode === "assist" && current?.auto) void endMeeting("mode");
-    console.log(`[mode] ${mode === "assist" ? "Asistir" : "Solo grabar"}`);
+    if (mode === "sight") {
+      // Ver: the camera on and live reads with the sight prompt, from a clean slate.
+      liveBeforeSight = status.live;
+      if (status.live) setLive(false);
+      setLive(true);
+    } else if (leavingSight && !liveBeforeSight) setLive(false);
+    console.log(`[mode] ${mode === "assist" ? "Asistir" : mode === "record" ? "Solo grabar" : "Ver"}`);
   }
 
   function setEveryQuestion(on: boolean): void {
@@ -1911,7 +2004,12 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         } else if (frame.type === "J") {
           const jpeg = Buffer.from(frame.payload);
           keepVideoFrame(jpeg, Date.now());
+          lastFrame = { jpeg, at: Date.now() };
+          // A look in Ver waits for this frame; it takes it instead of the meeting's «Mirar».
+          const waiting = frameWaiters.splice(0);
+          for (const resolve of waiting) resolve(jpeg);
           if (status.live) onLiveFrame(jpeg, Date.now());
+          else if (waiting.length) console.log(`[clip] photo ${Math.round(jpeg.length / 1024)} KB for a look`);
           else {
             console.log(`[clip] photo ${Math.round(jpeg.length / 1024)} KB`);
             void onScreen(jpeg, Date.now());
@@ -2177,7 +2275,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   };
 
   const ACTIONS: Record<string, () => void> = {
-    "/look": () => device?.write("P"),
+    // In Ver a tap looks with the sight prompt (and works while live reads run); otherwise «Mirar» as before.
+    // A failed look is still said out loud: someone who can't see the screen needs to hear why.
+    "/look": () => (profile.assistMode === "sight" ? void look(DEFAULT_LOOK_QUESTION, "describe").then((r) => r.ok || broadcast({ kind: "cue", label: "VER", text: r.text })) : device?.write("P")),
     "/live/on": () => setLive(true),
     "/live/off": () => setLive(false),
     "/mode/camera": () => setMode("camera"),
@@ -2190,6 +2290,9 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     "/cues/addressed": () => setEveryQuestion(false),
     "/assist-mode/assist": () => setAssistMode("assist"),
     "/assist-mode/record": () => setAssistMode("record"),
+    "/assist-mode/sight": () => setAssistMode("sight"),
+    "/guest/on": () => setGuest(true),
+    "/guest/off": () => setGuest(false),
     // The recording sheet's «Con qué» (add-home-dock): the phone keeps the clip from taking over, «any» lets it.
     "/device/prefer/phone": () => { devicePreference = "phone"; broadcast(statusEvent()); },
     "/device/prefer/any": () => { devicePreference = "any"; broadcast(statusEvent()); },
@@ -2237,6 +2340,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       return ok;
     },
     openRecordSheet: openSheet,
+    look: (question, mode) => look(question, mode),
     // Fast recall (add-memory-engine 5.3): ask_memory returns lines the voice model answers from.
     ...(recall ? { lines: async (question: string, projectId: string | undefined, filters: { when?: string; person?: string }) => {
       const found = await voiceRecall({ runtime: recall, text: question, ...filters, ...(projectId ? { projectId } : {}), projects: (await projects.list()).map((p) => ({ id: p.id, name: p.name })), now: Date.now(), timeZone: TIME_ZONE });
@@ -2269,7 +2373,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       backend: voiceBackend,
       ...(voiceRecallDeps ? { recall: voiceRecallDeps } : {}),
       narration,
-      chats,
+      // A guest session keeps no chat lines either (add-sight-mode).
+      chats: { add: (lines) => (guest() ? undefined : chats.add(lines)), recent: (limit, maxLines) => chats.recent(limit, maxLines) },
       names: () => profile.names,
       timeZone: TIME_ZONE,
       clip: () => {
