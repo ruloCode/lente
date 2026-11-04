@@ -496,3 +496,13 @@ What this says:
 - That is slower than the default voice's first sentence (2,150 ms p50, 2026-11-02).
 - Run B answered 5 of 6 turns. Its second «¿Cómo se dice tenedor…?» was dropped as Lente's own echo: round 1 had said «Te digo cómo se dice tenedor» less than 30 s before, inside the hub-wide `NarrationGuard` window. The bench caused this by repeating one question.
 - An earlier run, before the hub logged the error, answered 4 of 6: one echo drop and two `model-error`s whose cause was not recorded. The voice log line now carries the error.
+
+### The placement, once (task 2.3)
+
+`scripts/bench-voice.ts 1 --persona coach --mode placement` sends `mode: "placement"`, four synthetic pt-BR answers (`say -v Luciana`, 73 words, written for the bench at about A2), and then «Para.» (Paulina). It is one run (n = 1), to check that the path works on the real models. It is not the agreement bench (task 3.4).
+- The tutor asked one short question in Portuguese per turn: «O que você faz de manhã?», «O que aconteceu ontem à noite?», «Você prefere café ou chá?», «Você gosta da sua cidade?».
+- The estimate: B1, confidence medium. Every quote kept was the learner's own words (vocabulary «equipe», «cozinhei», «viajar»; grammar «eu começo cedo», «eu fui», «tive muito trabalho»), and there were three plan steps.
+- Measured from the transcription's spans: 171 words per minute while speaking, 860 ms median time to start answering, 18.3 words per answer.
+- The closing line came 8,980 ms after the end of «Para.»: «Tu nivel estimado de portugués es B1, con seguridad media. Tienes palabras útiles del día a día y del trabajo, suficientes para comunicarte. No es un examen oficial.» That time is two agent steps plus the estimate call.
+- Before the call, Spark said the tool's name aloud («Llamo a finishplacement…»). The tutor's instructions now forbid naming tools, and that fix has not been re-run.
+- The band is above what the answers were written at (about A2). The agreement bench (3.4) decides whether a band is shown alone or as a range.

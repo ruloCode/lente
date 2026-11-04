@@ -15,6 +15,7 @@
 //   --fast     run the hub with LENTE_RECALL=fast (add-memory-engine 5.4: before and after)
 //   --persona coach   the Portuguese tutor (add-language-coach): Spanish questions and one Portuguese
 //              repeat in a pt-BR voice; prints each reply with its language (synthetic text only)
+//   --persona coach --mode placement   three synthetic pt-BR answers, then «Para»; prints the estimate
 // Prints counts and timings only; the audio and the results stay in results/ (git-ignored).
 
 import { execFileSync, spawn } from "node:child_process";
@@ -61,11 +62,20 @@ const COACH_QUESTIONS: { kind: string; text: string; voice?: string }[] = [
 
 const args = process.argv.slice(2);
 const coach = args.includes("--persona") && args[args.indexOf("--persona") + 1] === "coach";
+const placementMode = coach && args.includes("--mode") && args[args.indexOf("--mode") + 1] === "placement";
+/** A synthetic A2-ish learner (add-language-coach 2.3), written for this bench. */
+const PLACEMENT_ANSWERS: { kind: string; text: string; voice?: string }[] = [
+  { kind: "answer", text: "Meu nome é Raul, eu sou da Colômbia e moro em Bogotá com a minha família há muitos anos.", voice: "Luciana" },
+  { kind: "answer", text: "Eu trabalho com software todos os dias. Eu começo cedo, tomo um café e depois falo com a minha equipe.", voice: "Luciana" },
+  { kind: "answer", text: "Ontem eu fui ao mercado de manhã, comprei frutas e pão, e depois eu cozinhei o almoço para todos.", voice: "Luciana" },
+  { kind: "answer", text: "Eu gosto de viajar, mas este ano eu não viajei muito porque tive muito trabalho.", voice: "Luciana" },
+  { kind: "stop", text: "Para." },
+];
 const useStub = args.includes("--stub");
 const fastRecall = args.includes("--fast");
 const memoryDays = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 0;
 if (args.includes("--memory")) QUESTIONS.splice(0, QUESTIONS.length, ...MEMORY_QUESTIONS);
-if (coach) QUESTIONS.splice(0, QUESTIONS.length, ...COACH_QUESTIONS);
+if (coach) QUESTIONS.splice(0, QUESTIONS.length, ...(placementMode ? PLACEMENT_ANSWERS : COACH_QUESTIONS));
 const rounds = Number(args.find((a, i) => /^\d+$/.test(a) && args[i - 1] !== "--days") ?? 2);
 if (!useStub && !process.env.MODEL_API_KEY) {
   console.error("MODEL_API_KEY is not set: run with node --env-file=.env, or pass --stub");
@@ -157,7 +167,7 @@ for (let round = 0; round < rounds; round++) {
     ws.addEventListener("open", () => ok());
     ws.addEventListener("error", () => fail(new Error("the voice socket did not open")));
   });
-  if (coach) ws.send(JSON.stringify({ type: "start", persona: "coach", lang: "pt", mode: "tutor" }));
+  if (coach) ws.send(JSON.stringify({ type: "start", persona: "coach", lang: "pt", mode: placementMode ? "placement" : "tutor" }));
   // Silence at real time between questions, as a phone in a quiet room would send.
   let queue: Buffer[] = [];
   let sentAt = 0;
@@ -218,6 +228,11 @@ for (let round = 0; round < rounds; round++) {
       for (const x of ofTurn) {
         if (x.e.type === "pronounce") console.log(`    pronounce «${x.e.text}» = «${x.e.meaning}» [${x.e.lang}]`);
         if (x.e.type === "reply") console.log(`    reply [${x.e.lang ?? "-"}] ${x.e.text}`);
+      }
+      for (const x of mine) if (x.e.type === "placement") {
+        const { line, ...rest } = x.e;
+        console.log(`    placement ${JSON.stringify(rest)}`);
+        console.log(`    placement line: ${line} (${Math.round(x.at - end)} ms after the end of speech)`);
       }
     }
     console.log(`round ${round + 1} · ${q.kind.padEnd(10)} heard ${formatMs(row.heardMs)} · first text ${formatMs(row.firstTextMs)} · first answer ${formatMs(row.firstAnswerMs)} · done ${formatMs(row.doneMs)} · tools ${row.tools.join(",") || "none"} · ${row.partials} partials · US$ ${usd.toFixed(5)} · ${row.stopped ?? "no answer"}`);

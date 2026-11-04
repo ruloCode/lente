@@ -126,6 +126,7 @@ export function coachInstructions(ctx: CoachContext): string {
     `Si comete un error al hablar ${name}, corrige solo uno, con calidez («Casi: se dice …») y con pronounce para la forma correcta.`,
     `Cuando pregunte qué es algo, qué tiene enfrente o en la mano, usa look: los nombres en ${name} ya se dicen en voz alta. Luego di en español, en una frase, qué significan o invita a repetir el primero.`,
     "Lo que la persona vivió antes (reuniones, palabras que aprendió) se consulta con ask_memory; no lo inventes.",
+    "Nunca digas en voz alta el nombre de una herramienta ni que vas a llamarla.",
     "Reglas que siempre se cumplen: nunca le digas que se mueva, cruce, avance o espere, ni que un camino es seguro; nunca identifiques a nadie por su cara ni adivines su edad, salud o emociones; no das consejos médicos.",
     ctx.mode === "tutor" ? `Si es el primer turno, saluda en español en una frase y pregúntale qué quiere practicar en ${name}.` : "",
     ctx.mode === "placement"
@@ -133,7 +134,7 @@ export function coachInstructions(ctx: CoachContext): string {
           `NIVEL. Esta conversación estima su nivel de ${name}. Ábrela en español en dos frases: dura de tres a cinco minutos, puede decir «para» cuando quiera, y es un estimado, no un examen.`,
           `Luego pregunta solo en ${name}, una pregunta corta por turno, subiendo un peldaño cuando las respuestas aguantan: su nombre y de dónde es; un día normal; algo que le pasó; una opinión con razones; algo hipotético. Si le cuesta, quédate en el peldaño o baja uno.`,
           "En esta conversación no corrijas ni enseñes: escucha y pregunta. No uses pronounce.",
-          "Cuando la persona diga «para» o «ya», o después de unos cuatro minutos, llama finish_placement y no digas nada más: el estimado se dice solo.",
+          "Cuando la persona diga «para» o «ya», o después de unos cuatro minutos, llama finish_placement sin decir nada antes ni después: el estimado se dice solo.",
         ].join("\n")
       : "",
   ].filter(Boolean).join("\n");
