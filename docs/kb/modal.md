@@ -6,9 +6,25 @@ What Lente relies on when the hub runs on Modal (`deploy/modal/hub.py`), from th
 
 - `@modal.web_server(8080)` runs `node src/pilot.ts` with `LENTE_CLOUD=1`; Modal terminates TLS at `https://<workspace>--lente-hub-hub.us-east.modal.run` and forwards plain HTTP to the container. The hub needs no TLS code and no WebSocket package: its own upgrade handshake and framing (`src/websocket.ts`) work behind the proxy.
 - The hub keeps the clip, the phone and the session in memory, so exactly one container: `min_containers=1`, `max_containers=1`, `@modal.concurrent(max_inputs=100)` (each WebSocket and each event stream holds one input), `timeout` one day.
-- `cpu=0.25`, `memory=512` (MiB): a request, not a cap. **Unverified:** cost per day at this size; check the Modal dashboard after a day.
+- `cpu=1.0`, `memory=2048` (MiB) since ship-hackathon 2.6 (was `0.25`/`512`): a request, not a cap, sized for several judges at once (about 340 MB per hot memory index, `docs/benchmarks.md`). **Unverified:** cost per day at this size; check the Modal dashboard after a day.
 - Image: `node:22-slim` with Python added (Modal's runtime needs it); only `package.json`, `src/` and `scripts/hub-token.ts` are copied (no runtime dependencies to install).
 - The module is imported again inside the container as `/root/hub.py`, where the repo is not around: local paths are resolved only when `modal.is_local()`.
+
+## Plain configuration (ship-hackathon 2.6)
+
+`deploy/modal/hub.py` sets these in the hub's environment (`JUDGE_ACCESS`), over the secret's values; they are not secrets, so changing one is a one-line deploy:
+
+| Variable | Value | Default when unset | What it does |
+|---|---|---|---|
+| `LENTE_SIGNUP` | `open` | `allowlist` | `open`: any verified Google account may open an account until `LENTE_SIGNUP_UNTIL`; `allowlist`: only `LENTE_ALLOWED_EMAILS` (existing accounts keep signing in either way) |
+| `LENTE_SIGNUP_UNTIL` | `2026-11-17` | none (`open` without it falls back to the allow list) | a plain date closes sign-up at its start in Bogotá |
+| `LENTE_USER_DAY_CAP_USD` | `1.00` | `1.00` | per-account spend cap per Bogotá day, priced by `src/usage-meter.ts` |
+| `LENTE_GLOBAL_DAY_CAP_USD` | `6.00` | `6.00` | every account but the owner's, per day (US$ 98.26 of Meta credit left on 2026-11-04) |
+| `LENTE_MAX_LISTENING` | `4` | no cap | accounts listening at once |
+| `TZ` | `America/Bogota` | the container's UTC | the day the usage meter and the day record roll over on |
+| `LENTE_TERMS` | not set | `required` when sign-up is open, else `off` | the preview terms before data (`src/preview-terms.ts`); the owner is never asked |
+
+To close sign-up: `"LENTE_SIGNUP": "allowlist"` and `pnpm deploy:hub` (ship-hackathon 7.8, on Nov 17).
 
 ## Secrets and data
 
