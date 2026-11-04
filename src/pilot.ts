@@ -3231,6 +3231,11 @@ const wearers: WearerRegistry<Wearer> = new WearerRegistry<Wearer>((userId) => {
 }, { pinned: [LOCAL_OWNER], onEvict: (userId) => accounts?.forget(userId) });
 // The laptop and a pairing hub have one wearer from the start, as before.
 if (AUTH_MODE !== "accounts") wearers.get(LOCAL_OWNER);
+// `pnpm demo` (PILOT_SAMPLE=on): a local hub starts with the synthetic PROBE sample, as a new account
+// does after the terms; writeSample skips when the sample is already there.
+if (AUTH_MODE !== "accounts" && process.env.PILOT_SAMPLE === "on") {
+  void wearers.get(LOCAL_OWNER).writeSample().catch((error: Error) => console.error(`[sample] could not write the sample: ${error.message.slice(0, 160)}`));
+}
 setInterval(() => {
   void wearers.evictIdle().then((gone) => {
     if (gone.length) console.log(`[wearers] evicted ${gone.length} idle runtime(s); ${wearers.size} active`);

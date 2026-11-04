@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit",
     "lente": "node scripts/lente.ts",
     "pilot": "node --env-file-if-exists=.env src/pilot.ts",
+    "demo": "node --env-file-if-exists=.env scripts/demo.ts",
     "deploy:hub": "modal deploy --strategy recreate deploy/modal/hub.py",
     "smoke": "node scripts/smoke.ts",
     "progress": "node scripts/progress/serve.ts",
