@@ -163,6 +163,8 @@ export class SupabaseRest {
       /** Replaces one wrapped key, only if it is still under `fromVersion`; returns the rows changed. */
       rewrapKey: (userId: string, fromVersion: number, toVersion: number, wrapped: Buffer, at: string) =>
         this.send<Row[]>("PATCH", "user_keys", new Query("user_keys", { userId }).eq("kek_version", fromVersion).search(), { kek_version: toVersion, wrapped_dek: toBytea(wrapped), rotated_at: at }, { Prefer: "return=representation" }, userId),
+      /** Every account's usage numbers on one day, for the global spend cap (ship-hackathon 2.2); no content. */
+      usageOnDay: (day: string) => this.send<Row[]>("GET", "usage_daily", sys("usage_daily").eq("day", day).limit(10_000).search("user_id,model,audio_seconds,cost_micro_usd"), undefined, {}, undefined),
       /** One cheap select for health (decision 13), timed by the caller; no retries, so a failure shows at once. */
       ping: () => this.send<Row[]>("GET", "accounts", sys("accounts").limit(1).search("user_id"), undefined, {}, undefined, false),
     };

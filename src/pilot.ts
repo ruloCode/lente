@@ -43,6 +43,9 @@ import { type AuthMode, decideUpgrade, decideWeb, mayCreateAccount, parseSignup 
 import { type Identity, type IdentitySources, LOCAL_OWNER, identify } from "./identify.ts";
 import { BUSY_MESSAGE, EVICT_CHECK_MS, WearerRegistry, mayStartListening, parseListeningCap } from "./wearer-registry.ts";
 import { UserAuth } from "./user-auth.ts";
+import { type CapBlock, type CappedRoute, DEFAULT_GLOBAL_DAY_CAP_USD, DEFAULT_USER_DAY_CAP_USD, LIMIT_MESSAGES, MeterDelta, SpendCapError, SpendLedger, capCheck, cappedRoute, dayIn, parseCapUsd } from "./spend-cap.ts";
+import { FileDaySpend } from "./stores.ts";
+import { SupabaseDaySpend } from "./supabase-stores.ts";
 import { type AgentIdentity, FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { Accounts, FileAccountStore, JsonFile, admissionMessage, parseAllowList } from "./accounts.ts";
 import { checkKekAtStart, keksFromEnv } from "./kek-check.ts";
@@ -261,6 +264,42 @@ const webSessions = accounts
     )
   : undefined;
 const pkce = new PkceFlows();
+
+// --- Spend caps (ship-hackathon 2.2, design decision 2) ----------------------------------------------
+// Accounts mode only: everyone's spend today, per account and in all, survives a restart through
+// usage_daily (or a file without Supabase). The owner is never capped; the laptop hub has only the owner.
+const USER_DAY_CAP_USD = parseCapUsd(process.env.LENTE_USER_DAY_CAP_USD, DEFAULT_USER_DAY_CAP_USD);
+const GLOBAL_DAY_CAP_USD = parseCapUsd(process.env.LENTE_GLOBAL_DAY_CAP_USD, DEFAULT_GLOBAL_DAY_CAP_USD);
+const SPEND_SAVE_MS = 60_000;
+const daySpend = accounts ? (supabase ? new SupabaseDaySpend(supabase) : new FileDaySpend(join(DATA_DIR, "usage-daily.json"))) : undefined;
+const spendLedger = daySpend ? await openSpendLedger() : undefined;
+async function openSpendLedger(): Promise<SpendLedger> {
+  const day = dayIn(Date.now());
+  try {
+    const ledger = new SpendLedger({ day, users: await daySpend!.load(day) });
+    console.log(`[spend] caps US$ ${USER_DAY_CAP_USD.toFixed(2)} per account, US$ ${GLOBAL_DAY_CAP_USD.toFixed(2)} in all; today so far US$ ${ledger.all().toFixed(2)}`);
+    return ledger;
+  } catch (error) {
+    console.error(`[spend] could not read today's spend, counting from zero: ${(error as Error).message}`);
+    return new SpendLedger();
+  }
+}
+if (spendLedger) setInterval(() => void daySpend!.save(spendLedger.snapshot()).catch((error: Error) => console.error(`[spend] could not save today's spend: ${error.message}`)), SPEND_SAVE_MS);
+/** A capped account's answer on a route that would spend: the limit line in the shape the route speaks. */
+function answerCapped(req: IncomingMessage, res: ServerResponse, route: CappedRoute, blocked: CapBlock): void {
+  const message = LIMIT_MESSAGES[blocked];
+  if (route === "tts") return void res.writeHead(404, { "Cache-Control": "no-store" }).end(); // the phone falls back to its own voice
+  if (route === "ask") {
+    const out = { ok: true, answer: message, sources: [], found: false, ms: 0, limit: blocked };
+    if (String(req.headers.accept ?? "").includes("text/event-stream")) {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store" });
+      return void res.end(`event: delta\ndata: ${JSON.stringify({ text: message })}\n\nevent: done\ndata: ${JSON.stringify(out)}\n\n`);
+    }
+    return void res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(out));
+  }
+  res.writeHead(route === "listen" ? 503 : 429, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+  res.end(JSON.stringify({ ok: false, error: "limit", reason: "limit", limit: blocked, message }));
+}
 /** Supabase Auth takes the publishable key from browsers; the hub may use it, or the secret key. */
 const AUTH_APIKEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
 
@@ -566,6 +605,27 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     }
   }
 
+  // --- Spend caps (ship-hackathon 2.2): this runtime's new spend goes to the hub's ledger, and a
+  // non-owner is checked before every model, voice or transcription call. Capped while listening,
+  // listening pauses with the limit as its reason and a voice session ends.
+  const spentSince = new MeterDelta(usage.today().usd);
+  function capBlocked(): CapBlock | undefined {
+    if (!spendLedger) return undefined;
+    spendLedger.add(userId, spentSince.next(usage.today().usd));
+    const out = capCheck({ userTodayUsd: spendLedger.user(userId), allTodayUsd: spendLedger.all(), userCapUsd: USER_DAY_CAP_USD, globalCapUsd: GLOBAL_DAY_CAP_USD, isOwner });
+    return out === "ok" ? undefined : out.blocked;
+  }
+  const limitPause = (blocked: CapBlock) => ({ reason: "limit" as const, limit: blocked, message: LIMIT_MESSAGES[blocked] });
+  every(() => {
+    const blocked = capBlocked();
+    if (!blocked) return;
+    if (status.listening) {
+      console.log(`[spend] ${blocked} cap reached: listening paused`);
+      setListening(false, limitPause(blocked));
+    }
+    voiceSession?.close();
+  }, USAGE_PUSH_MS);
+
   /** Today's seconds sent, tokens per model and approximate US$, for "Hoy" on the phone. */
   const spendEvent = () => ({ kind: "spend", ...usage.today() });
 
@@ -579,7 +639,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
 
   type Mode = "camera" | "mic";
   /** Why listening is off: not started since boot, paused or stopped from the phone, or idle. */
-  type Pause = { reason: "start" | "manual" } | { reason: "idle"; at: number; basis: "wearer" | "anyone"; /** The idle time that ran out. */ min: number };
+  type Pause = { reason: "start" | "manual" } | { reason: "idle"; at: number; basis: "wearer" | "anyone"; /** The idle time that ran out. */ min: number } | ReturnType<typeof limitPause>;
   /**
    * Ver (add-sight-mode) lives in this runtime only: the saved profile keeps Asistir or Solo grabar (the
    * accounts table allows only those), and a restart comes back out of Ver.
@@ -793,6 +853,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     let streamed = false;
     const onDelta = opts.onDelta && ((d: string) => ((streamed = true), opts.onDelta!(d)));
     const job = opts.job;
+    const capped = capBlocked(); // ship-hackathon 2.2: no call past the day's cap
+    if (capped) throw new SpendCapError(capped);
     // Cue routes keep their order and a cool-down; the other jobs reorder to stick with what answered last.
     const targets = job ? routePolicy.pick(job, cueRoutes().map((t) => Object.assign(t, { configured: Boolean(t.apiKey) }))) : sparkTargets;
     for (const [i, target] of targets.entries()) {
@@ -1771,6 +1833,8 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   }
 
   function setListening(on: boolean, pause: Pause = { reason: "manual" }): void {
+    const capped = on ? capBlocked() : undefined; // ship-hackathon 2.2: no transcription past the day's cap
+    if (capped) return void setListening(false, limitPause(capped));
     if (on && !status.listening) idle.start(Date.now());
     setStatus({ listening: on, pause: on ? null : pause });
     device?.write(on ? "M" : "m");
@@ -2070,6 +2134,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       console.error(`[ask] failed: ${error.message.slice(0, 200)}`);
       // A reply cut at the length limit twice is a failure to answer, never "not found" (task 1.2).
       if (error instanceof CutOffError) return { ok: false as const, reason: "failed", message: "La respuesta salió demasiado larga; prueba con una pregunta más concreta." };
+      if (error instanceof SpendCapError) return { ok: false as const, reason: "limit", message: error.message };
       return { ok: false as const, reason: "failed", message: "No pude responder ahora; prueba otra vez." };
     };
     const scopeIds = new Set(inScope(meetings.list()).map((m) => m.id));
@@ -2408,6 +2473,11 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       ws.send({ type: "error", message: "Lente no tiene un modelo configurado." });
       return void ws.close();
     }
+    const capped = capBlocked(); // ship-hackathon 2.2
+    if (capped) {
+      ws.send({ type: "error", message: LIMIT_MESSAGES[capped] });
+      return void ws.close();
+    }
     voiceSession?.close();
     const target = chatTargets().find((t) => t.id === "spark-1.3-minimal")!;
     const session = serveVoiceSession(ws, {
@@ -2507,6 +2577,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       return void res.end(JSON.stringify({ error: "busy", message: BUSY_MESSAGE }));
     }
+    // Spend caps (ship-hackathon 2.2): a capped account gets the limit line instead of a model call.
+    const capRoute = cappedRoute(req.method, req.url);
+    const capped = capRoute ? capBlocked() : undefined;
+    if (capRoute && capped) return void answerCapped(req, res, capRoute, capped);
     if (req.method === "GET" && req.url === "/manifest.webmanifest") {
       res.writeHead(200, { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" });
       res.end(webManifest());

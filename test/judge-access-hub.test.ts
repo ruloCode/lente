@@ -5,13 +5,15 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { type StubMeta, startStubMeta } from "../scripts/stub-meta.ts";
+import { MeetingStore } from "../src/meeting-store.ts";
+import { dayIn } from "../src/spend-cap.ts";
 
 const OWNER = "aaaaaaaa-0000-4000-8000-00000000000a";
 const JUDGE = "bbbbbbbb-0000-4000-8000-00000000000b";
@@ -84,4 +86,65 @@ test("2.1 open sign-up: a new Google account gets in before the end date; after 
   const stranger = await fetch(`${invite.base}/tasks`, as(OTHER, "probe-late@example.com"));
   assert.equal(stranger.status, 403);
   assert.equal(((await stranger.json()) as { error: string }).error, "closed_test");
+});
+
+const LIMIT_USER = "Por hoy llegaste al límite de la prueba. Vuelve mañana.";
+const LIMIT_GLOBAL = "La demo llegó a su límite de hoy. Vuelve mañana.";
+const askAs = async (base: string, sub: string, email: string) =>
+  (await (await fetch(`${base}/ask`, as(sub, email, { method: "POST", body: JSON.stringify({ question: "¿Qué dijo PROBE-Ana de la zanahoria morada?" }) }))).json()) as { ok: boolean; answer?: string; limit?: string };
+const modelCalls = () => stub.requests.filter((r) => r.startsWith("POST /v1/")).length;
+const OPEN = { LENTE_SIGNUP: "open", LENTE_SIGNUP_UNTIL: "2999-01-01", LENTE_TERMS: "off" };
+
+/** A volume with today's spend already counted (what a restart reads back) and a PROBE meeting for the judge to ask about. */
+function volume(spent: Record<string, number>): string {
+  const dir = mkdtempSync(join(tmpdir(), "lente-judge-hub-"));
+  writeFileSync(join(dir, "usage-daily.json"), JSON.stringify({ day: dayIn(Date.now()), users: spent }));
+  const at = Date.now() - 3_600_000;
+  for (const id of [JUDGE, OTHER, OWNER]) {
+    new MeetingStore(join(dir, "users", id, "meetings")).save({ id: "m20261104090000", title: "PROBE huerta", startedAt: at, endedAt: at + 60_000, status: "done", turns: [{ id: "t1", at: at + 10_000, startAt: at + 5_000, speaker: "PROBE-Ana", text: "PROBE la zanahoria morada va en la pizarra" }] });
+  }
+  return dir;
+}
+
+test("2.2 per-user cap: a judge's question spends; past the cap it gets the limit line with no model call, and others are unaffected", { timeout: 30_000 }, async () => {
+  const hub = await startHub({ ...OPEN, LENTE_USER_DAY_CAP_USD: "0.000001" }, volume({}));
+  const calls = modelCalls();
+  const first = await askAs(hub.base, JUDGE, "probe-judge@example.com");
+  assert.equal(first.ok, true);
+  assert.notEqual(first.answer, LIMIT_USER);
+  assert.ok(modelCalls() > calls, "the first question called the model");
+  const before = modelCalls();
+  const second = await askAs(hub.base, JUDGE, "probe-judge@example.com");
+  assert.deepEqual([second.ok, second.answer, second.limit], [true, LIMIT_USER, "user"]);
+  assert.equal(modelCalls(), before, "no model is called past the cap");
+  // A streaming client reads the same line.
+  const streamed = await (await fetch(`${hub.base}/ask`, as(JUDGE, "probe-judge@example.com", { method: "POST", headers: { Accept: "text/event-stream" }, body: JSON.stringify({ question: "PROBE ¿y ahora?" }) }))).text();
+  assert.match(streamed, /event: delta\ndata: \{"text":"Por hoy llegaste al límite de la prueba\. Vuelve mañana\."\}/);
+  // Listening, help and the natural voice answer kindly instead of spending.
+  const listen = await fetch(`${hub.base}/listen/on`, as(JUDGE, "probe-judge@example.com", { method: "POST" }));
+  assert.equal(listen.status, 503);
+  assert.deepEqual(await listen.json(), { ok: false, error: "limit", reason: "limit", limit: "user", message: LIMIT_USER });
+  assert.equal((await fetch(`${hub.base}/help`, as(JUDGE, "probe-judge@example.com", { method: "POST", body: "{}" }))).status, 429);
+  assert.equal((await fetch(`${hub.base}/tts`, as(JUDGE, "probe-judge@example.com", { method: "POST", body: JSON.stringify({ text: "hola" }) }))).status, 404);
+  // Another account still has its own day; the owner is never capped.
+  assert.notEqual((await askAs(hub.base, OTHER, "probe-other@example.com")).answer, LIMIT_USER);
+  await askAs(hub.base, OWNER, "probe-owner@example.com");
+  assert.notEqual((await askAs(hub.base, OWNER, "probe-owner@example.com")).answer, LIMIT_USER);
+  hub.stop();
+});
+
+test("2.2 after a restart today's spend is read back: the caps still hold, per account and in all; the owner goes on", { timeout: 30_000 }, async () => {
+  const perUser = await startHub(OPEN, volume({ [JUDGE]: 1.0, [OWNER]: 5 }));
+  assert.equal((await askAs(perUser.base, JUDGE, "probe-judge@example.com")).answer, LIMIT_USER);
+  assert.notEqual((await askAs(perUser.base, OTHER, "probe-other@example.com")).answer, LIMIT_USER);
+  assert.notEqual((await askAs(perUser.base, OWNER, "probe-owner@example.com")).answer, LIMIT_USER);
+  perUser.stop();
+
+  // The owner's own spend counts toward everyone's (it is the same credit), but never caps the owner.
+  const global = await startHub(OPEN, volume({ [JUDGE]: 0.5, [OWNER]: 11.6 }));
+  const other = await askAs(global.base, OTHER, "probe-other@example.com");
+  assert.deepEqual([other.answer, other.limit], [LIMIT_GLOBAL, "global"]);
+  assert.equal((await askAs(global.base, JUDGE, "probe-judge@example.com")).answer, LIMIT_GLOBAL);
+  assert.notEqual((await askAs(global.base, OWNER, "probe-owner@example.com")).answer, LIMIT_GLOBAL);
+  global.stop();
 });

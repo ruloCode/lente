@@ -347,3 +347,33 @@ export class FileMedia implements MediaStore {
     return this.drop(() => true);
   }
 }
+
+// --- The day's spend across accounts (ship-hackathon 2.2) -------------------------------------------
+
+/** Every account's spend today in one JSON file (`data/usage-daily.json`), numbers and user ids only. */
+export class FileDaySpend {
+  private readonly file: string;
+
+  constructor(file: string) {
+    this.file = file;
+  }
+
+  async load(day: string): Promise<Record<string, number>> {
+    if (!existsSync(this.file)) return {};
+    try {
+      const saved = JSON.parse(readFileSync(this.file, "utf8")) as { day?: unknown; users?: Record<string, unknown> };
+      if (saved.day !== day || !saved.users) return {};
+      return Object.fromEntries(Object.entries(saved.users).filter((e): e is [string, number] => typeof e[1] === "number"));
+    } catch (error) {
+      console.error(`[spend] could not read ${this.file}: ${(error as Error).message}`);
+      return {};
+    }
+  }
+
+  async save(spend: { day: string; users: Record<string, number> }): Promise<void> {
+    mkdirSync(dirname(this.file), { recursive: true });
+    const tmp = `${this.file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(spend) + "\n", { mode: 0o600 });
+    renameSync(tmp, this.file);
+  }
+}

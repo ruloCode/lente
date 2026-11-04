@@ -28,7 +28,7 @@ import type { Actions, DayRecord, DeviceStore, DigestStore, Facts, Language, Med
 import type { SupabaseStorage } from "./supabase-storage.ts";
 import { SupabaseRest, fromBytea, toBytea } from "./supabase-rest.ts";
 import { MEDIA_RETENTIONS, type MediaRetention } from "./profile.ts";
-import { type UsageSnapshot, priceTokens } from "./usage-meter.ts";
+import { TRANSCRIBE_USD_PER_HOUR, type UsageSnapshot, priceTokens } from "./usage-meter.ts";
 import { AGENT_SCOPES, type AgentScope, type DeviceRecord } from "./user-devices.ts";
 import type { SessionRow, SessionStore } from "./web-session.ts";
 
@@ -903,13 +903,40 @@ export class SupabaseUsage implements UsageStore {
   }
 
   async save(snapshot: UsageSnapshot): Promise<void> {
-    const rows: Row[] = [{ day: snapshot.day, provider: "meta", model: TRANSCRIPTION, calls: 0, input_tokens: 0, cached_tokens: 0, output_tokens: 0, audio_seconds: snapshot.audioSeconds, cost_micro_usd: 0 }];
+    // Transcription is priced by the second, so its row carries its cost too (the spend caps sum cost_micro_usd).
+    const audioMicroUsd = Math.round(((snapshot.audioSeconds / 3600) * TRANSCRIBE_USD_PER_HOUR) * 1e6);
+    const rows: Row[] = [{ day: snapshot.day, provider: "meta", model: TRANSCRIPTION, calls: 0, input_tokens: 0, cached_tokens: 0, output_tokens: 0, audio_seconds: snapshot.audioSeconds, cost_micro_usd: audioMicroUsd }];
     for (const [model, t] of Object.entries(snapshot.models)) {
       const usd = priceTokens(model, t);
       rows.push({ day: snapshot.day, provider: model.includes("open") ? "baseten" : "meta", model, calls: t.calls, input_tokens: t.input, cached_tokens: t.cached, output_tokens: t.output, audio_seconds: 0, cost_micro_usd: usd === undefined ? 0 : Math.round(usd * 1e6) });
     }
     await this.db.insert("usage_daily", rows, { upsertOn: "user_id,day,provider,model" });
   }
+}
+
+/**
+ * Every account's spend on one day, from the rows each runtime's `SupabaseUsage` writes (ship-hackathon
+ * 2.2). Transcription is priced from its seconds, so rows written before it carried a cost still count.
+ * Nothing to save: the per-user rows are the record.
+ */
+export class SupabaseDaySpend {
+  private readonly rest: SupabaseRest;
+
+  constructor(rest: SupabaseRest) {
+    this.rest = rest;
+  }
+
+  async load(day: string): Promise<Record<string, number>> {
+    const users: Record<string, number> = {};
+    for (const r of await this.rest.system.usageOnDay(day)) {
+      const id = String(r.user_id);
+      const usd = r.model === TRANSCRIPTION ? (Number(r.audio_seconds ?? 0) / 3600) * TRANSCRIBE_USD_PER_HOUR : Number(r.cost_micro_usd ?? 0) / 1e6;
+      if (Number.isFinite(usd) && usd > 0) users[id] = (users[id] ?? 0) + usd;
+    }
+    return users;
+  }
+
+  async save(): Promise<void> {}
 }
 
 export class SupabaseDevices implements DeviceStore {

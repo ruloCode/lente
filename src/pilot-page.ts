@@ -1685,7 +1685,7 @@ ${THEME_TOKENS}
     if (!m.listening && p) {
       $("pause-text").textContent = p.reason === "idle"
         ? "En pausa: " + p.min + " min sin que " + (p.basis === "wearer" ? "hablaras" : "nadie hablara")
-        : p.reason === "start" ? "Lente está en pausa: no envía nada hasta que empieces." : "En pausa.";
+        : p.reason === "start" ? "Lente está en pausa: no envía nada hasta que empieces." : p.reason === "limit" ? p.message : "En pausa.";
       $("pause-go").textContent = p.reason === "start" ? "Empezar a escuchar" : "Seguir escuchando";
     }
     if (!m.clip || !m.listening) setLevel(0);
