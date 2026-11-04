@@ -62,14 +62,15 @@ Everything in the repository was written during the event, from **2026-10-26** t
 - open sign-up for judges, with spend caps, preview terms and a synthetic sample to ask about;
 - the project website and a zero-dependency QR code to the APK;
 - the evals and benchmarks behind every number.
-<!-- TODO(orch): add "Practicar at the piano" if it lands, and "the Android release" after 18:00. -->
+- the Android release 0.2.0, downloadable from the website.
+<!-- TODO(orch): add "Practicar at the piano" if it lands. -->
 
 Prior work, declared: the author once prototyped a meeting copilot in his personal assistant project, on non-Meta models. No code, prompts or assets from it are in this repository.
 
 ## Try it
 
 - **Web:** sign in with any Google account at <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app>, open through 2026-11-16. Accept the short preview terms once.
-- **Android:** <https://github.com/ruloCode/lente/releases/latest/download/lente.apk>, Android 10 or newer; it opens on «Iniciar sesión con Google». <!-- TODO(orch): the link 404s until the 18:00 release. -->
+- **Android:** <https://github.com/ruloCode/lente/releases/latest/download/lente.apk>, Android 10 or newer ([release notes](https://github.com/ruloCode/lente/releases/tag/v0.2.0-hackathon)); it opens on «Iniciar sesión con Google».
 - No clip needed: the phone is the camera and the microphone. A new account starts with a small synthetic sample («PROBE · Proyecto de ejemplo»), so you can ask «¿Qué se decidió sobre la beta?» in the first minute; «Borrar ejemplo» in Ajustes removes it.
 - **Limits:** each account has US$ 1.00 a day of model use and the whole demo US$ 6.00; past a cap Lente says so and you can come back the next day. Audio and photos are never kept for test accounts, only text.
 
@@ -81,7 +82,7 @@ Prior work, declared: the author once prototyped a meeting copilot in his person
 | Website | <https://rulocode.github.io/lente/> |
 | Video (3 min, public or unlisted, plays without login) | TODO(orch): from the owner at 18:30 |
 | Live product | <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app> |
-| Android APK | <https://github.com/ruloCode/lente/releases/latest/download/lente.apk> <!-- TODO(orch): live after the 18:00 release --> |
+| Android APK | <https://github.com/ruloCode/lente/releases/latest/download/lente.apk> ([v0.2.0-hackathon](https://github.com/ruloCode/lente/releases/tag/v0.2.0-hackathon)) |
 | X post | TODO(orch): after the 20:00 post |
 | Team | Rulo (solo) |
 | Meta models | Muse Voice Transcribe 1.0, Muse Spark 1.3, Muse Spark Open |
@@ -125,7 +126,7 @@ Under 280 characters with the video attached (a link counts as 23).
 >
 > Cada número que muestro sale de un script en el repositorio. Código abierto: github.com/ruloCode/lente
 >
-> Pruébalo: rulocode.github.io/lente TODO(orch): video, APK
+> Pruébalo: rulocode.github.io/lente · App Android: github.com/ruloCode/lente/releases/latest TODO(orch): video
 
 ### LinkedIn (English)
 
@@ -137,7 +138,7 @@ Under 280 characters with the video attached (a link counts as 23).
 >
 > Every number I show comes from a script in the repository. Open source: github.com/ruloCode/lente
 >
-> Try it: rulocode.github.io/lente TODO(orch): video, APK
+> Try it: rulocode.github.io/lente · Android app: github.com/ruloCode/lente/releases/latest TODO(orch): video
 
 ## Gallery blurb
 
