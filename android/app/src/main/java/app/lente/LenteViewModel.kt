@@ -38,6 +38,7 @@ import app.lente.core.VoiceEvents
 import app.lente.core.VoicePhase
 import app.lente.core.VoiceView
 import app.lente.platform.VoiceClient
+import app.lente.ui.PracticeModel
 import app.lente.core.effectsOf
 import app.lente.platform.Answer
 import app.lente.platform.GoogleAccount
@@ -540,6 +541,31 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     fun closeLive() {
         liveOpen.value = false
         _hub.value.status.session?.startedAt?.let { prefs.collapsedSession = it }
+    }
+
+    // --- Practicar (add-practice-mode) ---------------------------------------------------------
+    // The phone on the piano hears each note (PracticeModel, PitchListener); the hub keeps and coaches the
+    // attempt; the line is said in Ver's Colombian voice (/tts voice sight), the phone's voice as the fallback.
+
+    val practiceOpen = MutableStateFlow(false)
+    val practice = PracticeModel(
+        viewModelScope,
+        fetchLessons = { client?.get("/practice/lessons")?.takeIf { it.ok }?.text },
+        postAttempt = { body -> client?.post("/practice/attempt", body)?.takeIf { it.ok }?.text },
+        speak = { line -> speaker().say(line, LineKind.Reply) },
+        stopSpeaking = { sightSpeaker?.stop() },
+    )
+
+    /** Opens Practicar on a lesson (the first, or `lessonId`), closing Ver first: both speak and listen. */
+    fun openPractice(lessonId: String? = null) {
+        if (sightOpen.value) closeSight()
+        practiceOpen.value = true
+        practice.open(lessonId)
+    }
+
+    fun closePractice() {
+        practice.close()
+        practiceOpen.value = false
     }
 
     // --- Hub calls ----------------------------------------------------------------------------
@@ -1057,6 +1083,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        practice.close()
         stopScene()
         voiceClient?.shutdown()
         sightSpeaker?.shutdown()

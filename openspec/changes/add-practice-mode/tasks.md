@@ -26,8 +26,10 @@ Schedule (Bogotá, 2026-11-04; the closing plan is `openspec/changes/ship-hackat
 
 ## 3. Android: the Practice screen (lane C)
 
-- [ ] 3.1 «Practicar» in the recording options; `ui/Practice.kt`: lessons from `GET /practice/lessons` (with the three built in as a fallback when the hub is unreachable), the notes large in solfège with the next one highlighted, the live heard note, a check or cross per note, «Otra vez», «Siguiente lección», «Terminar»; TalkBack descriptions on every control
-- [ ] 3.2 End of attempt → `POST /practice/attempt` → speak `line` through `/tts` voice `sight` (fallback the phone's voice) and show it; the screen shows «Lente está escuchando» only while an attempt runs
+- [x] 3.1 «Practicar» in the recording options; `ui/Practice.kt`: lessons from `GET /practice/lessons` (with the three built in as a fallback when the hub is unreachable), the notes large in solfège with the next one highlighted, the live heard note, a check or cross per note, «Otra vez», «Siguiente lección», «Terminar»; TalkBack descriptions on every control
+  - 2026-11-04: «Practicar» is a fifth ready mode in `RecordChoice` (before Teleprompter, glyph `Note`); the record sheet swaps «Con qué» and «Captura» for the phone-on-the-music-stand hint and «Empezar a practicar» opens `PracticeScreen` over the shell after asking for the microphone; Back and «Salir» close it and release the microphone. `RecordChoiceTest.practicarIsAModeThatLeavesTheHubAlone` (it never sets the hub's assist mode). Every note chip, the heard note and the buttons carry TalkBack text; status and line are polite live regions. `pnpm android:test` 192 pass, `pnpm android:apk` builds; on the phone in 3.3.
+- [x] 3.2 End of attempt → `POST /practice/attempt` → speak `line` through `/tts` voice `sight` (fallback the phone's voice) and show it; the screen shows «Lente está escuchando» only while an attempt runs
+  - 2026-11-04: `LenteViewModel` section «Practicar» (add-only): `PracticeModel` on `client.get("/practice/lessons")` and `client.post("/practice/attempt")`, the line said through `SightSpeaker` (`/tts` voice `sight`, phone voice fallback), Ver closed when Practicar opens. A 200 with an empty `line` shows the summary unspoken; no hub or a 400 shows and says a line made on the phone. «Lente está escuchando» only while `listening`. Heard on the phone in 3.3.
 - [ ] 3.3 `pnpm android:test` and `pnpm android:apk` pass; APK installed on the owner's Samsung [phone]
 
 ## 4. Together (lanes B + C)

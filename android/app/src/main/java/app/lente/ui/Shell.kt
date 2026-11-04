@@ -136,14 +136,15 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     val camera by vm.cameraOpen.collectAsState()
     val voice by vm.voiceOpen.collectAsState()
     val sight by vm.sightOpen.collectAsState()
+    val practice by vm.practiceOpen.collectAsState()
     val toast by vm.toast.collectAsState()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val screen = stack.last()
     val s = hub.status
 
-    BackHandler(enabled = drawer.isOpen || live || camera || voice || sight || stack.size > 1 || screen != Screen.Ahora) {
-        if (drawer.isOpen) scope.launch { drawer.close() } else if (voice) vm.closeVoice() else vm.back()
+    BackHandler(enabled = drawer.isOpen || live || camera || voice || sight || practice || stack.size > 1 || screen != Screen.Ahora) {
+        if (drawer.isOpen) scope.launch { drawer.close() } else if (voice) vm.closeVoice() else if (practice) vm.closePractice() else vm.back()
     }
 
     val usePhone: () -> Unit = { askMicrophone { ok -> if (ok) vm.startPhone() } }
@@ -155,7 +156,7 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
     ModalNavigationDrawer(
         drawerState = drawer,
         scrimColor = c.scrim,
-        gesturesEnabled = !live && !camera && !voice && !sight,
+        gesturesEnabled = !live && !camera && !voice && !sight && !practice,
         drawerContent = {
             ltr {
                 ModalDrawerSheet(drawerContainerColor = c.bg, drawerShape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp), modifier = Modifier.width(312.dp)) {
@@ -179,6 +180,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                 }, sight = { phone ->
                     // Ver is a conversation: without the clip Lente hears the phone, so it asks for the microphone (and the location) first.
                     askSight { vm.openSight(phone) }
+                }, practice = {
+                    // Practicar (add-practice-mode) hears the piano through the phone's microphone.
+                    askMicrophone { ok -> if (ok) vm.openPractice() else vm.say("Lente necesita el micrófono para escuchar el piano.") }
                 })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))
@@ -215,6 +219,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
             }
             AnimatedVisibility(sight, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
                 SightScreen(vm, hub)
+            }
+            AnimatedVisibility(practice, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
+                PracticeScreen(vm.practice, onExit = vm::closePractice)
             }
             AnimatedVisibility(voice, enter = slideInVertically(tween(320)) { it } + fadeIn(), exit = slideOutVertically(tween(260)) { it } + fadeOut()) {
                 VoiceScreen(vm)

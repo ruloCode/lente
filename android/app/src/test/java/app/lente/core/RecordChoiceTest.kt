@@ -22,7 +22,7 @@ class RecordChoiceTest {
     }
 
     @Test fun modesOpenOnTheHubsAndOnlyChangeItWhenNeeded() {
-        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Ver", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
+        assertEquals(listOf("Asistir", "Recuerdo", "Solo grabar", "Ver", "Practicar", "Teleprompter"), RecordChoice.Mode.entries.map { it.label })
         assertEquals("record", RecordChoice.assistToSet(RecordChoice.Mode.Memory, assistMode = "assist"))
         assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Memory, assistMode = "record"))
         assertEquals(false, RecordChoice.Mode.Teleprompter.ready)
@@ -49,5 +49,14 @@ class RecordChoiceTest {
         assertEquals(RecordChoice.Device.Clip, RecordChoice.deviceNow(clipConnected = true))
         assertEquals(RecordChoice.Device.Phone, RecordChoice.deviceNow(clipConnected = false))
         assertEquals("Sin conectar", RecordChoice.deviceHint(RecordChoice.Device.Clip, clipConnected = false))
+    }
+
+    @Test fun practicarIsAModeThatLeavesTheHubAlone() {
+        assertEquals(true, RecordChoice.Mode.Practice.ready)
+        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Practice, assistMode = "assist"))
+        assertEquals(null, RecordChoice.assistToSet(RecordChoice.Mode.Practice, assistMode = "sight"))
+        assertEquals(false, RecordChoice.Mode.Practice.camera)
+        assertEquals("Empezar a practicar", RecordChoice.startLabel(RecordChoice.Mode.Practice))
+        assertEquals("Practicar · el micrófono del teléfono", RecordChoice.summary(RecordChoice.Mode.Practice, RecordChoice.Device.Clip, camera = true))
     }
 }

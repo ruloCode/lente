@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** Lente's line icons, drawn on a 24-unit grid with a 2-unit stroke. Drawn fresh, no icon set. */
-enum class Glyph { Menu, Back, Close, Eye, Wave, Speaker, Summary, Pause, Play, Stop, Check, Search, Share, Trash, ChevronDown, ChevronRight, Phone, Mic, Calendar, Tasks, Brain, Device, Gear, Link, Team, Plus, Camera, Send, Sparkle, Copy, Doc, Up, Retry, Compose, Clock, Person, Contrast, Terminal, Braces, IBeam, Plug, Bell }
+enum class Glyph { Menu, Back, Close, Eye, Wave, Speaker, Summary, Pause, Play, Stop, Check, Search, Share, Trash, ChevronDown, ChevronRight, Phone, Mic, Calendar, Tasks, Brain, Device, Gear, Link, Team, Plus, Camera, Send, Sparkle, Copy, Doc, Up, Retry, Compose, Clock, Person, Contrast, Terminal, Braces, IBeam, Plug, Bell, Note }
 
 @Composable
 fun Icon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 24.dp) {
@@ -61,6 +61,8 @@ fun Icon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 24
             Glyph.Link -> { line(10f, 14f, 14f, 10f); line(8.5f, 11.5f, 6f, 14f, 6f, 17f, 7f, 18f, 10f, 18f, 12.5f, 15.5f); line(11.5f, 8.5f, 14f, 6f, 17f, 6f, 18f, 7f, 18f, 10f, 15.5f, 12.5f) }
             Glyph.Team -> { ring(9f, 9f, 3f); ring(16.5f, 10f, 2.5f); line(3.5f, 19f, 5f, 15.5f, 9f, 14f, 13f, 15.5f, 14.5f, 19f); line(15f, 14.5f, 18f, 14.5f, 20.5f, 17.5f) }
             Glyph.Bell -> { drawArc(tint, 180f, 180f, false, Offset(6.5f * u, 4.5f * u), Size(11f * u, 11f * u), style = stroke); line(6.5f, 10f, 6.5f, 15f, 4.5f, 17.5f, 19.5f, 17.5f, 17.5f, 15f, 17.5f, 10f); line(10.5f, 20.5f, 13.5f, 20.5f); line(12f, 2.5f, 12f, 4.5f) }
+            // Two beamed eighth notes (add-practice-mode).
+            Glyph.Note -> { ring(7f, 18f, 2.5f); ring(17f, 16f, 2.5f); line(9.5f, 18f, 9.5f, 5f, 19.5f, 3f, 19.5f, 16f); line(9.5f, 8.5f, 19.5f, 6.5f) }
             Glyph.Terminal -> { box(3f, 5f, 18f, 14f, 2.5f); line(7f, 9.5f, 10f, 12f, 7f, 14.5f); line(12.5f, 15f, 16.5f, 15f) }
             Glyph.Braces -> { line(9f, 4f, 7.5f, 4f, 6.5f, 5f, 6.5f, 10.5f, 4.5f, 12f, 6.5f, 13.5f, 6.5f, 19f, 7.5f, 20f, 9f, 20f); line(15f, 4f, 16.5f, 4f, 17.5f, 5f, 17.5f, 10.5f, 19.5f, 12f, 17.5f, 13.5f, 17.5f, 19f, 16.5f, 20f, 15f, 20f) }
             Glyph.IBeam -> { line(8.5f, 4f, 12f, 5.5f, 15.5f, 4f); line(12f, 5.5f, 12f, 18.5f); line(8.5f, 20f, 12f, 18.5f, 15.5f, 20f); line(10f, 12f, 14f, 12f) }

@@ -32,6 +32,8 @@ object RecordChoice {
         Memory("memory", "Recuerdo", "Cámara y micrófono, para revivirlo después", true, cues = false, camera = true),
         Record("record", "Solo grabar", "Solo lo que se dice, como texto", true, cues = false, camera = false),
         Sight("sight", "Ver", "Describe en voz alta lo que tienes al frente", true, cues = false, camera = true),
+        /** Practicar (add-practice-mode): the phone on the piano hears each note and the hub coaches the attempt. */
+        Practice("practice", "Practicar", "Escucha tu piano y te corrige", true, cues = false, camera = false),
         Teleprompter("teleprompter", "Teleprompter", "Tu guion en el teléfono", false, cues = false, camera = false),
     }
 
@@ -52,7 +54,8 @@ object RecordChoice {
 
     /** The line above the start button: «Recuerdo · Celular · micrófono y cámara». */
     fun summary(mode: Mode, device: Device, camera: Boolean): String =
-        "${mode.label} · ${device.label} · " + if (usesCamera(mode, camera)) "micrófono y cámara" else "solo micrófono"
+        if (mode == Mode.Practice) "${mode.label} · el micrófono del teléfono"
+        else "${mode.label} · ${device.label} · " + if (usesCamera(mode, camera)) "micrófono y cámara" else "solo micrófono"
 
     /** The mode the sheet opens on: the hub's current one (`assistMode`: assist, record or sight). */
     fun modeNow(assistMode: String): Mode = when (assistMode) { "record" -> Mode.Record; "sight" -> Mode.Sight; else -> Mode.Assist }
@@ -60,7 +63,7 @@ object RecordChoice {
     /** The hub's assist mode to set before recording, or null when it already matches (or the mode is not built). Ver sets its own. */
     fun assistToSet(chosen: Mode, assistMode: String): String? {
         val want = when {
-            !chosen.ready -> return null
+            !chosen.ready || chosen == Mode.Practice -> return null
             chosen == Mode.Sight -> "sight"
             chosen.cues -> "assist"
             else -> "record"
@@ -69,7 +72,10 @@ object RecordChoice {
     }
 
     /** The start button's words. */
-    fun startLabel(mode: Mode): String = if (mode == Mode.Sight) "Empezar a ver" else "Empezar a grabar"
+    fun startLabel(mode: Mode): String = when (mode) { Mode.Sight -> "Empezar a ver"; Mode.Practice -> "Empezar a practicar"; else -> "Empezar a grabar" }
+
+    /** Practicar always hears through the phone, which sits on the piano: the sheet shows this instead of «Con qué» and «Captura». */
+    const val PRACTICE_HINT = "Pon el teléfono en el atril, cerca de las cuerdas. Escucha con su micrófono y el audio no sale del teléfono."
 
     /** The chat chip: the whole memory, or the chosen project's name. */
     fun scopeLabel(projectId: String?, projects: List<Projects.Summary>): String =

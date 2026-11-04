@@ -76,7 +76,7 @@ private enum class HomeTab(val title: String) { Inicio("Inicio"), Tareas("Tareas
  * and the round button, which records and opens the live transcript and summary.
  */
 @Composable
-fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String, phone: Boolean) -> Unit, sight: (phone: Boolean) -> Unit = { vm.openSight(it) }) {
+fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String, phone: Boolean) -> Unit, sight: (phone: Boolean) -> Unit = { vm.openSight(it) }, practice: () -> Unit = { vm.openPractice() }) {
     val c = Lente.c
     val s = hub.status
     var tab by rememberSaveable { mutableStateOf(HomeTab.Inicio) }
@@ -90,7 +90,10 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
     if (chatOpen) ChatSheet(vm, hub.status.clip, talk) { chatOpen = false }
     if (sheet || asked != null) RecordSheet(vm, hub, initialProject = asked?.projectId ?: vm.chatProject.value, initialCamera = asked?.camera ?: false, onDismiss = close) { mode, project, camera, title, device ->
         close(); tab = HomeTab.Inicio
-        if (mode == RecordChoice.Mode.Sight) {
+        if (mode == RecordChoice.Mode.Practice) {
+            // Practicar (add-practice-mode): the phone's own microphone hears the piano; nothing records on the hub.
+            practice()
+        } else if (mode == RecordChoice.Mode.Sight) {
             // Ver (add-sight-mode): the hub turns the camera and its live reads on; the phone streams only when it is the eyes.
             val phone = device == RecordChoice.Device.Phone
             if (phone && !s.phoneIsDevice) usePhone()
@@ -223,8 +226,16 @@ private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: Strin
                     pair.forEach { m -> ModeTile(m, selected = mode == m, Modifier.weight(1f)) { if (m.ready) mode = m } }
                 }
             }
-            SheetLabel("Con qué")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Practicar always listens with the phone on the piano: no device or capture to choose.
+            if (mode == RecordChoice.Mode.Practice) SheetCard {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Lente.gutter, vertical = 12.dp).testTag("practice-hint"), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Glyph.Phone, c.ink, size = 20.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Text(RecordChoice.PRACTICE_HINT, style = Type.callout, color = c.ink, modifier = Modifier.weight(1f))
+                }
+            }
+            if (mode != RecordChoice.Mode.Practice) SheetLabel("Con qué")
+            if (mode != RecordChoice.Mode.Practice) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 RecordChoice.Device.entries.forEach { d ->
                     val available = d == RecordChoice.Device.Phone || clipOn
                     DeviceTile(
@@ -233,8 +244,8 @@ private fun RecordSheet(vm: LenteViewModel, hub: HubState, initialProject: Strin
                     )
                 }
             }
-            SheetLabel("Captura")
-            SheetCard {
+            if (mode != RecordChoice.Mode.Practice) SheetLabel("Captura")
+            if (mode != RecordChoice.Mode.Practice) SheetCard {
                 Row(Modifier.fillMaxWidth().clickable(enabled = !mode.camera) { cameraChosen = !cameraChosen }.padding(horizontal = Lente.gutter, vertical = 12.dp).testTag("capture-cam"), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Glyph.Camera, c.ink, size = 20.dp)
                     Spacer(Modifier.width(14.dp))
@@ -327,7 +338,7 @@ private fun DeviceTile(d: RecordChoice.Device, hint: String, selected: Boolean, 
     }
 }
 
-private fun modeGlyph(m: RecordChoice.Mode): Glyph = when (m) { RecordChoice.Mode.Assist -> Glyph.Sparkle; RecordChoice.Mode.Memory -> Glyph.Camera; RecordChoice.Mode.Record -> Glyph.Wave; RecordChoice.Mode.Sight -> Glyph.Eye; RecordChoice.Mode.Teleprompter -> Glyph.Doc }
+private fun modeGlyph(m: RecordChoice.Mode): Glyph = when (m) { RecordChoice.Mode.Assist -> Glyph.Sparkle; RecordChoice.Mode.Memory -> Glyph.Camera; RecordChoice.Mode.Record -> Glyph.Wave; RecordChoice.Mode.Sight -> Glyph.Eye; RecordChoice.Mode.Practice -> Glyph.Note; RecordChoice.Mode.Teleprompter -> Glyph.Doc }
 
 @Composable
 private fun SheetLabel(text: String) = Text(text, style = Type.caption, color = Lente.c.muted, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
