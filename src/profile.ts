@@ -34,7 +34,7 @@ export class ProfileStore {
       this.mediaRetentionDays = MEDIA_RETENTIONS.includes(saved.mediaRetentionDays as MediaRetention) ? (saved.mediaRetentionDays as MediaRetention) : 30;
       this.notifications = parseSettings(saved.notifications);
       this.everyQuestion = saved.everyQuestion === true;
-      this.assistMode = saved.assistMode === "record" || saved.assistMode === "sight" ? saved.assistMode : "assist";
+      this.assistMode = saved.assistMode === "record" ? "record" : "assist";
       if (Array.isArray(saved.names)) this.names = parseNames(saved.names.filter((n) => typeof n === "string").join(","));
     } catch (error) {
       console.error(`[profile] could not read ${file}: ${(error as Error).message}`);

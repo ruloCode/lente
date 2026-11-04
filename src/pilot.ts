@@ -565,6 +565,12 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   type Mode = "camera" | "mic";
   /** Why listening is off: not started since boot, paused or stopped from the phone, or idle. */
   type Pause = { reason: "start" | "manual" } | { reason: "idle"; at: number; basis: "wearer" | "anyone"; /** The idle time that ran out. */ min: number };
+  /**
+   * Ver (add-sight-mode) lives in this runtime only: the saved profile keeps Asistir or Solo grabar (the
+   * accounts table allows only those), and a restart comes back out of Ver.
+   */
+  let sightOn = false;
+  const assistMode = (): AssistMode => (sightOn ? "sight" : profile.assistMode);
   let status = {
     kind: "status",
     clip: false,
@@ -818,7 +824,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     try {
       const reply = await callSpark(replyMessages(memoryText(), recentTurns(), turn.text), { label: "cue", stream: true, job: "cue" });
       if (seq !== cueSeq) return; // a newer question already took the card
-      if (profile.assistMode !== "assist") return; // switched to Solo grabar while the reply was on its way
+      if (assistMode() !== "assist") return; // switched to Solo grabar while the reply was on its way
       const ms = Math.round(performance.now() - started);
       const { text, meaning } = parseReply(reply.text, turn.text);
       if (!text) return;
@@ -863,11 +869,11 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const speaker = await labelOf(turn);
     const now = spokeAt ?? Date.now();
     const asked: AddressTurn = { speaker, text: turn.text, startMs: now, endMs: now + ((turn.endMs ?? 0) - (turn.startMs ?? 0)) };
-    if (profile.assistMode !== "assist") {
+    if (assistMode() !== "assist") {
       // Solo grabar and Ver: the free rules still mark questions for the wearer; no model check, no cue.
       const d = isAddressed(asked, earlier, wearerTracker.wearer(), profile.names);
       const verdict = d.verdict === "addressed" ? "addressed" : "not-addressed";
-      console.log(`[address] ${verdict} · ${d.rule} · ${profile.assistMode === "sight" ? "sight" : "record only"}`);
+      console.log(`[address] ${verdict} · ${d.rule} · ${assistMode() === "sight" ? "sight" : "record only"}`);
       broadcast({ kind: "address", turnId: turn.turnId, verdict, rule: d.rule });
       if (verdict === "addressed") flagAddressed(turn.turnId);
       return;
@@ -934,7 +940,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const since = sessionClock.view(Date.now())?.startedAt;
     const turns = since === undefined ? [] : day.entries.filter((e): e is Extract<DayEntry, { kind: "turn" }> => e.kind === "turn" && e.at >= since);
     let reply: SparkReply | undefined;
-    const out = await requestHelp({ kind, assistMode: profile.assistMode, turns, memory: memoryText() }, async (messages) => {
+    const out = await requestHelp({ kind, assistMode: assistMode(), turns, memory: memoryText() }, async (messages) => {
       reply = await callSpark(messages, { label: "help", stream: true });
       return reply.text;
     });
@@ -943,7 +949,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       return out;
     }
     // Switched to Solo grabar while the answer was on its way: no card.
-    if (profile.assistMode !== "assist") return { ok: false, reason: "record-only", message: HELP_REFUSALS["record-only"] };
+    if (assistMode() !== "assist") return { ok: false, reason: "record-only", message: HELP_REFUSALS["record-only"] };
     const stages = reply && { asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
     recordStaged({ at: Date.now(), kind: "cue", label: out.label, text: out.text, meaning: out.meaning, ms: out.ms, stages });
     console.log(`[help] ${out.label} · ${out.ms} ms · ${said(out.text)}${out.meaning ? ` (${said(out.meaning)})` : ""}`);
@@ -1559,7 +1565,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const due = Date.now() - lastSummaryAt >= SUMMARY_EVERY_MS;
     const heardSomething = day.since(lastSummaryAt).some((e) => e.kind === "turn");
     // Solo grabar is quiet: no unasked summaries (Resumen still works on demand).
-    if (due && heardSomething && status.listening && device && profile.assistMode === "assist") void summarize(false);
+    if (due && heardSomething && status.listening && device && assistMode() === "assist") void summarize(false);
   }, 30_000);
 
   // --- Live view: frames flow at the device's pace and show as they arrive; the model describes the newest --
@@ -1599,7 +1605,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
     const started = performance.now();
     try {
       if (!key) return; // the frame is already on the phones; nothing describes it
-      const sight = profile.assistMode === "sight";
+      const sight = sightOn;
       const reply = await callSpark([
         { role: "system", content: sight ? SIGHT_LIVE_PROMPT : LIVE_PROMPT },
         {
@@ -1609,7 +1615,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
             { type: "image_url", image_url: { url: photo } },
           ],
         },
-      ], { label: "live", stream: true });
+      ], { label: "live", stream: true, ...(sight ? { maxTokens: 800, allowIncomplete: true } : {}) });
       const ms = Math.round(performance.now() - started);
       // Ver says nothing when the view did not change (the model answers "="); the meeting view keeps one short line.
       const text = sight ? parseSight(reply.text) : toCue(reply.text, 120);
@@ -1682,7 +1688,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       const reply = await callSpark([
         { role: "system", content: mode === "read" ? SIGHT_READ_PROMPT : sightLookPrompt(question) },
         { role: "user", content: [{ type: "text", text: question }, { type: "image_url", image_url: { url: photo } }] },
-      ], { label: "look", stream: true, maxTokens: mode === "read" ? 900 : 300 });
+      ], { label: "look", stream: true, maxTokens: mode === "read" ? 2_000 : 800, allowIncomplete: true });
       const ms = Math.round(performance.now() - started);
       const text = parseSight(reply.text, mode === "read" ? LOOK_READ_MAX_CHARS : LOOK_DESCRIBE_MAX_CHARS) ?? "No veo nada claro. Acerca la cámara o busca más luz.";
       const stages = { heard: heardAt, asked: reply.askedAt, firstToken: reply.firstTokenAt, done: Date.now() };
@@ -1727,9 +1733,10 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   let liveBeforeSight = false;
 
   function setAssistMode(mode: AssistMode): void {
-    if (mode === profile.assistMode) return;
-    const leavingSight = profile.assistMode === "sight";
-    profile.setAssistMode(mode);
+    if (mode === assistMode()) return;
+    const leavingSight = sightOn;
+    sightOn = mode === "sight";
+    if (mode !== "sight" && mode !== profile.assistMode) profile.setAssistMode(mode);
     setStatus({ assistMode: mode });
     if (mode === "assist" && current?.auto) void endMeeting("mode");
     if (mode === "sight") {
@@ -1864,7 +1871,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
         syncWearer();
         heard(turn.speaker ?? speakerOfTurn.get(turn.turnId), Date.now());
         const question = isQuestion(turn.text);
-        if (profile.assistMode === "record" && !current) startMeeting("", true);
+        if (assistMode() === "record" && !current) startMeeting("", true);
         const anchor =
           turn.startMs === undefined || turn.endMs === undefined || !audioOrigin
             ? {}
@@ -2277,7 +2284,7 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
   const ACTIONS: Record<string, () => void> = {
     // In Ver a tap looks with the sight prompt (and works while live reads run); otherwise «Mirar» as before.
     // A failed look is still said out loud: someone who can't see the screen needs to hear why.
-    "/look": () => (profile.assistMode === "sight" ? void look(DEFAULT_LOOK_QUESTION, "describe").then((r) => r.ok || broadcast({ kind: "cue", label: "VER", text: r.text })) : device?.write("P")),
+    "/look": () => (sightOn ? void look(DEFAULT_LOOK_QUESTION, "describe").then((r) => r.ok || broadcast({ kind: "cue", label: "VER", text: r.text })) : device?.write("P")),
     "/live/on": () => setLive(true),
     "/live/off": () => setLive(false),
     "/mode/camera": () => setMode("camera"),

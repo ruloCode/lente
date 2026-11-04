@@ -101,6 +101,9 @@ test("Ver: live reads with the sight prompt, silence when unchanged, a look by t
 
   assert.equal(await post(base, "/assist-mode/sight"), 204);
   await until(() => events.find((e) => e.kind === "status" && e.assistMode === "sight" && e.live === true && e.mode === "camera"));
+  // Ver is never saved: the accounts table allows only Asistir and Solo grabar, and a restart leaves Ver.
+  const saved = readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+  assert.doesNotMatch(saved, /"assistMode":\s*"sight"/);
 
   // The first frame is described; later frames come back "=" and publish nothing.
   const first = await until(() => events.find((e) => e.kind === "live"));
