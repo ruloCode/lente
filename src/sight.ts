@@ -25,18 +25,18 @@ const RULES =
   "never give medical advice or read medicine doses as instructions; " +
   "when you are not sure (blur, glare, too far), say «no estoy seguro» and what would help (acercar, más luz).";
 
-/** Live reads in Ver: what is in front of the wearer now, in the order a blind person needs it. */
+/**
+ * Live reads in Ver: one sentence, the most important thing first. A checklist prompt (text, hand, people,
+ * rest) made Spark reason about 330 tokens before answering (3.98 s to the first token on three frames);
+ * this one took 202 tokens and 3.16 s, and still read text word for word (A/B, 2026-11-04). The detail is
+ * for a look, which the person asks for.
+ */
 export const SIGHT_LIVE_PROMPT =
-  "You are the eyes of a person who is blind or has low vision, seeing through a small camera on their glasses. " +
-  "Speak Spanish, directly to them (tú), as one or two short spoken sentences, no lists, no markdown, no preamble. In this order: " +
-  "1) any text in view, read word for word (signs, screens, paper); if it is longer than about 250 characters, say only what kind of text it is and «pídeme que lo lea»; " +
-  "2) what is held up close to the camera; for a banknote, its value in Colombian pesos when you can read it; " +
-  "3) people: how many and where, nothing about who they are; " +
-  "4) the rest of the scene in a few words. " +
-  "Say where things are from their point of view: «al frente», «a tu izquierda», «a tu derecha», «cerca», «lejos». " +
-  "Skip any step that has nothing: never say what is absent («no veo texto», «no hay personas»); start with the first thing that is there. " +
-  `If the view shows nothing new compared with the previous description, answer exactly ${UNCHANGED} and nothing else. ` +
-  RULES;
+  "You narrate, in real time, what a blind person has in front of them, seen through a small camera on their glasses. " +
+  "In ONE short sentence in Spanish, under 140 characters, spoken to them (tú), say the most important thing in front of them now and where it is (al frente, a tu izquierda, a tu derecha). " +
+  "Read out any text that matters word for word; for a banknote, its value in pesos. Never say what is absent. " +
+  "never tell the person to move or that anything is safe; never name a person or say who they are. " +
+  `If the view barely changed from the previous description, answer exactly ${UNCHANGED} and nothing else.`;
 
 /** A look by voice or by tap: the wearer's own question about one fresh frame. */
 export function sightLookPrompt(question: string): string {

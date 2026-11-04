@@ -8,7 +8,7 @@ import { AsrSession, DEFAULT_LANGUAGE_BIAS } from "./asr-session.ts";
 import type { ChatLine, Chats } from "./chat-store.ts";
 import type { ChatTarget } from "./providers.ts";
 import { type AttachedMemory, type Companion, SIGHT_FUNCTIONS, SIGHT_INTRO_CUE, VOICE_FUNCTIONS, withMemoryPrefix, type VoiceUsage, runVoiceTurn, voiceInstructions } from "./voice-agent.ts";
-import { type VoiceLine, VoiceSession, parsePhoneMessage } from "./voice-session.ts";
+import { type PhoneMessage, type VoiceLine, VoiceSession, parsePhoneMessage } from "./voice-session.ts";
 import { type VoiceBackend, VoiceTools } from "./voice-tools.ts";
 import { SpeculativeRecall } from "./voice-recall.ts";
 import { responsesVoiceModel } from "./voice-wire.ts";
@@ -46,7 +46,27 @@ export interface VoiceHubDeps {
 
 export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(): void } {
   const threadId = randomUUID();
-  const tools = new VoiceTools(deps.backend((choice) => ws.send({ type: "recordSheet", ...choice }), (event) => ws.send(event)));
+  // «¿Dónde estoy?» (add-sight-mode): the hub asks this session's phone and waits for its answer.
+  const LOCATE_TIMEOUT_MS = 8_000;
+  const locating = new Map<string, (at: Extract<PhoneMessage, { type: "location" }> | undefined) => void>();
+  const backend = deps.backend((choice) => ws.send({ type: "recordSheet", ...choice }), (event) => ws.send(event));
+  backend.locate = async () => {
+    const id = randomUUID();
+    const at = await new Promise<Extract<PhoneMessage, { type: "location" }> | undefined>((resolve) => {
+      const timer = setTimeout(() => (locating.delete(id), resolve(undefined)), LOCATE_TIMEOUT_MS);
+      locating.set(id, (reply) => (clearTimeout(timer), locating.delete(id), resolve(reply)));
+      ws.send({ type: "locate", id });
+    });
+    if (!at) return { ok: false, reason: "el teléfono no respondió con su ubicación" };
+    if (!at.ok || !at.address) return { ok: false, reason: at.reason ?? "no hay ubicación disponible" };
+    return { ok: true, address: at.address, ...(at.place ? { place: at.place } : {}), ...(at.accuracy !== undefined ? { accuracy: at.accuracy } : {}) };
+  };
+  const hubQuiet = backend.setQuiet?.bind(backend);
+  backend.setQuiet = (on) => {
+    hubQuiet?.(on);
+    ws.send({ type: "quiet", on });
+  };
+  const tools = new VoiceTools(backend);
   /** Ver's companion (add-sight-mode) once the phone says so; the default Lente otherwise. */
   let persona: "sight" | "default" = "default";
   let intro = false;
@@ -151,6 +171,7 @@ export function serveVoiceSession(ws: VoiceSocket, deps: VoiceHubDeps): { close(
     const message = parsePhoneMessage(text);
     if (!message) return;
     if (message.type === "end") return close();
+    if (message.type === "location") return void locating.get(message.id)?.(message);
     if (message.type === "start") {
       // Ver's companion: new instructions for the session, and with the welcome Lente speaks first.
       persona = message.persona;

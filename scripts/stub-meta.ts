@@ -158,7 +158,7 @@ export function startStubMeta(): Promise<StubMeta> {
         const text = id ? `@answer\n${STUB_ASK_ANSWER} [[${id}]]` : "@none";
         const cut = text.length - (id ? id.length + 3 : 2);
         sse(res, [{ type: "response.created" }, { type: "response.output_text.delta", delta: text.slice(0, 9) }, { type: "response.output_text.delta", delta: text.slice(9, cut) }, { type: "response.output_text.delta", delta: text.slice(cut) }, { type: "response.completed", response: { usage } }]);
-      } else if (req.url === "/v1/responses" && /eyes of a person who is blind|You read aloud for a person/.test(body)) {
+      } else if (req.url === "/v1/responses" && /eyes of a person who is blind|You read aloud for a person|what a blind person has in front/.test(body)) {
         // Ver (add-sight-mode): a description for the first live frame, "=" once a previous one exists, a reading, or a look.
         const text = body.includes("You read aloud") ? STUB_SIGHT_READ : body.includes("Previous description") ? "=" : body.includes("Answer their question") ? STUB_SIGHT_LOOK : STUB_SIGHT_LIVE;
         const usage = { input_tokens: 900, input_tokens_details: { cached_tokens: 0 }, output_tokens: 20 };
@@ -245,9 +245,11 @@ function voiceDecision(input: VoiceInput): { commentary?: string; call?: { name:
     if (name === "start_recording") return { text: ["Te abrí la hoja de grabación; toca Grabar cuando quieras."] };
     if (name === "list_tasks") return { text: [`Tienes ${out.total ?? 0} tareas abiertas.`] };
     if (name === "look") return { text: [String(out.seen ?? out.error ?? "No pude ver.")] };
+    if (name === "where_am_i") return { text: [out.address ? `Estás en ${out.address}.` : `No pude saberlo: ${out.error}.`] };
     return { text: ["Listo."] };
   }
   if (/empieza la bienvenida/.test(user)) return { text: ["Hola, soy Lente. ¿Cómo te llamas?"] };
+  if (/donde estoy/.test(user)) return { commentary: "Déjame ver dónde estás.", call: { name: "where_am_i", args: {} } };
   if (/en la mano|leeme|que hay frente/.test(user)) return { commentary: "Déjame ver.", call: { name: "look", args: { question: user, mode: /leeme/.test(user) ? "read" : "describe" } } };
   if (/agrega|anota/.test(user)) {
     const args = /llame a ana/.test(user) ? { title: "Llamar a Ana", who: "me", due: "viernes" } : { title: user.replace(/^.*?(agrega|anota)( que)?\s*/, "").slice(0, 60) || "PROBE tarea", who: "me" };

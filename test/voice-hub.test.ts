@@ -73,7 +73,7 @@ async function phone(base: string, token?: string) {
   const until = async (check: () => boolean, ms = 8000) => {
     const end = Date.now() + ms;
     while (!check()) {
-      if (Date.now() > end) throw new Error(`timed out; events: ${JSON.stringify(events.map((e) => e.type))}`);
+      if (Date.now() > end) throw new Error(`timed out; events: ${JSON.stringify(events.map((e) => (e.type === "reply" ? `reply:${e.text}` : e.type)))}`);
       await new Promise((r) => setTimeout(r, 20));
     }
   };
@@ -186,4 +186,22 @@ test("accounts: no or bad credentials are refused, and each user's session acts 
   } finally {
     jwks.close();
   }
+});
+
+test("Ver's companion: the welcome speaks first, and «¿dónde estoy?» asks the phone for its place", { timeout: 60_000 }, async () => {
+  const { base } = await startHub({});
+  const p = await phone(base);
+  await p.until(() => p.events.some((e) => e.type === "listening"));
+  p.send({ type: "start", persona: "sight", intro: true });
+  await p.until(() => p.events.filter((e) => e.type === "reply").map((e) => e.text).join(" ") === "Hola, soy Lente. ¿Cómo te llamas?");
+  assert.ok(!p.events.some((e) => e.type === "heard"), "the opening cue is never shown as heard");
+  await p.until(() => p.events.some((e) => e.type === "done" && e.turn === 1));
+  p.send({ type: "spoken", turn: 1, count: 2 });
+
+  stub.utterances.push("¿Dónde estoy?");
+  p.speak(800);
+  await p.until(() => p.events.some((e) => e.type === "locate"));
+  const ask = p.events.find((e) => e.type === "locate")!;
+  p.send({ type: "location", id: ask.id, ok: true, lat: 4.6, lon: -74.1, accuracy: 20, address: "PROBE Calle 1, PROBE Barrio, Bogotá" });
+  await p.until(() => p.events.some((e) => e.type === "reply" && /^Estás en PROBE Calle 1, PROBE Barrio, Bogotá\.?$/.test(e.text)));
 });

@@ -211,6 +211,8 @@ export function sightInstructions(ctx: VoiceContext): string {
     "narrate enciende o apaga la narración continua, en la que cada pocos segundos le cuentas lo que cambia frente a ella. Enciéndela cuando lo pida o cuando acepte al final de la bienvenida, y apágala si pide silencio.",
     "Reglas que siempre se cumplen: nunca le digas que se mueva, cruce, avance, espere o pare, ni que un camino, una calle o una escalera es seguro; si pregunta eso, describe lo que ves y dile que no puedes saber si es seguro moverse, que confíe en su bastón o pregunte a alguien. Nunca identifiques a nadie por su cara ni adivines edad, salud o emociones de otras personas; sí puedes decir cuántas personas hay y dónde. No das consejos médicos. Si no estás segura de algo, dilo y sugiere acercar el objeto o buscar más luz.",
     "Lo que la persona vivió antes (lo que leíste, lo que se dijo) se consulta con ask_memory.",
+    "Si pregunta dónde está, usa where_am_i y cuéntaselo de forma amable y útil: la calle o el lugar, el barrio y la ciudad, y si te sirve, algo conocido cerca (puedes buscarlo en la web). Si la precisión es de más de 50 metros, di que es aproximado. Nunca le indiques cómo llegar caminando a ningún lado.",
+    "Si quiere que te quedes callada pero sigas guardando sus recuerdos (el audio y lo que ves), usa quiet_mode con on true y dile en una frase que sigues ahí y que mantenga presionada la pantalla para hablarte.",
     ctx.intro && !c?.name
       ? [
           "BIENVENIDA. Esta conversación empieza contigo. Conózcanse paso a paso, una sola pregunta por turno y esperando su respuesta:",
@@ -307,6 +309,16 @@ export const SIGHT_FUNCTIONS: FunctionSpec[] = [
     name: "remember_person",
     description: "Guarda lo que la persona te contó en la bienvenida: su nombre, su edad y para qué quiere tu ayuda. Se recuerda mientras Lente esté encendida; no se guarda en la base de datos.",
     parameters: obj({ name: { type: "string" }, age: { type: "string", description: "Como lo dijo («treinta y dos», «32»)" }, wants: { type: "string", description: "Para qué quiere tu ayuda, en pocas palabras" } }, ["name"]),
+  },
+  {
+    name: "where_am_i",
+    description: "Pide al teléfono su ubicación y devuelve la dirección aproximada (calle, barrio, ciudad) y un lugar conocido si lo hay.",
+    parameters: obj({}),
+  },
+  {
+    name: "quiet_mode",
+    description: "on true: dejas de hablar y de narrar, y sigues grabando el audio y los recuerdos del día hasta que la persona vuelva a hablarte. on false: vuelves a conversar.",
+    parameters: obj({ on: { type: "boolean" } }, ["on"]),
   },
   {
     name: "narrate",

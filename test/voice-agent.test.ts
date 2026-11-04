@@ -221,5 +221,5 @@ test("Ver's companion: the welcome steps until it knows the person, then their n
   const known = instr({ ...base, intro: true, companion: { name: "PROBE Ana", age: "40", wants: "leer cartas" } });
   assert.doesNotMatch(known, /BIENVENIDA/);
   assert.match(known, /se llama PROBE Ana, tiene 40 años y quiere tu ayuda para leer cartas/);
-  assert.deepEqual(SIGHT_FUNCTIONS.map((f) => f.name).sort(), ["add_task", "ask_memory", "look", "narrate", "remember_person"]);
+  assert.deepEqual(SIGHT_FUNCTIONS.map((f) => f.name).sort(), ["add_task", "ask_memory", "look", "narrate", "quiet_mode", "remember_person", "where_am_i"]);
 });

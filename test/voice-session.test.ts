@@ -185,3 +185,9 @@ test("the start message: persona and welcome, with safe defaults", () => {
   assert.deepEqual(parsePhoneMessage('{"type":"start"}'), { type: "start", persona: "default", intro: false });
   assert.deepEqual(parsePhoneMessage('{"type":"start","persona":"other","intro":"yes"}'), { type: "start", persona: "default", intro: false });
 });
+
+test("the phone's location reply is read with its fields bounded, and needs an id", () => {
+  assert.deepEqual(parsePhoneMessage('{"type":"location","id":"x1","ok":true,"lat":4.62,"lon":-74.07,"accuracy":15,"address":"PROBE Calle 1","place":"PROBE Parque","extra":1}'), { type: "location", id: "x1", ok: true, lat: 4.62, lon: -74.07, accuracy: 15, address: "PROBE Calle 1", place: "PROBE Parque" });
+  assert.deepEqual(parsePhoneMessage('{"type":"location","id":"x2","ok":false,"reason":"sin permiso"}'), { type: "location", id: "x2", ok: false, reason: "sin permiso" });
+  assert.equal(parsePhoneMessage('{"type":"location","ok":true}'), undefined);
+});

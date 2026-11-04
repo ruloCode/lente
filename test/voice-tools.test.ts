@@ -135,3 +135,17 @@ test("Ver's companion tools: remember the person, turn narration on and off", as
   await h.narrate({ on: false });
   assert.deepEqual(narration, [true, false]);
 });
+
+test("where am I: the phone's address goes to the model; a refusal is said; quiet mode reaches the hub", async () => {
+  const { b } = backend();
+  b.locate = async () => ({ ok: true, address: "PROBE Calle 1 # 2-3, PROBE Barrio, Bogotá", place: "PROBE Parque", accuracy: 12.4 });
+  const h = new VoiceTools(b).handlers();
+  assert.deepEqual((await h.where_am_i({})).result, { ok: true, address: "PROBE Calle 1 # 2-3, PROBE Barrio, Bogotá", place: "PROBE Parque", accuracy_m: 12 });
+  b.locate = async () => ({ ok: false, reason: "sin permiso de ubicación" });
+  assert.deepEqual((await h.where_am_i({})).result, { error: "sin permiso de ubicación" });
+  const quiet: boolean[] = [];
+  b.setQuiet = (on) => void quiet.push(on);
+  assert.equal((await h.quiet_mode({ on: true })).label, "Grabando en silencio");
+  await h.quiet_mode({ on: false });
+  assert.deepEqual(quiet, [true, false]);
+});

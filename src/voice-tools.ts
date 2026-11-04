@@ -47,6 +47,10 @@ export interface VoiceBackend {
   rememberPerson?(person: { name: string; age?: string; wants?: string }): void;
   /** Ver: the live narration on or off. */
   setNarration?(on: boolean): void;
+  /** Ver: record quietly (audio and memories, no narration) until the person talks again. */
+  setQuiet?(on: boolean): void;
+  /** Ver: where the phone is, as an address, asked of the phone on demand; never stored. */
+  locate?(): Promise<{ ok: true; address: string; place?: string; accuracy?: number } | { ok: false; reason: string }>;
 }
 
 export interface PendingAction {
@@ -221,6 +225,19 @@ export class VoiceTools {
         if (!this.backend.setNarration) return { result: { error: "no narration on this hub" }, label: "Narración" };
         this.backend.setNarration(on);
         return { result: { ok: true, narrating: on }, label: on ? "Narración encendida" : "Narración apagada" };
+      },
+      quiet_mode: async (args) => {
+        const on = args.on !== false;
+        if (!this.backend.setQuiet) return { result: { error: "no quiet mode on this hub" }, label: "Silencio" };
+        this.backend.setQuiet(on);
+        return { result: { ok: true, quiet: on, note: on ? "after this reply the conversation closes; Lente keeps recording audio and memories without speaking; a long press on the screen talks again" : "back to conversation" }, label: on ? "Grabando en silencio" : "Conversando" };
+      },
+      where_am_i: async () => {
+        if (!this.backend.locate) return { result: { error: "this phone cannot share its location" }, label: "Buscando dónde estás" };
+        const at = await this.backend.locate();
+        return at.ok
+          ? { result: { ok: true, address: at.address, ...(at.place ? { place: at.place } : {}), ...(at.accuracy !== undefined ? { accuracy_m: Math.round(at.accuracy) } : {}) }, label: "Buscando dónde estás" }
+          : { result: { error: at.reason }, label: "Buscando dónde estás" };
       },
       delegate: async (args) => {
         const instruction = str(args.instruction, MAX_TITLE_CHARS - 20);

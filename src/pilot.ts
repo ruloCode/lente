@@ -2364,10 +2364,17 @@ function createWearerRuntime(userId: string, dataDir: string, mayListen: () => b
       companion = person;
       console.log(`[sight] the companion met someone (${person.age ? "name and age" : "name"}${person.wants ? ", what they want" : ""})`);
     },
+    // Narration off only stops the speaking: live reads go on, so the day still keeps what the camera saw.
     setNarration: (on) => {
       if (on && !sightOn) setAssistMode("sight");
-      setLive(on);
+      if (on) setLive(true);
       send?.({ type: "narration", on });
+    },
+    // Recording quietly: frames keep flowing for Recuerdos; the phone closes the conversation and starts listening.
+    setQuiet: (on) => {
+      if (!on) return;
+      if (!sightOn) setAssistMode("sight");
+      if (!status.live) setLive(true);
     },
     // Fast recall (add-memory-engine 5.3): ask_memory returns lines the voice model answers from.
     ...(recall ? { lines: async (question: string, projectId: string | undefined, filters: { when?: string; person?: string }) => {

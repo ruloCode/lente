@@ -24,8 +24,12 @@ export type VoiceEvent =
   | { type: "bargeIn"; turn: number }
   | { type: "done"; turn: number; stopped: string; firstTextMs?: number; firstSentenceMs?: number; usage?: VoiceTurnResult["usage"] }
   | { type: "recordSheet"; projectId?: string; projectName?: string; camera: boolean }
-  /** Ver (add-sight-mode): the agent turned the live narration on or off. */
+  /** Ver (add-sight-mode): the agent turned the spoken narration on or off. */
   | { type: "narration"; on: boolean }
+  /** Ver: record quietly (audio and memories, nothing spoken) until the person talks again. */
+  | { type: "quiet"; on: boolean }
+  /** Ver: the hub asks the phone where it is, for «¿dónde estoy?». */
+  | { type: "locate"; id: string }
   | { type: "error"; message: string }
   | { type: "end" };
 
@@ -38,6 +42,8 @@ export type PhoneMessage =
   | { type: "resume" }
   /** Ver (add-sight-mode): who Lente is in this session, and whether it speaks first (the welcome). */
   | { type: "start"; persona: "sight" | "default"; intro: boolean }
+  /** Ver: the phone's answer to `locate`; never stored or logged. */
+  | { type: "location"; id: string; ok: boolean; lat?: number; lon?: number; accuracy?: number; address?: string; place?: string; reason?: string }
   | { type: "end" };
 
 export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
@@ -55,6 +61,15 @@ export function parsePhoneMessage(raw: string): PhoneMessage | undefined {
     case "resume":
     case "end":
       return { type: m.type };
+    case "location": {
+      const l = m as Record<string, unknown>;
+      if (typeof l.id !== "string") return undefined;
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+      const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+      const out: Extract<PhoneMessage, { type: "location" }> = { type: "location", id: l.id, ok: l.ok === true };
+      for (const [k, v] of [["lat", num(l.lat)], ["lon", num(l.lon)], ["accuracy", num(l.accuracy)], ["address", text(l.address, 200)], ["place", text(l.place, 100)], ["reason", text(l.reason, 120)]] as const) if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+      return out;
+    }
     case "start": {
       const s = m as { persona?: unknown; intro?: unknown };
       return { type: "start", persona: s.persona === "sight" ? "sight" : "default", intro: s.intro === true };
