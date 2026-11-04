@@ -99,7 +99,7 @@ The full plan is in [docs/architecture.md](docs/architecture.md). What Lente doe
 ## Status
 
 The hosted hub runs `main` on Modal at <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app> (`/health` is public). Sign-in is Google with an allow list: sign-up stays closed until terms and consent ship (`add-consent`). Without an account or a clip, `pnpm smoke` runs the whole path locally with no keys (below).
-<!-- TODO(orch): after L2 2.1/2.2/2.6 deploy (14:30), replace "Sign-in is Google with an allow list: sign-up stays closed until terms and consent ship (`add-consent`)." with: "During judging, until 2026-11-16, anyone can sign in with Google on the web app or the Android app and gets their own sealed memory, starting with a small synthetic sample to ask about. Each account has a daily spend cap (US$ 1.00) and the whole demo another (US$ 12.00), so the free credit lasts the judging and the vote; past a cap Lente says so kindly and pauses. On 2026-11-17 sign-up closes again to the allow list." -->
+<!-- TODO(orch): after L2 2.1/2.2/2.6 deploy (14:30), replace "Sign-in is Google with an allow list: sign-up stays closed until terms and consent ship (`add-consent`)." with: "During judging, until 2026-11-16, anyone can sign in with Google on the web app or the Android app and gets their own sealed memory, starting with a small synthetic sample to ask about. Each account has a daily spend cap (US$ 1.00) and the whole demo another (US$ 6.00), so the free credit lasts the judging and the vote; past a cap Lente says so kindly and pauses. On 2026-11-17 sign-up closes again to the allow list." -->
 
 What runs today:
 

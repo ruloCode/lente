@@ -229,7 +229,8 @@ During judging (Nov 5–16), anyone can sign in with Google on the web app and o
   - **Rejected:** reading an empty allow list as «everyone». An empty list keeps meaning «nobody»: that is the safe failure.
 - **Two caps, checked before every model call** (`src/spend-cap.ts`, pure):
   - **US$ 1.00 a day per user.** At the measured US$ 0.267 per recorded hour (cards and transcription, 2026-11-03) that is over three hours of recording, or over 200 voice turns at US$ 0.0044 each (p50). Live narration in Ver makes a vision call every few seconds (36 in 125 s in the baseline), so it spends the cap fastest, and the cap bounds it the same way.
-  - **US$ 12.00 a day across everyone:** Meta's US$ 150 credit spread over the 12 judging and voting days.
+    - *Derived, not measured on its own:* US$ 0.0024 per live call (the one-sentence prompt on the promo frames, `scripts/bench-sight-prompts.ts`, 2026-11-04) × the baseline's 36 calls in 125 s gives about US$ 2.5 an hour of narration, so a day's US$ 1.00 lasts about 25 minutes of continuous Ver. The clip's frames may cost a different number of tokens; the hub's own meter is the measure.
+  - **US$ 6.00 a day across everyone.** Meta's billing showed US$ 98.26 of free credit left on 2026-11-04 at about 10:50. Thirteen days to Nov 16 at the cap is US$ 78, which leaves about US$ 20 of headroom for the owner, who is exempt, and for today. (The design first said US$ 12.00, from the full US$ 150 over 12 days.)
   - **The owner is exempt.**
   - The day's spend per user is kept in `usage_daily` (user, day, US$, no content; RLS on, no policies; written only by the hub), so a restart does not reset it. Days roll over in America/Bogota.
   - **When a cap is hit, nothing errors.** Model calls answer a short, kind Spanish line, and listening pauses with that reason.
