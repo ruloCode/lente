@@ -2,6 +2,19 @@
 // the app never holds a token.
 
 import { sseReader } from "./lib/chat.js";
+import { termsGate } from "./lib/terms.js";
+
+let termsNeeded = (_gate) => {};
+
+/** Runs `fn` when any answer says the terms must be accepted first (428 `needsTerms`). */
+export function onTermsNeeded(fn) {
+  termsNeeded = fn;
+}
+
+function checkTerms(status, body) {
+  const gate = termsGate(status, body);
+  if (gate) termsNeeded(gate);
+}
 
 export class HubError extends Error {
   constructor(status, message) {
@@ -13,7 +26,10 @@ export class HubError extends Error {
 /** GET a JSON route; 401/403 mean the session ended (the app shows sign-in again). */
 export async function getJson(path) {
   const res = await fetch(path, { headers: { Accept: "application/json" }, cache: "no-store" });
-  if (!res.ok) throw new HubError(res.status, `${path} answered ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 428) checkTerms(res.status, await res.json().catch(() => null));
+    throw new HubError(res.status, `${path} answered ${res.status}`);
+  }
   return res.json();
 }
 
@@ -27,6 +43,7 @@ export async function postStream(path, body, onEvent) {
   if (!(res.headers.get("Content-Type") ?? "").includes("text/event-stream") || !res.body) {
     let parsed = null;
     if ((res.headers.get("Content-Type") ?? "").includes("application/json")) parsed = await res.json().catch(() => null);
+    checkTerms(res.status, parsed);
     return { ok: res.ok, status: res.status, body: parsed, streamed: false };
   }
   const reader = sseReader();
@@ -45,5 +62,6 @@ export async function post(path, body = {}) {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   let parsed = null;
   if ((res.headers.get("Content-Type") ?? "").includes("application/json")) parsed = await res.json().catch(() => null);
+  checkTerms(res.status, parsed);
   return { ok: res.ok, status: res.status, body: parsed };
 }

@@ -1,13 +1,14 @@
 // Ajustes: your name, the mode, reading cards aloud, answering every question, the theme,
 // notifications, and on a hub with accounts the account: email, this month's spend, export,
-// delete (typed confirmation) and sign out.
+// removing the sample project, delete (typed confirmation) and sign out.
 
 import { getJson, post } from "../api.js";
-import { button, dialog, h, icon, sectionTitle, toast } from "../dom.js";
+import { button, confirm, dialog, h, icon, sectionTitle, toast } from "../dom.js";
 import { money } from "../lib/format.js";
+import { sampleDeleteResult } from "../lib/terms.js";
 import { namesLine } from "../lib/words.js";
 import { lifecycle, reactive } from "../reactive.js";
-import { applyTheme, emit, pref, setPref, store } from "../store.js";
+import { applyTheme, emit, pref, refreshProjects, setPref, store } from "../store.js";
 
 /** The word typed to delete the account. */
 const DELETE_WORD = "BORRAR";
@@ -72,12 +73,21 @@ function account(life) {
       row("Correo", "", h("span", {}, store.session.email ?? d.body?.email ?? "—")),
       row("Gasto del mes", spend?.capUsd ? `Tope: ${money(spend.capUsd)} al mes` : "Lo que costó este mes escuchar y responderte.", h("strong", { class: "num" }, d.state === "loading" ? "…" : spend ? money(spend.usd) : "—")),
       row("Exportar mis datos", "Todo lo que Lente guarda de ti, legible, en un archivo JSON.", h("a", { class: "btn", href: "/account/export", download: "lente-export.json" }, icon("download"), h("span", {}, "Exportar"))),
+      row("Borrar ejemplo", "Quita el proyecto «PROBE · Proyecto de ejemplo» con sus reuniones, tareas y recuerdos. Lo tuyo se queda.", button("Borrar ejemplo", { onclick: deleteSample, "data-key": "sample-delete" }, "trash")),
       row("Cerrar sesión", "En este navegador. El teléfono sigue conectado.", button("Cerrar sesión", { onclick: signOut }, "logout")),
       row("Borrar mi cuenta", "Borra tu llave, tu memoria, tus dispositivos y tu acceso. No se puede deshacer.", button("Borrar mi cuenta", { class: "btn danger", onclick: deleteAccount }, "trash")),
     );
   });
   life.track(view.off);
   return view.el;
+}
+
+async function deleteSample() {
+  const yes = await confirm("Borrar ejemplo", "Se borran el proyecto de ejemplo, sus dos reuniones, sus tareas y sus recuerdos. Tus propias reuniones y tareas no se tocan.", { yes: "Borrar ejemplo", danger: true });
+  if (!yes) return;
+  const result = sampleDeleteResult(await post("/sample/delete").catch(() => ({ ok: false, status: 0, body: null })));
+  toast(result.text, { tone: result.ok ? "" : "warn" });
+  if (result.ok) void refreshProjects();
 }
 
 async function signOut() {

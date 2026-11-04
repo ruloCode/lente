@@ -421,3 +421,10 @@ a.row-link:hover { background: var(--raised); text-decoration: none; }
   .stats-row { grid-template-columns: 1fr 1fr; }
   .choices { grid-template-columns: 1fr; }
 }
+
+/* The preview terms screen (ship-hackathon 3.2) */
+.terms-card { width: min(480px, 100%); }
+.terms-card h1 { font-size: 28px; }
+.terms-card h1:focus { outline: none; }
+.terms-list { text-align: left; margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 15px; justify-self: stretch; }
+.terms-links { font-size: 14.5px; margin: 0; }
