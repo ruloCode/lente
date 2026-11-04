@@ -301,11 +301,34 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
    all of it off under reduced motion ─────────────────── */
 @media (prefers-reduced-motion: no-preference) {
   /* The hero enters once on load: 480 ms each, 30 ms apart, done by 600 ms */
-  .hero > .wrap > * { animation: rise 480ms var(--ease) both; }
-  .hero > .wrap > :nth-child(2) { animation-delay: 30ms; }
-  .hero > .wrap > :nth-child(3) { animation-delay: 60ms; }
-  .hero > .wrap > :nth-child(4) { animation-delay: 90ms; }
-  .hero > .wrap > :nth-child(n + 5) { animation-delay: 120ms; }
+  .hero > .wrap > * { animation: rise 480ms var(--ease) both; animation-delay: var(--intro-wait, 0ms); }
+  .hero > .wrap > :nth-child(2) { animation-delay: calc(var(--intro-wait, 0ms) + 30ms); }
+  .hero > .wrap > :nth-child(3) { animation-delay: calc(var(--intro-wait, 0ms) + 60ms); }
+  .hero > .wrap > :nth-child(4) { animation-delay: calc(var(--intro-wait, 0ms) + 90ms); }
+  .hero > .wrap > :nth-child(n + 5) { animation-delay: calc(var(--intro-wait, 0ms) + 120ms); }
+  /* Under the intro the headline waits for the layer to lift; the render is already there,
+     painted, so the largest paint is not delayed */
+  [data-intro] { --intro-wait: 1000ms; }
+  [data-intro] .hero .product { animation: none; }
+
+  /* The intro: the mark assembles, «Lente» closes in, the layer lifts. Each step ≤ 600 ms,
+     all done by 1.45 s. No pointer events, so it never blocks a click. */
+  [data-intro] .intro { display: grid; animation: intro-lift 450ms var(--ease) 1000ms forwards; }
+  .intro .i-base, .intro .i-wing, .intro .i-lens, .intro .i-bar { transform-box: fill-box; transform-origin: center; }
+  .intro .i-base { animation: intro-base 520ms var(--ease) both; }
+  .intro .i-wing { animation: intro-wing 520ms var(--ease) 140ms both; }
+  .intro .i-lens { animation: intro-iris 460ms var(--ease) 300ms both; }
+  .intro .i-bar { transform-origin: 50% 50%; animation: intro-bar 360ms var(--ease) 540ms both; }
+  .intro .i-bar--2 { animation-delay: 600ms; }
+  .intro .i-bar--3 { animation-delay: 660ms; }
+  .intro-word { animation: intro-word 560ms var(--ease) 480ms both; }
+}
+.intro { position: fixed; inset: 0; z-index: 30; display: none; place-items: center; background: var(--bg); pointer-events: none; }
+.intro-mark { display: flex; align-items: center; gap: 18px; }
+.intro-mark svg { width: 88px; height: 88px; overflow: visible; }
+.intro-word { font: 650 52px/1 var(--display); letter-spacing: -0.035em; color: var(--ink); }
+@media (max-width: 600px) { .intro-mark svg { width: 64px; height: 64px; } .intro-word { font-size: 38px; } }
+@media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
     /* Each child reveals on its own as it enters; side-by-side children start a step apart */
     .reveal > * { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 55%; }
@@ -319,4 +342,10 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
   }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+@keyframes intro-base { from { opacity: 0; transform: scale(.82); } }
+@keyframes intro-wing { from { opacity: 0; transform: translateX(22%); } }
+@keyframes intro-iris { from { opacity: 0; transform: scale(.3); } }
+@keyframes intro-bar { from { transform: scaleY(0); } }
+@keyframes intro-word { from { opacity: 0; letter-spacing: .25em; transform: translateX(-10px); } }
+@keyframes intro-lift { to { opacity: 0; visibility: hidden; } }
 @keyframes closer { to { transform: scale(1.05); } }

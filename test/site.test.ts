@@ -16,8 +16,12 @@ const BENCHMARKS = readFileSync(fileURLToPath(new URL("../docs/benchmarks.md", i
 const IMAGE_MAX_BYTES = 200 * 1024;
 /** The budget for one page: its HTML, the stylesheet and every image it names. */
 const PAGE_MAX_BYTES = 1024 * 1024;
-/** The budget for the one script, the light/dark switch (design 6b). */
+/** The budget for the one script, the light/dark switch and the intro (design 6b). */
 const SCRIPT_MAX_BYTES = 6 * 1024;
+/** No single animation or transition runs longer than this (design 6b). */
+const STEP_MAX_MS = 600;
+/** The logo intro, with its steps and the headline waiting for it, is over by this (design 6b). */
+const INTRO_END_MS = 1450;
 /** GitHub Pages serves the project under this path; 404.html links from it, since it answers any URL. */
 const BASE_PATH = "/lente/";
 
@@ -71,7 +75,7 @@ test("pages name their language, start light, every image has alt text, and the 
     assert.match(html, /<main id="[a-z]+"/, `${name}: a main landmark`);
     const scripts = [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].map((m) => m[0]);
     assert.equal(scripts.length, 1, `${name}: one script`);
-    assert.match(scripts[0]!, /^<script src="(?:\.\.\/|\/lente\/)?theme\.js"><\/script>$/, `${name}: the script is theme.js, external, nothing inline`);
+    assert.match(scripts[0]!, /^<script src="(?:\.\.\/|\/lente\/)?theme\.js"(?: data-intro)?><\/script>$/, `${name}: the script is theme.js, external, nothing inline`);
     assert.doesNotMatch(html, /\sstyle="/, `${name}: no inline style`);
     assert.equal(html.match(/<h1\b/g)?.length, 1, `${name}: one h1`);
     assert.match(html, /<a class="skip" href="#/, `${name}: a skip link`);
@@ -157,5 +161,28 @@ test("the theme switch is tiny, starts light, and every animation stays off unde
   assert.doesNotMatch(outside, /(^|[;{\s])animation(-[a-z]+)?\s*:/, "an animation outside prefers-reduced-motion: no-preference");
   assert.doesNotMatch(outside, /scroll-behavior:\s*smooth/, "smooth scrolling outside prefers-reduced-motion: no-preference");
   assert.doesNotMatch(css, /infinite/, "nothing loops");
-  for (const [, ms] of css.matchAll(/\b(\d+)ms\b/g)) assert.ok(Number(ms) <= 600, `a ${ms} ms duration is over 600 ms`);
+  // In a shorthand the first time is the duration and the second the delay; delay + duration ends the step.
+  for (const [, prop, value] of css.matchAll(/([a-z-]+)\s*:\s*([^;{}]+)/g)) {
+    if (!/^(animation|transition)(-duration|-delay)?$|^--intro-wait$/.test(prop!)) continue;
+    for (const layer of value!.split(",")) {
+      const times = [...layer.matchAll(/(\d+)ms\b/g)].map((m) => Number(m[1]));
+      if (prop!.endsWith("-delay") || prop === "--intro-wait") times.forEach((t) => assert.ok(t <= INTRO_END_MS - 450, `${prop}: ${t} ms waits too long`));
+      else if (times.length) {
+        assert.ok(times[0]! <= STEP_MAX_MS, `${prop}: a ${times[0]} ms step is over ${STEP_MAX_MS} ms`);
+        if (times[1] !== undefined) assert.ok(times[0]! + times[1]! <= INTRO_END_MS, `${prop}: ends at ${times[0]! + times[1]!} ms`);
+      }
+    }
+  }
+  // The intro is off unless theme.js turns it on, and turned on only inside the reduced-motion guard.
+  assert.match(css, /\.intro \{[^}]*display: none;[^}]*pointer-events: none;/, "the intro is hidden by default and never takes a click");
+  assert.doesNotMatch(outside, /\[data-intro\] \.intro \{/, "the intro shows only inside prefers-reduced-motion: no-preference");
+});
+
+test("only the home pages play the intro, hidden from screen readers", () => {
+  for (const page of pages) {
+    const html = readFileSync(page, "utf8");
+    const home = /(^|\/)(en\/)?index\.html$/.test(relative(SITE, page)) && !/terminos|privacidad/.test(page);
+    assert.equal(/data-intro/.test(html), home, `${relative(SITE, page)}: data-intro`);
+    if (home) assert.match(html, /<div class="intro" aria-hidden="true">/, `${relative(SITE, page)}: the intro layer is aria-hidden`);
+  }
 });
