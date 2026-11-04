@@ -45,6 +45,7 @@ import { BUSY_MESSAGE, EVICT_CHECK_MS, WearerRegistry, mayStartListening, parseL
 import { UserAuth } from "./user-auth.ts";
 import { type CapBlock, type CappedRoute, DEFAULT_GLOBAL_DAY_CAP_USD, DEFAULT_USER_DAY_CAP_USD, LIMIT_MESSAGES, MeterDelta, SpendCapError, SpendLedger, capCheck, cappedRoute, dayIn, parseCapUsd } from "./spend-cap.ts";
 import { FileDaySpend } from "./stores.ts";
+import { TERMS_VERSION, needsTerms, needsTermsBody, termsPage, termsRequired, termsView } from "./preview-terms.ts";
 import { SupabaseDaySpend } from "./supabase-stores.ts";
 import { type AgentIdentity, FileDeviceStore, UserDevices, deviceRoute } from "./user-devices.ts";
 import { Accounts, FileAccountStore, JsonFile, admissionMessage, parseAllowList } from "./accounts.ts";
@@ -289,6 +290,73 @@ async function openSpendLedger(): Promise<SpendLedger> {
   }
 }
 if (spendLedger) setInterval(() => void daySpend!.save(spendLedger.snapshot()).catch((error: Error) => console.error(`[spend] could not save today's spend: ${error.message}`)), SPEND_SAVE_MS);
+// --- Preview terms (ship-hackathon 2.3, design decision 4) -------------------------------------------
+// Accounts mode: until an account accepts the current version, its data routes answer 428 and its
+// clip and voice sockets are refused. The owner is exempt (they wrote the terms, and their clip and
+// phone must never be locked out mid-demo). `/terminos` and `/privacidad` are open to anyone.
+const TERMS_REQUIRED = Boolean(accounts) && termsRequired(process.env.LENTE_TERMS, parseSignup(process.env.LENTE_SIGNUP, process.env.LENTE_SIGNUP_UNTIL).mode === "open");
+const isOwnerId = (userId: string): boolean => userId === LOCAL_OWNER || (process.env.LENTE_OWNER_USER_ID !== undefined && userId === process.env.LENTE_OWNER_USER_ID);
+/** The version this account accepted; a read that fails counts as none (the owner is never asked). */
+async function acceptedTerms(userId: string): Promise<string | undefined> {
+  if (!accounts) return undefined;
+  try {
+    return (await accounts.terms(userId))?.version;
+  } catch (error) {
+    console.error(`[terms] could not read an account's terms: ${(error as Error).message}`);
+    return undefined;
+  }
+}
+/** True when this caller must accept the terms before `path`. */
+async function waitsForTerms(userId: string, path: string): Promise<boolean> {
+  if (!TERMS_REQUIRED || isOwnerId(userId)) return false;
+  return needsTerms({ path, required: TERMS_REQUIRED, isOwner: false, acceptedVersion: await acceptedTerms(userId) });
+}
+/** GET /terminos and /privacidad for anyone. True when answered. */
+function servePublicTerms(req: IncomingMessage, res: ServerResponse): boolean {
+  const path = req.url?.split("?")[0];
+  if (req.method !== "GET" || (path !== "/terminos" && path !== "/privacidad")) return false;
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" }).end(termsPage(path === "/terminos" ? "terms" : "privacy"));
+  return true;
+}
+/**
+ * `GET /terms`, `POST /terms/accept` (`{version}` optional: none accepts the current one, a stale one
+ * answers 409 with the current), and the 428 on every other data route until accepted. True when answered.
+ */
+async function termsRoute(req: IncomingMessage, res: ServerResponse, who: Identity | undefined): Promise<boolean> {
+  if (!accounts || !who) return false;
+  const path = req.url?.split("?")[0] ?? "";
+  const json = (status: number, body: unknown) => void res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(body));
+  if (req.method === "GET" && path === "/terms") {
+    const accepted = await accounts.terms(who.userId).catch(() => undefined);
+    // Nobody who is not asked sees the screen: the owner, and every account when the terms are off.
+    const asked = TERMS_REQUIRED && !isOwnerId(who.userId);
+    json(200, { ...termsView(accepted), ...(asked ? {} : { needsTerms: false }) });
+    return true;
+  }
+  if (req.method === "POST" && path === "/terms/accept") {
+    let asked: unknown;
+    try {
+      asked = (JSON.parse((await readBody(req)) || "{}") as { version?: unknown }).version;
+    } catch {
+      json(400, { error: "body is not JSON" });
+      return true;
+    }
+    if (asked !== undefined && asked !== TERMS_VERSION) return json(409, needsTermsBody()), true;
+    try {
+      const accepted = await accounts.acceptTerms(who.userId, TERMS_VERSION);
+      console.log(`[terms] an account accepted ${TERMS_VERSION}`);
+      json(200, { ok: true, version: accepted.version, acceptedAt: accepted.at });
+    } catch (error) {
+      console.error(`[terms] could not keep an acceptance: ${(error as Error).message}`);
+      json(503, { ok: false, message: "No pudimos guardar tu respuesta. Prueba otra vez en un momento." });
+    }
+    return true;
+  }
+  if (!(await waitsForTerms(who.userId, path))) return false;
+  json(428, needsTermsBody());
+  return true;
+}
+
 /** A capped account's answer on a route that would spend: the limit line in the shape the route speaks. */
 function answerCapped(req: IncomingMessage, res: ServerResponse, route: CappedRoute, blocked: CapBlock): void {
   const message = LIMIT_MESSAGES[blocked];
@@ -3128,8 +3196,10 @@ const handleWeb = async (req: IncomingMessage, res: ServerResponse): Promise<voi
   try {
     if (req.url?.split("?")[0] === MCP_PATH) return void (await mcpRoute(req, res));
     if (await bridgeRoute(req, res)) return;
+    if (servePublicTerms(req, res)) return; // ship-hackathon 2.3
     if (await gateWeb(req, res)) return;
     const who = requestIdentity.get(req);
+    if (await termsRoute(req, res, who)) return; // ship-hackathon 2.3: terms before data
     const devicesPath = req.url?.split("?")[0];
     // Without accounts the hub keeps clip tokens apart (scripts/hub-token.ts); `/devices` makes agent tokens only.
     const devicesStore = userDevices ?? agentDevices;
@@ -3183,6 +3253,8 @@ web.on("upgrade", async (req, raw, head) => {
     return void raw.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
   }
   if (await refusal(who).catch(() => "unavailable")) return void raw.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+  // ship-hackathon 2.3: an account that has not accepted the terms gets no clip or voice socket (never the owner).
+  if (who && (await waitsForTerms(who.userId, req.url?.split("?")[0] ?? ""))) return void raw.end("HTTP/1.1 428 Precondition Required\r\nConnection: close\r\n\r\n");
   if (who) requestIdentity.set(req, who);
   const path = req.url?.split("?")[0];
   // A voice session (add-voice-mode) is admitted exactly like a device, and runs in the caller's own runtime.

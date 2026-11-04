@@ -63,14 +63,14 @@ The container goes to `memory=2048`, `cpu=1.0` in `deploy/modal/hub.py`. That is
 
 ### 4. Preview terms, accepted once
 
-`src/terms.ts` holds `TERMS_VERSION = "preview-2026-11-04"` and the Spanish and English text, served at `/terminos` and `/privacidad`. The text covers:
+`src/preview-terms.ts` (`src/terms.ts` was taken by the memory index's word normalizer) holds `TERMS_VERSION = "preview-2026-11-04"` and the Spanish and English text, served at `/terminos` and `/privacidad`. The text covers:
 - what Lente is: a hackathon prototype, not a medical or mobility device;
 - what it keeps: text memory sealed per user; audio and photos only for the owner;
 - that model calls go to Meta's Model API on free credits, which allow content to be used for product improvement, so nothing sensitive should be shared;
 - that the account can be deleted at any time, with all its data;
 - who to write to: the repository's issues.
 
-Each account has `terms_version` and `terms_accepted_at`. Until it has accepted the current version, the hub answers every data route with 428 and `{ needsTerms: true }`, except the terms routes themselves and sign-out. The web app and Android show one screen with the summary, the two links and «Acepto».
+Each account has `terms_version` and `terms_accepted_at`. Until it has accepted the current version, the hub answers every data route with 428 and `{ needsTerms: true, version }`, except the terms routes themselves, sign-out and the account rights; the clip and voice sockets are refused with 428 too. The owner is exempt: they wrote the terms, and their clip and phone must never be locked out mid-demo. The web app and Android show one screen with the summary, the two links and «Acepto».
 
 This is a subset of `add-consent` tasks 1.1 (without legal review), 1.3, 1.4 and 1.5. Those tasks stay open in `add-consent` for version 1.
 

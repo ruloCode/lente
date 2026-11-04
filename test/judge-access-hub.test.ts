@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { type Server, createServer } from "node:http";
+import { type Server, createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -216,4 +216,55 @@ test("2.2 in Ver: when a judge reaches the cap, narration stops and the limit is
   assert.equal(modelCalls(), calls);
   seen.stop();
   hub.stop();
+});
+
+/** The status line an upgrade gets, without completing it. */
+function upgradeStatus(base: string, path: string, bearer: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = request(`${base}${path}`, { headers: { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": randomBytes(16).toString("base64"), Authorization: `Bearer ${bearer}` } });
+    req.on("upgrade", (_res, socket) => (socket.destroy(), resolve(101)));
+    req.on("response", (res) => resolve(res.statusCode ?? 0));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+test("2.3 terms before data: a new account gets 428 until it accepts the current version; the pages are public; the owner is never asked", { timeout: 30_000 }, async () => {
+  const hub = await startHub({ LENTE_SIGNUP: "open", LENTE_SIGNUP_UNTIL: "2999-01-01" });
+  const judge = (path: string, init: RequestInit = {}) => fetch(`${hub.base}${path}`, as(JUDGE, "probe-judge@example.com", init));
+  // Anyone may read the terms and the privacy note, signed in or not.
+  for (const path of ["/terminos", "/privacidad"]) {
+    const page = await fetch(`${hub.base}${path}`);
+    assert.equal(page.status, 200, path);
+    assert.match(await page.text(), /preview-2026-11-04/);
+  }
+  const first = await judge("/tasks");
+  assert.equal(first.status, 428);
+  const body = (await first.json()) as { needsTerms: boolean; version: string };
+  assert.deepEqual([body.needsTerms, body.version], [true, "preview-2026-11-04"]);
+  assert.equal((await judge("/ask", { method: "POST", body: JSON.stringify({ question: "PROBE" }) })).status, 428);
+  assert.equal(await upgradeStatus(hub.base, "/device", token(JUDGE, "probe-judge@example.com")), 428);
+  assert.equal(await upgradeStatus(hub.base, "/voice", token(JUDGE, "probe-judge@example.com")), 428);
+  assert.equal(((await (await judge("/terms")).json()) as { needsTerms: boolean }).needsTerms, true);
+  // A stale version is answered with the current one; none, or the current, is accepted.
+  const stale = await judge("/terms/accept", { method: "POST", body: JSON.stringify({ version: "preview-2026-01-01" }) });
+  assert.equal(stale.status, 409);
+  assert.equal(((await stale.json()) as { version: string }).version, "preview-2026-11-04");
+  const ok = await judge("/terms/accept", { method: "POST", body: "{}" });
+  assert.equal(ok.status, 200);
+  assert.equal(((await ok.json()) as { version: string }).version, "preview-2026-11-04");
+  assert.equal((await judge("/tasks")).status, 200);
+  assert.equal(((await (await judge("/terms")).json()) as { needsTerms: boolean }).needsTerms, false);
+  assert.equal(await upgradeStatus(hub.base, "/voice", token(JUDGE, "probe-judge@example.com")), 101);
+  // The owner never sees the screen, on data routes or the clip's socket.
+  assert.equal((await fetch(`${hub.base}/tasks`, as(OWNER, "probe-owner@example.com"))).status, 200);
+  assert.equal(await upgradeStatus(hub.base, "/device", token(OWNER, "probe-owner@example.com")), 101);
+  assert.equal(((await (await fetch(`${hub.base}/terms`, as(OWNER, "probe-owner@example.com"))).json()) as { needsTerms: boolean }).needsTerms, false);
+  hub.stop();
+
+  // The acceptance survives a restart.
+  const again = await startHub({ LENTE_SIGNUP: "open", LENTE_SIGNUP_UNTIL: "2999-01-01" }, hub.dir);
+  assert.equal((await fetch(`${again.base}/tasks`, as(JUDGE, "probe-judge@example.com"))).status, 200);
+  assert.equal((await fetch(`${again.base}/tasks`, as(OTHER, "probe-other@example.com"))).status, 428);
+  again.stop();
 });

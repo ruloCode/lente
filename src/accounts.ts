@@ -25,12 +25,23 @@ export interface AccountRecord {
   kekVersion: number;
   /** The user's DEK wrapped under the KEK of `kekVersion`, base64. */
   wrappedDek: string;
+  termsVersion?: string;
+  termsAcceptedAt?: number;
+}
+
+/** Which preview terms an account accepted and when (ship-hackathon 2.3). */
+export interface TermsAcceptance {
+  version: string;
+  at: number;
 }
 
 export interface AccountStore {
   get(userId: string): Promise<AccountRecord | undefined>;
   /** Creates the account and its wrapped key together (one RPC on Supabase, 4.4). */
   create(account: AccountRecord): Promise<void>;
+  /** The terms the account accepted, if any (`accounts.terms_version`, `terms_accepted_at`). */
+  terms(userId: string): Promise<TermsAcceptance | undefined>;
+  acceptTerms(userId: string, accepted: TermsAcceptance): Promise<void>;
 }
 
 /** Emails from `LENTE_ALLOWED_EMAILS`, separated by commas or spaces, compared lowercased. Empty means nobody. */
@@ -51,6 +62,7 @@ export class Accounts {
   /** Unwrapped data keys of active users; dropped when their runtime is evicted. */
   private readonly deks = new Map<string, Buffer>();
   private readonly creating = new Map<string, Promise<void>>();
+  private readonly accepted = new Map<string, TermsAcceptance | undefined>();
 
   constructor(store: AccountStore, keks: readonly Kek[], allowed: Set<string> | MayCreate, now: () => number = Date.now) {
     if (keks.length === 0) throw new Error("accounts need a KEK (LENTE_KEK)");
@@ -99,8 +111,24 @@ export class Accounts {
     return dek;
   }
 
-  /** Forgets the user's data key (runtime evicted, account deleted). */
+  /** The terms this account accepted; read once and kept (one container answers every request). */
+  async terms(userId: string): Promise<TermsAcceptance | undefined> {
+    if (this.accepted.has(userId)) return this.accepted.get(userId);
+    const found = await this.store.terms(userId);
+    this.accepted.set(userId, found);
+    return found;
+  }
+
+  async acceptTerms(userId: string, version: string): Promise<TermsAcceptance> {
+    const accepted = { version, at: this.now() };
+    await this.store.acceptTerms(userId, accepted);
+    this.accepted.set(userId, accepted);
+    return accepted;
+  }
+
+  /** Forgets the user's data key and terms (runtime evicted, account deleted). */
   forget(userId: string): void {
+    this.accepted.delete(userId);
     this.deks.get(userId)?.fill(0);
     this.deks.delete(userId);
   }
@@ -151,6 +179,19 @@ export class FileAccountStore implements AccountStore {
   async create(account: AccountRecord): Promise<void> {
     if (this.accounts.some((a) => a.userId === account.userId)) throw new Error(`account ${account.userId} already exists`);
     this.accounts.push({ ...account });
+    this.json?.write({ accounts: this.accounts });
+  }
+
+  async terms(userId: string): Promise<TermsAcceptance | undefined> {
+    const a = this.accounts.find((x) => x.userId === userId);
+    return a?.termsVersion !== undefined && a.termsAcceptedAt !== undefined ? { version: a.termsVersion, at: a.termsAcceptedAt } : undefined;
+  }
+
+  async acceptTerms(userId: string, accepted: TermsAcceptance): Promise<void> {
+    const a = this.accounts.find((x) => x.userId === userId);
+    if (!a) throw new Error(`no account for user ${userId}`);
+    a.termsVersion = accepted.version;
+    a.termsAcceptedAt = accepted.at;
     this.json?.write({ accounts: this.accounts });
   }
 }

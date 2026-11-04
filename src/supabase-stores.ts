@@ -11,7 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Proposal, TraceStep } from "./agent-loop.ts";
 import { type Task, type TaskPatch, applyPatch } from "./agent-tools.ts";
 import type { PendingAction } from "./action-store.ts";
-import type { AccountRecord, AccountStore } from "./accounts.ts";
+import type { AccountRecord, AccountStore, TermsAcceptance } from "./accounts.ts";
 import type { TraceEntry } from "./agent-trace.ts";
 import { type DayEntry, dayKey } from "./day-log.ts";
 import type { Digest, DigestScope } from "./digests.ts";
@@ -1101,6 +1101,19 @@ export class SupabaseAccounts implements AccountStore {
     const [key] = await db.select<Row>(db.query("user_keys").limit(1), "kek_version,wrapped_dek");
     if (!key) throw new Error(`account ${userId} has no data key row`);
     return { userId, createdAt: msOf(account.created_at), locale: String(account.locale), kekVersion: Number(key.kek_version), wrappedDek: fromBytea(key.wrapped_dek).toString("base64") };
+  }
+
+  /** Read apart from `get`, so signing in never depends on the terms columns (ship-hackathon 2.3). */
+  async terms(userId: string): Promise<TermsAcceptance | undefined> {
+    const db = this.rest.forUser(userId);
+    const [row] = await db.select<Row>(db.query("accounts").limit(1), "terms_version,terms_accepted_at");
+    return row && typeof row.terms_version === "string" && row.terms_accepted_at ? { version: row.terms_version, at: msOf(row.terms_accepted_at) } : undefined;
+  }
+
+  async acceptTerms(userId: string, accepted: TermsAcceptance): Promise<void> {
+    const db = this.rest.forUser(userId);
+    const rows = await db.update(db.query("accounts"), { terms_version: accepted.version, terms_accepted_at: iso(accepted.at) });
+    if (!rows.length) throw new Error(`no account row for user ${userId} to accept the terms on`);
   }
 
   /** The account and its wrapped key in one transaction (4.4): an account without its key would be unreadable. */

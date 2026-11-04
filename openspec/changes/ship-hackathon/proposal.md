@@ -63,7 +63,7 @@ It also packs the last day's work into one plan that several agents can run in p
 - **Hub:**
   - `src/access-gate.ts` and the sign-up path (open mode);
   - a new pure `src/spend-cap.ts`;
-  - `src/terms.ts` (preview terms);
+  - `src/preview-terms.ts` (preview terms);
   - a new pure `src/sample-memory.ts` (the PROBE sample);
   - a migration for `accounts.terms_version`/`terms_accepted_at` and `usage_daily`;
   - `deploy/modal/hub.py` (non-secret config, memory size).
