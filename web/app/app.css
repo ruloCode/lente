@@ -204,6 +204,30 @@ a.row-link:hover { background: var(--raised); text-decoration: none; }
 .stat strong { color: var(--ink); font-size: 15px; }
 .next { display: grid; gap: 2px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
 
+/* Apps (add-lens-apps) */
+.apps-page { grid-template-columns: minmax(0, 1fr); }
+.app-langs { list-style: none; margin: 0; padding: 0; }
+.app-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 16px; }
+.app-card { display: grid; gap: 12px; align-content: start; padding: 18px 20px; color: var(--ink); height: 100%; transition: transform .15s var(--ease), box-shadow .15s; }
+.app-card:hover { text-decoration: none; transform: translateY(-2px); box-shadow: var(--shadow-float); }
+.app-top { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.app-name { display: grid; gap: 4px; min-width: 0; }
+.app-name h3 { font-size: 17px; }
+.app-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 14px; background: var(--tag); color: var(--accent); }
+.app-icon .icon { width: 26px; height: 26px; }
+.app-icon.big { width: 64px; height: 64px; border-radius: 18px; }
+.app-icon.big .icon { width: 34px; height: 34px; }
+.app-line { margin: 0; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.app-hero { display: grid; gap: 6px; min-width: 0; }
+.app-hero .app-name p { margin: 0; }
+.app-actions .btn .tag, .page-head > .btn .tag { margin-left: 2px; }
+.app-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 18px; align-items: start; }
+.perm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.perm { display: flex; gap: 12px; align-items: flex-start; }
+.perm p { margin: 2px 0 0; }
+.perm-icon { color: var(--accent); flex: none; padding-top: 1px; }
+.persona { margin: 0; padding: 14px 16px; border-radius: 12px; background: var(--raised); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14.5px; }
+
 /* Tareas */
 .add-task { display: flex; gap: 10px; align-items: center; padding: 10px 12px; flex-wrap: wrap; }
 .add-task .add-icon { flex: none; }

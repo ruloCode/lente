@@ -13,6 +13,8 @@ const TABLE = [
   ["meeting", "/app/reuniones/:id"],
   ["memory", "/app/memoria"],
   ["today", "/app/hoy"],
+  ["apps", "/app/apps"],
+  ["app", "/app/apps/:id"],
   ["devices", "/app/dispositivos"],
   ["settings", "/app/ajustes"],
 ];
@@ -58,6 +60,7 @@ export const NAV = [
   { name: "meetings", label: "Reuniones", icon: "calendar", also: ["meeting"] },
   { name: "memory", label: "Memoria", icon: "brain" },
   { name: "today", label: "Hoy", icon: "sun" },
+  { name: "apps", label: "Apps", icon: "grid", also: ["app"] },
   { name: "devices", label: "Dispositivos", icon: "devices" },
   { name: "settings", label: "Ajustes", icon: "gear" },
 ];

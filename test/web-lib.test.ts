@@ -76,11 +76,16 @@ test("routes: each screen, detail ids, unknown paths go home, paths round-trip",
   assert.deepEqual(matchRoute("/app/reuniones/hermes-2026-10-01?turno=t3"), { name: "meeting", params: { id: "hermes-2026-10-01" } });
   assert.deepEqual(matchRoute("/app/proyectos/p%201"), { name: "project", params: { id: "p 1" } });
   assert.deepEqual(matchRoute("/app/nada/aqui"), { name: "home", params: {} });
-  for (const name of ["home", "tasks", "projects", "meetings", "memory", "today", "devices", "settings"]) assert.equal(matchRoute(pathFor(name)).name, name);
+  for (const name of ["home", "tasks", "projects", "meetings", "memory", "today", "apps", "devices", "settings"]) assert.equal(matchRoute(pathFor(name)).name, name);
   assert.equal(pathFor("meeting", { id: "m 1" }), "/app/reuniones/m%201");
   assert.equal(meetingPath("m1", "t5"), "/app/reuniones/m1?turno=t5");
   assert.equal(navFor("meeting"), "meetings");
   assert.equal(navFor("project"), "projects");
+  // add-lens-apps 3.1: the catalog and an app's page light «Apps».
+  assert.deepEqual(matchRoute("/app/apps"), { name: "apps", params: {} });
+  assert.deepEqual(matchRoute("/app/apps/ver"), { name: "app", params: { id: "ver" } });
+  assert.equal(pathFor("app", { id: "idiomas" }), "/app/apps/idiomas");
+  assert.equal(navFor("app"), "apps");
 });
 
 test("events: the connect snapshot, live turns, cards, speakers, meetings, actions and unknown kinds", () => {

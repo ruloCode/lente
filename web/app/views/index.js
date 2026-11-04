@@ -1,5 +1,6 @@
 // Route name → view. Each view returns `{ title, el, destroy }`.
 
+import { appView, appsView } from "./apps.js";
 import { devicesView } from "./devices.js";
 import { homeView } from "./home.js";
 import { meetingsView } from "./meetings.js";
@@ -18,6 +19,8 @@ export const VIEWS = {
   meeting: meetingsView,
   memory: memoryView,
   today: todayView,
+  apps: appsView,
+  app: appView,
   devices: devicesView,
   settings: settingsView,
 };
