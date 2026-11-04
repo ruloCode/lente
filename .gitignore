@@ -24,3 +24,7 @@ eval/audio/
 # Cloud hub host and device token for the clip
 firmware/**/cloud.h
 __pycache__/
+
+# Design references and premium renders (231 MB, kept out of the repository by the owner)
+docs/design/image-ref/
+docs/design/ios-kit/assets/premium/*
