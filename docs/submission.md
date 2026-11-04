@@ -1,45 +1,152 @@
-# Submission plan
+# Submission
 
-**Deadline:** Wed 2026-11-04, 9:00 PM ET (target: submit on the night of Nov 3).
-**Track:** Indie Developer · **Theme:** Build for Your World
+The text for the Cerebral Valley form, ready to paste. **Deadline: Wed 2026-11-04, 9:00 PM ET (21:00 Bogotá).** Track: **Indie Developer**. Theme: **Build for Your World**.
 
-## What judges score
+Rule for this page: every number is in [docs/benchmarks.md](benchmarks.md) with the script run behind it. Anything not measured is not claimed. Lines marked `TODO(orch)` wait for a link or a feature that lands later today; anything not green by 18:00 is cut, not rushed in.
 
-| Category | Weight | How Lente earns it |
+## Project name
+
+Lente
+
+## One-line description
+
+A clip on any pair of glasses and Meta's models that help you speak in a meeting held in your second language, see if you are blind or have low vision, and remember what was said.
+
+<!-- TODO(orch): if add-practice-mode 5.2 is green, use instead: "A clip on any pair of glasses and Meta's models that help you speak in your second language, see if you are blind or have low vision, practice the piano, and remember all of it." -->
+
+## The problem and the people
+
+- **Professionals who work in their second language.** Millions of engineers, designers and founders work in English every day. In a live meeting the hard part is speed, not vocabulary: someone asks you directly, and by the time you have translated in your head the moment has passed. Lente hears who is speaking, notices when a question is aimed at *you*, and puts one line you can say right now on your phone (the **Dilo** card), with its meaning in Spanish. After the meeting it keeps the notes, the decisions, the tasks and a memory you can ask by text or by voice. The author is one of these people and built it for the meetings he sits in every week.
+- **People who are blind or have low vision.** The same camera becomes eyes. **Ver** says, one sentence at a time, what is in front of the person, stays silent when nothing changed, reads text aloud, and answers questions by voice. It never tells them to move or that a path is safe, and never says who someone is. It works with TalkBack.
+
+<!-- TODO(orch): if add-practice-mode 5.2 is green, add a third bullet: - **Learners.** **Practicar** turns the phone on the piano into a patient teacher: the phone hears each note itself, with no audio sent anywhere, marks it right or wrong, and Lente coaches you out loud after each try and remembers how you did. -->
+
+## How each Meta model is used
+
+| Job | Model | How |
 |---|---|---|
-| Impact | 30% | A concrete user (second-language professionals in live meetings) and a concrete moment (being asked something) |
-| Use of Meta AI tooling | 25% | Three Meta models with distinct jobs: realtime diarized ASR, open-weights fast layer, multimodal deep layer that reads the screen share |
-| Technical depth | 20% | Measured latency budget, real-time pacing, cue prioritization, evals on real meetings |
-| Demo | 25% | A real meeting, a real question, the cue on screen in about a second |
+| Hear the meeting and tell speakers apart | `muse-voice-transcribe-1.0`, `DIARIZATION`, realtime WebSocket | Speaker labels let Lente decide a question was aimed at the wearer and never answer the wearer's own lines |
+| Hear the wearer talk to Lente | `muse-voice-transcribe-1.0`, `ENDPOINTING` | The turn is ready about a third of a second after the wearer stops |
+| The Dilo line and its Spanish meaning | `muse-spark-1.3`, minimal reasoning, streamed over the Responses API | One sentence in the language of the question plus its meaning in Spanish, in one call |
+| What the camera sees | `muse-spark-1.3` with image input | The slide or screen in a meeting; in Ver, one spoken sentence or silence (`=`), and a look that answers the person's own question or reads all the text |
+| The voice agent | `muse-spark-1.3` with function calling and `web_search` | Tools over memory, tasks and projects, the camera (`look`), the phone's location, narration on and off, and handing a job to an agent |
+| Notes, memory cards, digests | `muse-spark-1.3` with structured output | Every item cites the turn it came from; items without a source are dropped |
+| Answers from memory | `muse-spark-1.3`, one streamed call over a local index (words and vectors) | Cites the meeting and the turn, and says «No lo encuentro» instead of guessing |
+| Fast lane | Muse Spark Open (`meta-models/muse-spark-open-1026`) on Baseten | Provider routing with fallback and a cool-down |
 
-Bonus prizes in reach: Best Build on Meta Open Weight Models (Spark Open on Baseten), Most Viral (post the demo on X), Best Agentic Use-Case.
+<!-- TODO(orch): if add-practice-mode lands, add a row: | Piano coaching | `muse-spark-1.3`, one streamed call per attempt | One or two warm, specific sentences from the notes the phone heard | -->
 
-## 3-minute demo video
+## Measured
 
-Voiceover recorded separately, clean audio. Screen at 1080p, cue text large enough to read on a phone.
+All from scripts in the repository, on synthetic speech and synthetic memories, never real meetings ([docs/benchmarks.md](benchmarks.md)).
 
-| Time | Scene | Voiceover (draft) |
-|---|---|---|
-| 0:00–0:20 | Me in a real English meeting, someone asks me directly, a beat of silence | "I'm a software engineer from Colombia. I work in English every day. This is the moment I lose: someone asks me something, and by the time I've translated it, it's gone." |
-| 0:20–0:35 | Title: Lente | "Lente is a copilot for the people who work in their second language." |
-| 0:35–1:35 | Live demo: question → cue appears in ~1 s → I say it. Then an unknown acronym → "what it means" card. Then a shared slide → "on screen" card | Narrate each card as it appears; show the latency counter |
-| 1:35–2:20 | Architecture: the three Meta models and why each one | "Muse Voice Transcribe tells me who's speaking. Muse Spark Open answers in about a second. Muse Spark 1.3 reads the slide and the whole meeting." |
-| 2:20–2:45 | After the meeting: notes, action items, "you were asked 4 times, you spoke 3" | "And afterwards it tells me how I did." |
-| 2:45–3:00 | Repo, what was built during the hackathon, close | "Open source, built in ten days on Meta's models." |
+- **Dilo:** question ends → card on the phone in **3.02 s** p50 (n = 17); "was this question for me?" at **76 %** precision and **81 %** recall (`pnpm eval`, 10 synthetic dialogues).
+- **Looking:** Look → description card in **1.26 s** p50, 5 of 5.
+- **Talking with Lente:** the turn is ready **323 ms** after you stop; the first sentence of the answer at **3.21 s** p50; **US$ 0.0044** per turn p50.
+- **Memory:** **90 of 105** questions answered accurately with the right source, against 17 for the earlier two-call path; **25 of 25** refusals on questions outside the memory or the project; the answer in **3.01 s** p50; the index answers 90 days of all-day recording in **12.2 ms** p95.
+- **Recording all day:** **US$ 0.267** per recorded hour with transcription (a 2-hour run).
+- **Ver:** the one-sentence live prompt reaches its first token in **3.08 s** p50 against **5.50 s** for the first, checklist prompt, with half the output tokens. With the checklist on the real clip, a description reached the phone **5.33 s** after its frame p50, and a third of the reads stayed silent because nothing had changed.
 
-## Submission checklist
+<!-- TODO(orch): ship-hackathon 6.3 (Ver with the one-sentence prompt on the clip) and add-practice-mode 5.2 (note accuracy, onset → note shown, attempt → coaching line), from docs/benchmarks.md once recorded. -->
 
-- [ ] Repository public, README states track, theme, models and what was built during the hackathon
-- [ ] "What was built during the hackathon" table complete, one row per day
-- [ ] 3-minute video uploaded, link set to public or unlisted, plays without login
-- [ ] Demo shows only features built during the hackathon
-- [ ] Live product link (if hosted) works without the author's machine
-- [ ] Project description: problem, user, how Meta's models are used, impact
-- [ ] X post with the demo, link submitted for the Most Viral prize
-- [ ] Open-weights bonus flagged (Muse Spark Open on Baseten)
-- [ ] No API keys, meeting audio or third-party transcripts in the repo or the video
-- [ ] Everyone who appears or speaks in the demo meeting agreed to it
+## What was built during the hackathon
 
-## Fields to fill on the platform
+Everything in the repository was written during the event, from **2026-10-26** to **2026-11-04**, one row per day in the README's [What was built during the hackathon](../README.md#what-was-built-during-the-hackathon). In short:
+- the clip: firmware for the Seeed XIAO ESP32-S3 Sense and parametric cases for any glasses;
+- the hub in Node and TypeScript with no runtime dependencies, on Modal;
+- the Android app in Kotlin and Compose, and the web app;
+- realtime transcription with speaker labels, the Dilo line, vision, the voice agent;
+- a sealed memory per user with its own search index;
+- an MCP server and an agent bridge;
+- Ver for people who are blind or have low vision;
+- the evals and benchmarks behind every number.
+<!-- TODO(orch): add "Practicar at the piano" if it lands, and "open sign-up for judges, the website and the Android release" after 18:00. -->
 
-To confirm when the submission form opens: project name, one-line description, track, theme, repo URL, video URL, live demo URL, team members, X post URL, Meta models used.
+Prior work, declared: the author once prototyped a meeting copilot in his personal assistant project, on non-Meta models. No code, prompts or assets from it are in this repository.
+
+## Try it
+
+- **Web:** sign in with Google at <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app>. <!-- TODO(orch): confirm open sign-up is live (L2 + deploy) before keeping this line. -->
+- **Android:** <https://github.com/ruloCode/lente/releases/latest/download/lente.apk>, Android 10 or newer. <!-- TODO(orch): after the 18:00 release. -->
+- No clip needed: the phone is the camera and the microphone. A new account starts with a small synthetic sample project, so you can ask «¿Qué se decidió sobre la beta?» in the first minute. <!-- TODO(orch): keep only if L2 2.4 (the sample) shipped. -->
+
+## Links
+
+| Field | Value |
+|---|---|
+| Repository | <https://github.com/ruloCode/lente> |
+| Website | TODO(orch): the Pages URL (L5) |
+| Video (3 min, public or unlisted, plays without login) | TODO(orch): from the owner at 18:30 |
+| Live product | <https://drew-lizcano--lente-hub-hub.us-east.modal.run/app> |
+| Android APK | <https://github.com/ruloCode/lente/releases/latest/download/lente.apk> |
+| X post | TODO(orch): after the 20:00 post |
+| Team | Rulo (solo) |
+| Meta models | Muse Voice Transcribe 1.0, Muse Spark 1.3, Muse Spark Open |
+
+## Bonus prizes we claim
+
+- **Most Viral Project:** the X post below, with the 30-second cut of the video.
+- **Community Vote:** the gallery link, shared with the post.
+- **Best Agentic Use-Case:**
+  - **the voice agent:** Muse Spark 1.3 with function calling runs multi-step tool loops over memory, tasks, the camera, the location and the web (first answer sentence at 3.21 s p50);
+  - **the agent bridge:** per-user scoped tokens, an MCP server at `/mcp`, and jobs that Claude Code or Codex run on the user's own machine only after the user approves them.
+- **Not claimed: Best Build on Meta Open Weight Models.** Muse Spark Open runs in the fast lane with fallback, but it was not measured against Spark 1.3 (one sample only). <!-- TODO(orch): claim it only if add-fast-reply-lane is measured today. -->
+
+## Posts
+
+### X (Spanish)
+
+> Trabajo en inglés todos los días. En una reunión, cuando me preguntan algo, el momento se va mientras traduzco en la cabeza.
+>
+> Hice Lente: un clip para cualquier gafa que escucha, ve y me da una línea para decir. Y con la misma cámara, le describe el mundo a quien no ve.
+>
+> #MetaHackathon TODO(orch): video, link
+
+### X (English)
+
+> I work in English every day. In a meeting, when someone asks me something, the moment is gone while I translate in my head.
+>
+> So I built Lente: a clip for any glasses that hears, sees and gives me one line to say. The same camera describes the world to people who can't see it.
+>
+> #MetaHackathon TODO(orch): video, link
+
+### LinkedIn (Spanish)
+
+> Durante el Meta Global AI Developer Hackathon construí **Lente**, solo y en diez días: un clip que se pone en cualquier gafa, una app Android y un hub en la nube que usan los modelos de Meta (Muse Voice Transcribe, Muse Spark 1.3 y Muse Spark Open).
+>
+> - **En reuniones en tu segundo idioma:** Lente sabe quién habla, nota cuándo la pregunta es para ti y te pone en el teléfono una línea para decir, con su significado en español.
+> - **Para personas ciegas o con baja visión:** «Ver» dice, una frase a la vez, lo que hay al frente, lee textos y responde por voz. Nunca indica moverse ni dice quién es alguien.
+> - **Memoria:** notas, decisiones y tareas que puedes preguntar por texto o por voz, con la fuente.
+>
+> Cada número que muestro sale de un script en el repositorio. Código abierto: github.com/ruloCode/lente
+>
+> TODO(orch): video, sitio, APK
+
+### LinkedIn (English)
+
+> For the Meta Global AI Developer Hackathon I built **Lente**, solo, in ten days: a clip for any pair of glasses, an Android app and a cloud hub on Meta's models (Muse Voice Transcribe, Muse Spark 1.3 and Muse Spark Open).
+>
+> - **In meetings held in your second language:** Lente knows who is speaking, notices when a question is aimed at you, and puts one line to say on your phone, with its meaning in Spanish.
+> - **For people who are blind or have low vision:** «Ver» says, one sentence at a time, what is in front of them, reads text and answers by voice. It never tells them to move or who someone is.
+> - **Memory:** notes, decisions and tasks you can ask about by text or by voice, with the source.
+>
+> Every number I show comes from a script in the repository. Open source: github.com/ruloCode/lente
+>
+> TODO(orch): video, website, APK
+
+## Gallery blurb
+
+> **Lente** is a clip for any pair of glasses, with an Android app and a hub on Meta's models. In a meeting held in your second language, it notices when a question is aimed at you and gives you one line to say, with its meaning in Spanish. For someone who is blind or has low vision, the same camera says what is in front of them, one sentence at a time, and never tells them to move. Everything it hears and sees becomes a sealed memory you can ask about. Open source, built during the hackathon, every number measured.
+
+<!-- TODO(orch): add the piano sentence if Practicar ships. -->
+
+## Checklist before submitting
+
+- [ ] Repository public; README states the track, the theme, the models and what was built each day
+- [ ] The README's «What was built» row for 2026-11-04 complete
+- [ ] Video uploaded, public or unlisted, plays without login, shows only what was built during the hackathon
+- [ ] The live product works without the author's machine: a second Google account signs in on the web and on Android
+- [ ] No API keys, meeting audio, transcripts or photos of real people in the repository or the video
+- [ ] Everyone who appears or speaks in the video agreed to it
+- [ ] Every number above is in `docs/benchmarks.md`
+- [ ] X post link on the form
