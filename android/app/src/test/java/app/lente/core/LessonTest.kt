@@ -104,6 +104,28 @@ class LessonTest {
         assertEquals("right", b.getJSONArray("marks").getString(0))
         assertEquals(0, b.getInt("extra"))
         assertEquals(2_100L, b.getLong("durationMs"))
+        assertEquals(67, b.getJSONArray("matched").getInt(3))
+        val missed = Attempt(scale, startedMs = 0).apply { add(60, 100) }.body().getJSONArray("matched")
+        assertEquals(8, missed.length())
+        assertTrue(missed.isNull(1))
+    }
+
+    @Test fun theLocalLineWhenTheHubCannotCoach() {
+        assertEquals("¡Muy bien! 8 de 8 notas bien.", Lessons.localLine(scale, Lessons.align(scale.notes, scale.notes)))
+        assertEquals("7 de 8 notas bien. La 4.ª fue Sol en vez de Fa.", Lessons.localLine(scale, Lessons.align(scale.notes, listOf(60, 62, 64, 67, 67, 69, 71, 72))))
+        assertEquals("7 de 8 notas bien. Te faltó la 4.ª, Fa.", Lessons.localLine(scale, Lessons.align(scale.notes, listOf(60, 62, 64, 67, 69, 71, 72))))
+    }
+
+    @Test fun theCoachAnswer() {
+        assertEquals(Lessons.Coach("Muy bien, otra vez.", "Piano · Escala de Do: 8 de 8"), Lessons.coach("""{"line":" Muy bien, otra vez. ","summary":"Piano · Escala de Do: 8 de 8"}"""))
+        assertEquals("a failed coach is an empty line", "", Lessons.coach("""{"line":"","summary":"x"}""")!!.line)
+        assertNull(Lessons.coach("not json"))
+    }
+
+    @Test fun matchedPairsEachExpectedNote() {
+        assertEquals(listOf(60, 62, 64, 67, 67, 69, 71, 72), Lessons.align(scale.notes, listOf(60, 62, 64, 67, 67, 69, 71, 72)).matched)
+        assertEquals(listOf(60, 62, 64, null, 67, 69, 71, 72), Lessons.align(scale.notes, listOf(60, 62, 64, 67, 69, 71, 72)).matched)
+        assertEquals("an octave up is paired as played", 74, Lessons.align(scale.notes, scale.notes.map { it + 12 }).matched[1])
     }
 
     @Test fun lessonsFromTheHub() {

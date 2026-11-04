@@ -16,8 +16,11 @@ sealed class Mark {
     val key: String get() = when (this) { Right -> "right"; is Wrong -> "wrong"; Missed -> "missed" }
 }
 
-/** The alignment of an attempt: one mark per expected note (only those reached, while it runs), and the extra notes. */
-data class Alignment(val marks: List<Mark>, val extra: Int) {
+/**
+ * The alignment of an attempt: one mark per expected note (only those reached, while it runs), the played
+ * note paired with each (null when missed), and the extra notes.
+ */
+data class Alignment(val marks: List<Mark>, val extra: Int, val matched: List<Int?> = marks.map { (it as? Mark.Wrong)?.played }) {
     val right: Int get() = marks.count { it == Mark.Right }
     /** The first expected note not played right, 0-based, or null. */
     val firstWrong: Int? get() = marks.indexOfFirst { it != Mark.Right }.takeIf { it >= 0 }
@@ -36,8 +39,9 @@ object Lessons {
         Lesson("himno-alegria", "Himno de la alegría", listOf(64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62)),
     )
 
-    /** The bound the hub enforces on an attempt. */
+    /** The bounds the hub enforces on an attempt: notes per list, and times (10 min). */
     const val MAX_NOTES = 64
+    const val MAX_MS = 600_000L
     /** An attempt ends when this long passes without a new note. */
     const val IDLE_END_MS = 4_000L
 
@@ -51,6 +55,24 @@ object Lessons {
             val notes = (0 until n.length()).map { n.getInt(it) }.filter { it in 0..127 }
             val id = o.optString("id")
             if (id.isEmpty() || notes.isEmpty()) null else Lesson(id, o.optString("title").ifEmpty { id }, notes)
+        }
+    }
+
+    /** The hub's answer to an attempt, `{ line, summary }`. `line` is empty when the coach failed (the attempt is still kept). */
+    data class Coach(val line: String, val summary: String)
+
+    fun coach(text: String): Coach? = runCatching { JSONObject(text).let { Coach(it.optString("line").trim(), it.optString("summary").trim()) } }.getOrNull()
+
+    /** What the phone says itself when the hub cannot coach: «7 de 8 notas bien. La 4.ª fue Sol en vez de Fa.» */
+    fun localLine(lesson: Lesson, a: Alignment): String {
+        val total = lesson.notes.size
+        if (a.right == total) return "¡Muy bien! $total de $total notas bien."
+        val head = "${a.right} de $total notas bien."
+        val i = a.firstWrong ?: return head
+        val want = Solfege.name(lesson.notes[i])
+        return when (val m = a.marks[i]) {
+            is Mark.Wrong -> "$head La ${i + 1}.ª fue ${Solfege.name(m.played)} en vez de $want."
+            else -> "$head Te faltó la ${i + 1}.ª, $want."
         }
     }
 
@@ -76,6 +98,7 @@ object Lessons {
         if (open) for (i in n downTo 0) if (cost[i][m] < cost[end][m]) end = i
 
         val marks = ArrayList<Mark>()
+        val matched = ArrayList<Int?>()
         var extra = 0
         var i = end
         var j = m
@@ -83,14 +106,15 @@ object Lessons {
             if (i > 0 && j > 0) {
                 val same = Solfege.pitchClass(expected[i - 1]) == Solfege.pitchClass(played[j - 1])
                 if (cost[i][j] == cost[i - 1][j - 1] + if (same) 0 else SUB) {
-                    marks += if (same) Mark.Right else Mark.Wrong(played[j - 1]); i--; j--; continue
+                    marks += if (same) Mark.Right else Mark.Wrong(played[j - 1]); matched += played[j - 1]; i--; j--; continue
                 }
             }
-            if (i > 0 && cost[i][j] == cost[i - 1][j] + GAP) { marks += Mark.Missed; i--; continue }
+            if (i > 0 && cost[i][j] == cost[i - 1][j] + GAP) { marks += Mark.Missed; matched += null; i--; continue }
             extra++; j--
         }
         marks.reverse()
-        return Alignment(marks, extra)
+        matched.reverse()
+        return Alignment(marks, extra, matched)
     }
 }
 
@@ -104,7 +128,7 @@ class Attempt(val lesson: Lesson, val startedMs: Long) {
 
     /** Adds a note that started at `nowMs` (the phone's clock); returns the live alignment. */
     fun add(midi: Int, nowMs: Long): Alignment {
-        if (notes.size < Lessons.MAX_NOTES) notes += Played(midi, (nowMs - startedMs).coerceAtLeast(0))
+        if (notes.size < Lessons.MAX_NOTES) notes += Played(midi, (nowMs - startedMs).coerceIn(0, Lessons.MAX_MS))
         return live()
     }
 
@@ -128,7 +152,7 @@ class Attempt(val lesson: Lesson, val startedMs: Long) {
     /** From the first note to the last, in ms. */
     fun durationMs(): Long = if (notes.size < 2) 0 else notes.last().atMs - notes.first().atMs
 
-    /** The body of `POST /practice/attempt` (design decision 5). */
+    /** The body of `POST /practice/attempt` (design decision 5), with `matched` so the hub can name a wrong note. */
     fun body(): JSONObject {
         val r = result()
         return JSONObject()
@@ -136,6 +160,7 @@ class Attempt(val lesson: Lesson, val startedMs: Long) {
             .put("expected", JSONArray(lesson.notes))
             .put("played", JSONArray(notes.map { JSONObject().put("midi", it.midi).put("atMs", it.atMs) }))
             .put("marks", JSONArray(r.marks.map { it.key }))
+            .put("matched", JSONArray(r.matched.map { it ?: JSONObject.NULL }))
             .put("extra", r.extra)
             .put("durationMs", durationMs())
     }
