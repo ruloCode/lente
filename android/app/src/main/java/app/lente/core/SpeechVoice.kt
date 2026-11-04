@@ -20,4 +20,20 @@ object SpeechVoice {
         SPANISH.firstOrNull { p -> tags.any { it.equals(p, ignoreCase = true) } }?.let { return it }
         return tags.firstOrNull { it.lowercase().let { t -> t == "es" || t.startsWith("es-") } } ?: "es-ES"
     }
+
+    /**
+     * Ver's fallback voice: a female Spanish one by the engine's voice names (name to locale tag), in the
+     * order of [SPANISH], or null to keep the engine's choice. Engines say it in the name: "female" (Google's
+     * older "es-us-x-sfb#female_1-local"), "esf" ("es-us-x-esf-local"), Samsung's "SMTf00".
+     */
+    fun female(voices: Map<String, String>): String? {
+        val women = voices.filter { (name, _) -> isFemale(name) }
+        for (p in SPANISH) women.entries.firstOrNull { it.value.replace('_', '-').equals(p, ignoreCase = true) }?.let { return it.key }
+        return women.entries.firstOrNull { it.value.lowercase().let { t -> t == "es" || t.startsWith("es-") || t.startsWith("es_") } }?.key
+    }
+
+    fun isFemale(name: String): Boolean {
+        val n = name.lowercase()
+        return "female" in n || Regex("(^|[^a-z])esf([^a-z]|$)").containsMatchIn(n) || Regex("smtf\\d").containsMatchIn(n)
+    }
 }

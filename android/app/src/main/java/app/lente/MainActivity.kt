@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             LenteTheme(mode) {
-                LenteRoot(vm, askMicrophone = ::askMicrophone)
+                LenteRoot(vm, askMicrophone = ::askMicrophone, askSight = ::askSight)
             }
         }
     }
@@ -78,12 +78,19 @@ class MainActivity : ComponentActivity() {
     private fun has(p: String) = ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 
     /** The microphone (needed), the camera and notifications (asked together, optional). */
-    private fun askMicrophone(then: (Boolean) -> Unit) {
+    private fun askMicrophone(then: (Boolean) -> Unit) = ask(then, location = false)
+
+    /** Ver (add-sight-mode): the microphone and the camera, and the location for «¿Dónde estoy?», said why first. */
+    private fun askSight(then: (Boolean) -> Unit) = ask(then, location = true)
+
+    private fun ask(then: (Boolean) -> Unit, location: Boolean) {
         val wanted = buildList {
             add(Manifest.permission.RECORD_AUDIO)
             add(Manifest.permission.CAMERA)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+            if (location) { add(Manifest.permission.ACCESS_FINE_LOCATION); add(Manifest.permission.ACCESS_COARSE_LOCATION) }
         }.filterNot(::has)
+        if (location && Manifest.permission.ACCESS_COARSE_LOCATION in wanted) vm.say("Lente usa tu ubicación solo para decirte dónde estás cuando le preguntas; no la guarda.")
         if (wanted.isEmpty()) return then(true)
         afterPermission = then
         permissions.launch(wanted.toTypedArray())

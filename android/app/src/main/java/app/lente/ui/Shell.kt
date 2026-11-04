@@ -68,7 +68,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun LenteRoot(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit) {
+fun LenteRoot(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit, askSight: ((Boolean) -> Unit) -> Unit = askMicrophone) {
     val c = Lente.c
     var welcomed by remember { mutableStateOf(vm.prefs.welcomed && vm.prefs.hub != null) }
     val link by vm.link.collectAsState()
@@ -76,7 +76,7 @@ fun LenteRoot(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit) {
         if (!welcomed || link == Link.None) {
             Intro(vm, onDone = { vm.prefs.welcomed = true; welcomed = true })
         } else {
-            Shell(vm, askMicrophone, replayIntro = { vm.prefs.welcomed = false; welcomed = false })
+            Shell(vm, askMicrophone, askSight, replayIntro = { vm.prefs.welcomed = false; welcomed = false })
         }
     }
 }
@@ -113,7 +113,7 @@ fun title(s: Screen) = when (s) {
 }
 
 @Composable
-private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit, replayIntro: () -> Unit) {
+private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit, askSight: ((Boolean) -> Unit) -> Unit, replayIntro: () -> Unit) {
     val c = Lente.c
     val hub by vm.hub.collectAsState()
     val stack by vm.stack.collectAsState()
@@ -162,6 +162,9 @@ private fun Shell(vm: LenteViewModel, askMicrophone: ((Boolean) -> Unit) -> Unit
                     // The device comes from the sheet's «Con qué»; the phone needs the microphone (and the camera) first.
                     if (!phone) vm.record(project, camera, title, usePhone = false)
                     else askMicrophone { ok -> if (ok) vm.record(project, camera, title, usePhone = true) else vm.say("Lente necesita el micrófono para grabar con el teléfono.") }
+                }, sight = { phone ->
+                    // Ver is a conversation: without the clip Lente hears the phone, so it asks for the microphone (and the location) first.
+                    askSight { vm.openSight(phone) }
                 })
             } else Column(Modifier.fillMaxSize()) {
                 if (s.listening && s.clip) Box(Modifier.fillMaxWidth().height(3.dp).background(c.liveFill).testTag("live-strip"))

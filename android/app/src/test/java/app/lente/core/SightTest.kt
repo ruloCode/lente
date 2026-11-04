@@ -92,4 +92,56 @@ class SightTest {
         assertFalse(old.sight)
         assertFalse(old.guest)
     }
+
+    private fun voice(vararg events: String) = events.fold(VoiceView()) { v, e -> VoiceEvents.reduce(v, e).first }
+
+    @Test fun theConversationsLatestLineTakesTheLargeTextOnlyWhenItChanges() {
+        var v = SightView()
+        val welcome = voice("""{"type":"reply","turn":0,"text":"Hola, soy Lente."}""")
+        v = Sight.talk(v, welcome)
+        assertEquals("Lente: Hola, soy Lente.", Sight.shown(v))
+        // A description arrives: it is shown, and an unrelated voice event does not bring the old line back.
+        v = Sight.reduce(v, live("Una puerta al frente.")).first
+        assertEquals("Una puerta al frente.", Sight.shown(v))
+        v = Sight.talk(v, VoiceEvents.reduce(welcome, """{"type":"state","state":"listening"}""").first)
+        assertEquals("Una puerta al frente.", Sight.shown(v))
+        val saying = VoiceEvents.reduce(welcome, """{"type":"partial","text":"me llamo"}""").first
+        v = Sight.talk(v, saying)
+        assertEquals("Tú: me llamo", Sight.shown(v))
+        v = Sight.talk(v, VoiceEvents.reduce(saying, """{"type":"heard","turn":1,"text":"Me llamo Ana."}""").first)
+        assertEquals("Tú: Me llamo Ana.", Sight.shown(v))
+        assertEquals("Una puerta al frente.", v.text)
+    }
+
+    @Test fun theStateLineSaysTheConversationThenTheNarration() {
+        val on = SightView()
+        val off = Sight.narration(on, false)
+        assertEquals("Escuchando · Narrando", Sight.stateLine(on, VoicePhase.Listening))
+        assertEquals("Escuchando · Narración en pausa", Sight.stateLine(off, VoicePhase.Listening))
+        assertEquals("Pensando…", Sight.stateLine(on, VoicePhase.Thinking))
+        assertEquals("Hablando", Sight.stateLine(on, VoicePhase.Speaking))
+        assertEquals("Escucha en pausa · Narrando", Sight.stateLine(on, VoicePhase.Paused))
+        assertEquals("Conectando…", Sight.stateLine(on, VoicePhase.Connecting))
+        assertEquals("Narración en pausa", Sight.stateLine(off, VoicePhase.Ended))
+        assertEquals("Mirando…", Sight.stateLine(Sight.looking(on), VoicePhase.Speaking))
+        assertEquals("Pausar escucha", Sight.listenAction(VoicePhase.Listening))
+        assertEquals("Seguir escuchando", Sight.listenAction(VoicePhase.Paused))
+        assertEquals("Volver a hablar con Lente", Sight.listenAction(VoicePhase.Ended))
+    }
+
+    @Test fun theQuietMutesNarrationShowsItsLineAndComesBackAsItWas() {
+        val paused = Sight.narration(SightView(), false)
+        val q = Sight.quiet(SightView())
+        assertTrue(q.quiet)
+        assertFalse(q.narrating)
+        assertEquals(Sight.QUIET_LINE, Sight.stateLine(q, VoicePhase.Ended))
+        assertEquals(Sight.QUIET_LINE, Sight.stateLine(q))
+        // A conversation opened from the quiet shows its own state.
+        assertEquals("Escuchando · Narración en pausa", Sight.stateLine(q, VoicePhase.Listening))
+        assertEquals("Hablar con Lente", Sight.listenAction(VoicePhase.Ended, quiet = true))
+        assertTrue(Sight.talkAgain(q).narrating)
+        assertFalse(Sight.talkAgain(Sight.quiet(paused)).narrating)
+        assertEquals(q, Sight.quiet(q))
+        assertEquals(paused, Sight.talkAgain(paused))
+    }
 }

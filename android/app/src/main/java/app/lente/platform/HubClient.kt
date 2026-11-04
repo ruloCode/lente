@@ -105,6 +105,25 @@ class HubClient(
         }
     }
 
+    /**
+     * `POST` a JSON body for audio (`/tts`): the status and, on success, the bytes. Code 0 when the hub is
+     * unreachable or slower than [timeoutMs]; the caller decides what a miss means (the phone's own voice).
+     */
+    suspend fun postAudio(path: String, body: JSONObject, timeoutMs: Long): Pair<Int, ByteArray?> {
+        val quick = http.newBuilder().callTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
+        return AuthRetry.run(bearer, refresh, { it.first }, { token ->
+            withContext(Dispatchers.IO) {
+                try {
+                    quick.newCall(request(path, token).post(body.toString().toRequestBody(json)).build()).execute().use { res ->
+                        res.code to (if (res.isSuccessful) res.body.bytes() else null)
+                    }
+                } catch (e: IOException) {
+                    0 to null
+                }
+            }
+        }, signedOut)
+    }
+
     /** The bytes at `path` (a kept photo for Recuerdos), or null when the hub has none or is unreachable. */
     suspend fun bytes(path: String): ByteArray? = withContext(Dispatchers.IO) {
         val req = request(path, bearer()).get().build()

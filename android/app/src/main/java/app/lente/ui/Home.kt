@@ -76,7 +76,7 @@ private enum class HomeTab(val title: String) { Inicio("Inicio"), Tareas("Tareas
  * and the round button, which records and opens the live transcript and summary.
  */
 @Composable
-fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String, phone: Boolean) -> Unit) {
+fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> Unit, talk: () -> Unit, record: (project: String?, camera: Boolean, title: String, phone: Boolean) -> Unit, sight: (phone: Boolean) -> Unit = { vm.openSight(it) }) {
     val c = Lente.c
     val s = hub.status
     var tab by rememberSaveable { mutableStateOf(HomeTab.Inicio) }
@@ -94,7 +94,7 @@ fun Home(vm: LenteViewModel, hub: HubState, usePhone: () -> Unit, onMenu: () -> 
             // Ver (add-sight-mode): the hub turns the camera and its live reads on; the phone streams only when it is the eyes.
             val phone = device == RecordChoice.Device.Phone
             if (phone && !s.phoneIsDevice) usePhone()
-            vm.openSight(phone)
+            sight(phone)
         } else {
             RecordChoice.assistToSet(mode, s.assistMode)?.let(vm::setAssist)
             record(project, camera, title, device == RecordChoice.Device.Phone)

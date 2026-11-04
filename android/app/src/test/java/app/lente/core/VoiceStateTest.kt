@@ -84,4 +84,30 @@ class VoiceStateTest {
         assertNull(c.finished(1))
         assertEquals(3, c.finished(1))
     }
+
+    @Test fun versWelcomeSpeaksFirstAndTheAgentSwitchesNarration() {
+        val (view, effects) = run(
+            """{"type":"listening","source":"clip"}""",
+            """{"type":"reply","turn":0,"text":"Hola, soy Lente."}""",
+            """{"type":"narration","on":true}""",
+        )
+        assertEquals(listOf("Hola, soy Lente."), view.current!!.reply)
+        assertEquals("", view.current!!.heard)
+        assertEquals(listOf(VoiceEffect.Speak(0, "Hola, soy Lente."), VoiceEffect.Narration(true)), effects)
+        assertEquals(VoiceEffect.Narration(false), VoiceEvents.reduce(view, """{"type":"narration","on":false}""").second.single())
+        // The welcome has nothing heard: Inicio's chat gets only Lente's line.
+        var id = 0L
+        assertEquals(listOf(false), VoiceEvents.chatLines(view) { ++id }.map { it.fromWearer })
+        val start = org.json.JSONObject(VoiceEvents.start("sight", intro = true))
+        assertEquals("start", start.getString("type"))
+        assertEquals("sight", start.getString("persona"))
+        assertEquals(true, start.getBoolean("intro"))
+    }
+
+    @Test fun theQuietAndALocateRequestBecomeEffects() {
+        assertEquals(listOf(VoiceEffect.Quiet(true)), run("""{"type":"quiet","on":true}""").second)
+        assertEquals(listOf(VoiceEffect.Quiet(false)), run("""{"type":"quiet","on":false}""").second)
+        assertEquals(listOf(VoiceEffect.Locate("a7")), run("""{"type":"locate","id":"a7"}""").second)
+        assertEquals(emptyList<VoiceEffect>(), run("""{"type":"locate"}""").second)
+    }
 }

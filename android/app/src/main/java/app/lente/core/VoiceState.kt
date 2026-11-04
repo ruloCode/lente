@@ -45,6 +45,12 @@ sealed interface VoiceEffect {
     data class Speak(val turn: Int, val text: String) : VoiceEffect
     data object StopSpeaking : VoiceEffect
     data class OpenRecordSheet(val request: RecordSheetRequest) : VoiceEffect
+    /** Ver's companion turned the live narration on or off (add-sight-mode). */
+    data class Narration(val on: Boolean) : VoiceEffect
+    /** «Grabar en silencio»: the session closes after this reply, the hub records, Ver keeps quiet (add-sight-mode). */
+    data class Quiet(val on: Boolean) : VoiceEffect
+    /** «¿Dónde estoy?»: answer `id` on this session with where the phone is (`Place.reply`). */
+    data class Locate(val id: String) : VoiceEffect
 }
 
 object VoiceEvents {
@@ -96,13 +102,18 @@ object VoiceEvents {
             "thinking" -> view.copy(phase = VoicePhase.Thinking) to emptyList()
             "reply" -> {
                 val text = e.optString("text")
-                val next = view.withTurn(turn) { t -> t.copy(reply = t.reply + text, commentary = if (e.optBoolean("commentary")) t.commentary + t.reply.size else t.commentary) }
+                // Lente may speak first (Ver's welcome): a reply to a turn nobody started opens it, with nothing heard.
+                val opened = if (turn >= 0 && view.turns.none { it.turn == turn }) view.copy(turns = view.turns + VoiceTurn(turn, "")) else view
+                val next = opened.withTurn(turn) { t -> t.copy(reply = t.reply + text, commentary = if (e.optBoolean("commentary")) t.commentary + t.reply.size else t.commentary) }
                 next.copy(phase = VoicePhase.Speaking) to listOf(VoiceEffect.Speak(turn, text))
             }
             "tool" -> view.withTurn(turn) { t -> t.copy(tools = t.tools + VoiceTool(e.optString("name"), e.optString("label"))) } to emptyList()
             "sources" -> view.withTurn(turn) { t -> t.copy(sources = (t.sources + sources(e.optJSONArray("sources"))).distinct()) } to emptyList()
             "bargeIn" -> view.withTurn(turn) { it.copy(cancelled = true) }.copy(phase = VoicePhase.Listening) to listOf(VoiceEffect.StopSpeaking)
             "recordSheet" -> view to listOf(VoiceEffect.OpenRecordSheet(RecordSheetRequest(e.optString("projectId").ifBlank { null }, e.optBoolean("camera"))))
+            "narration" -> view to listOf(VoiceEffect.Narration(e.optBoolean("on")))
+            "quiet" -> view to listOf(VoiceEffect.Quiet(e.optBoolean("on")))
+            "locate" -> (if (e.optString("id").isEmpty()) emptyList() else listOf(VoiceEffect.Locate(e.optString("id")))).let { view to it }
             "error" -> view.copy(error = e.optString("message").ifBlank { "Algo falló." }) to emptyList()
             "end" -> view.copy(phase = VoicePhase.Ended) to listOf(VoiceEffect.StopSpeaking)
             else -> view to emptyList()
@@ -113,10 +124,13 @@ object VoiceEvents {
     fun spoken(turn: Int, count: Int): String = JSONObject().put("type", "spoken").put("turn", turn).put("count", count).toString()
     fun control(type: String): String = JSONObject().put("type", type).toString()
 
+    /** The first message of a session: Ver's companion (`persona: "sight"`), and whether Lente speaks first to get to know the wearer. */
+    fun start(persona: String, intro: Boolean): String = JSONObject().put("type", "start").put("persona", persona).put("intro", intro).toString()
+
     /** The session as chat lines for Inicio: the wearer's words and Lente's answers, cancelled replies left out. */
     fun chatLines(view: VoiceView, nextId: () -> Long): List<ChatLine> = view.turns.flatMap { t ->
         listOfNotNull(
-            ChatLine(nextId(), true, t.heard),
+            if (t.heard.isBlank()) null else ChatLine(nextId(), true, t.heard),
             if (t.cancelled || t.answer.isBlank()) null else ChatLine(nextId(), false, t.answer, t.sources),
         )
     }

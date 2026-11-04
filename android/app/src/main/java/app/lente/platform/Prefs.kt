@@ -27,6 +27,10 @@ class Prefs(context: Context) {
     var speechRate: Float
         get() = app.lente.core.SpeechVoice.rate(sp.getFloat("speechRate", app.lente.core.SpeechVoice.DEFAULT_RATE))
         set(v) = sp.edit().putFloat("speechRate", app.lente.core.SpeechVoice.rate(v)).apply()
+    /** Ver's welcome happened (add-sight-mode): Lente and the wearer got to know each other; «Volver a conocernos» clears it. */
+    var sightMet: Boolean
+        get() = sp.getBoolean("sightMet", false)
+        set(v) = sp.edit().putBoolean("sightMet", v).apply()
     /** "system", "light" or "dark": the app's appearance, chosen in Ajustes. */
     var theme: String
         get() = sp.getString("theme", "system") ?: "system"

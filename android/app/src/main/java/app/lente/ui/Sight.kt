@@ -56,15 +56,20 @@ private val SightGround = Color.Black
 private val SightState = Color(0xFFFFD60A)
 
 /**
- * Ver (add-sight-mode): one full-screen surface for someone who cannot see it. The latest description
- * in very large type; a tap looks, a long press opens Hablar con Lente, a two-finger tap pauses or
- * resumes narration. For TalkBack the surface is one node whose description says all that, with the
- * same actions in its actions menu; the state line is a polite live region. Salir sits apart, at the bottom.
+ * Ver (add-sight-mode): one full-screen surface for someone who cannot see it, and a conversation:
+ * Lente listens all the time, so the wearer just talks. The latest line (a description, «Lente: …» or
+ * «Tú: …») in very large type; a tap looks, a long press pauses or resumes the listening, a two-finger
+ * tap pauses or resumes narration. For TalkBack the surface is one node whose description says all
+ * that, with the same actions in its actions menu; the state line is a polite live region. Salir sits
+ * apart, at the bottom.
  */
 @Composable
 fun SightScreen(vm: LenteViewModel, hub: HubState) {
     val view by vm.sight.collectAsState()
+    val talk by vm.voice.collectAsState()
     val narration = Sight.narrationAction(view)
+    val listen = Sight.listenAction(talk.phase, view.quiet)
+    val quiet = if (view.quiet) Sight.TALK_AGAIN else Sight.QUIET
     // The screen stays on (a wearer who cannot see it must not find it locked), with light status icons on the black.
     val host = LocalView.current
     DisposableEffect(Unit) {
@@ -85,22 +90,23 @@ fun SightScreen(vm: LenteViewModel, hub: HubState) {
                 .clearAndSetSemantics {
                     contentDescription = Sight.SURFACE
                     onClick(label = Sight.LOOK) { vm.sightLook(); true }
-                    onLongClick(label = Sight.TALK) { vm.openVoice(); true }
+                    onLongClick(label = listen) { vm.sightListen(); true }
                     customActions = listOf(
                         CustomAccessibilityAction(Sight.LOOK) { vm.sightLook(); true },
-                        CustomAccessibilityAction(Sight.TALK) { vm.openVoice(); true },
+                        CustomAccessibilityAction(listen) { vm.sightListen(); true },
                         CustomAccessibilityAction(narration) { vm.sightNarration(); true },
+                        CustomAccessibilityAction(quiet) { if (view.quiet) vm.sightTalkAgain() else vm.sightQuiet(); true },
                         CustomAccessibilityAction(Sight.REPEAT) { vm.sightRepeat(); true },
                         CustomAccessibilityAction(Sight.EXIT) { vm.closeSight(); true },
                     )
                 }
-                .sightGestures(onTap = vm::sightLook, onLong = vm::openVoice, onTwo = vm::sightNarration)
+                .sightGestures(onTap = vm::sightLook, onLong = vm::sightListen, onTwo = vm::sightNarration)
                 .padding(horizontal = 24.dp),
         ) {
-            Spacer(Modifier.height(if (hub.status.guest) 92.dp else 64.dp))
+            Spacer(Modifier.height((if (hub.status.guest) 92.dp else 64.dp) + (if (talk.error != null) 36.dp else 0.dp)))
             Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                 Text(
-                    shown, color = if (view.text.isBlank()) SightInk.copy(alpha = 0.75f) else SightInk,
+                    shown, color = if (view.line.isBlank() && view.text.isBlank()) SightInk.copy(alpha = 0.75f) else SightInk,
                     style = Type.body.copy(fontSize = size, lineHeight = size * 1.25f, fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("sight-text"),
                 )
@@ -113,10 +119,11 @@ fun SightScreen(vm: LenteViewModel, hub: HubState) {
                 Dot(SightState, 12.dp)
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    Sight.stateLine(view), color = SightState, style = Type.title.copy(fontWeight = FontWeight.SemiBold),
+                    Sight.stateLine(view, talk.phase), color = SightState, style = Type.title.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("sight-state"),
                 )
             }
+            talk.error?.let { Text(it, color = SightInk, style = Type.headline, modifier = Modifier.padding(top = 6.dp).testTag("sight-error")) }
             if (hub.status.guest) Text(Sight.GUEST, color = SightInk, style = Type.headline, modifier = Modifier.padding(top = 6.dp).testTag("sight-guest"))
         }
         Box(

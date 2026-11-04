@@ -81,7 +81,7 @@ class Speech(context: Context, private val rate: () -> Float = { SpeechVoice.DEF
     }
 
     /** An announcement through the accessibility service, as `View.announceForAccessibility` sends it. */
-    private fun announce(text: String) {
+    fun announce(text: String) {
         val m = a11y ?: return
         if (!m.isEnabled) return
         @Suppress("DEPRECATION")

@@ -24,6 +24,12 @@ import okio.ByteString.Companion.toByteString
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+/** Someone else's voice for a session's sentences (Ver's speaker): says one, then calls `done`; `stop` drops all. */
+interface SentenceVoice {
+    fun sentence(turn: Int, text: String, done: () -> Unit)
+    fun stop()
+}
+
 /**
  * One Hablar con Lente session (add-voice-mode): the hub's `/voice` WebSocket, the phone's
  * microphone and the phone's own voice. The microphone stays open while Lente speaks, so the wearer
@@ -36,6 +42,10 @@ class VoiceClient(
     cookie: String?,
     bearer: String?,
     private val onEvent: (String) -> Unit,
+    /** Sent as soon as the socket opens (Ver: `{"type":"start","persona":"sight",…}`). */
+    private val start: String? = null,
+    /** Speaks the replies instead of the phone's own voice (Ver's voice); the `spoken` acks are the same. */
+    private val voice: SentenceVoice? = null,
     private val onClosed: (String?) -> Unit,
 ) {
     private val main = Handler(Looper.getMainLooper())
@@ -46,6 +56,8 @@ class VoiceClient(
     @Volatile var handsFree = true
     @Volatile var holding = false
     @Volatile var paused = false
+    /** Ver is saying something that is not this session's reply: the phone's microphone sends silence, so it is not heard as the wearer. */
+    @Volatile var deaf = false
     /** Only when the hub listens to the phone (not the clip). */
     @Volatile private var micWanted = false
     private var recorder: AudioRecord? = null
@@ -66,6 +78,7 @@ class VoiceClient(
             AuthRetry.header(bearer)?.let { (k, v) -> header(k, v) }
         }.build(),
         object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) { start?.let { webSocket.send(it) } }
             override fun onMessage(webSocket: WebSocket, text: String) { main.post { onEvent(text) } }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = closed(null)
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -90,6 +103,11 @@ class VoiceClient(
 
     /** One sentence of `turn`, queued after the ones before it. */
     fun speak(turn: Int, text: String) {
+        if (voice != null && text.isNotBlank()) {
+            spoken.queued(turn)
+            voice.sentence(turn, text) { main.post { spoken.finished(turn)?.let { socket.send(VoiceEvents.spoken(turn, it)) } } }
+            return
+        }
         if (!ttsReady || text.isBlank()) {
             // No voice: report it spoken at once so the hub does not wait.
             spoken.queued(turn); spoken.finished(turn)?.let { socket.send(VoiceEvents.spoken(turn, it)) }
@@ -101,7 +119,11 @@ class VoiceClient(
         tts.speak(text, TextToSpeech.QUEUE_ADD, null, "voice-$turn-${System.nanoTime()}")
     }
 
+    /** A message of the phone's own on the session (Ver's `location` answer). */
+    fun send(text: String) { if (open) socket.send(text) }
+
     fun stopSpeaking() {
+        voice?.stop()
         tts.stop()
         spoken.clear()
         Capture.speaking = false
@@ -164,6 +186,7 @@ class VoiceClient(
                 val tail = !talking && tailFrames > 0
                 if (paused || (!talking && !tail)) continue
                 if (tail) { tailFrames--; java.util.Arrays.fill(buf, 0) }
+                if (deaf) java.util.Arrays.fill(buf, 0)
                 for (i in buf.indices) { bytes[i * 2] = (buf[i].toInt() and 0xff).toByte(); bytes[i * 2 + 1] = (buf[i].toInt() shr 8).toByte() }
                 socket.send(bytes.toByteString())
             }

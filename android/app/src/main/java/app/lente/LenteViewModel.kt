@@ -43,6 +43,10 @@ import app.lente.platform.HubClient
 import app.lente.platform.Prefs
 import app.lente.platform.SignInFailed
 import app.lente.platform.Speech
+import app.lente.platform.SightSpeaker
+import app.lente.platform.Locator
+import app.lente.core.Place
+import app.lente.core.LineKind
 import app.lente.platform.Stream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -353,21 +357,76 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     private var modeBeforeSight = "assist"
     private var lookTimeout: Job? = null
 
-    /** Opens Ver: the hub's sight mode (camera and live reads on, no Dilo cues), its narration on. */
+    /** Ver's voice: the hub's Colombian voice, the phone's as fallback; made the first time Ver opens. */
+    private var sightSpeaker: SightSpeaker? = null
+    /** Ver is saying a look's answer or a narration now (the phone's microphone hears silence). */
+    private var sightAmbient = false
+    /** This Ver session started with the welcome, so the live reads wait for Lente to turn them on. */
+    private var sightIntro = false
+    /** Ver turned the live reads off for the welcome and the agent has not turned them back on. */
+    private var liveOffForIntro = false
+
+    private fun speaker(): SightSpeaker = sightSpeaker ?: SightSpeaker(
+        getApplication(), viewModelScope,
+        fetch = { text -> client?.postAudio("/tts", JSONObject().put("text", text).put("voice", Sight.PERSONA), TTS_CALL_MS) ?: (0 to null) },
+        rate = { speechRate.value },
+        narrated = { text -> post("/narrated", JSONObject().put("text", text)) },
+        screenReader = { speech.screenReader },
+        announce = speech::announce,
+        holdNarration = { voice.value.partial.isNotBlank() || voice.value.phase == VoicePhase.Thinking || voice.value.phase == VoicePhase.Speaking },
+        ambient = { on ->
+            sightAmbient = on
+            if (on) voiceClient?.deaf = true
+            else viewModelScope.launch { delay(Voice.MUTE_TAIL_MS); if (!sightAmbient) voiceClient?.deaf = false }
+        },
+    ).also { sightSpeaker = it }
+
+    /**
+     * Opens Ver: the hub's sight mode (camera and live reads on, no Dilo cues), then a hands-free
+     * conversation with Ver's companion. The first time, Lente introduces itself and asks before it
+     * narrates, so the live reads stay off until it turns them on.
+     */
     fun openSight(phone: Boolean = false) {
-        if (client == null) return say("No hay hub conectado: revisa Ajustes.")
+        val c = client ?: return say("No hay hub conectado: revisa Ajustes.")
         _hub.value.status.assistMode.takeIf { it == "assist" || it == "record" }?.let { modeBeforeSight = it }
+        val intro = !prefs.sightMet
+        sightIntro = intro
+        liveOffForIntro = false
+        speech.stop()
+        speaker()
         // Ver narrates on its own switch, so Narrar outside it stays as the wearer left it.
-        sight.value = SightView(narrating = true)
+        sight.value = SightView(narrating = !intro)
         sightOpen.value = true
         post(if (phone) "/device/prefer/phone" else "/device/prefer/any")
-        post("/assist-mode/sight") { failed(it, "abrir Ver") }
+        viewModelScope.launch {
+            failed(c.post("/assist-mode/sight"), "abrir Ver")
+            if (intro && sightOpen.value) { c.post("/live/off"); liveOffForIntro = true }
+            if (sightOpen.value) startSightVoice(intro)
+        }
     }
 
-    /** Salir: back to the mode Ver started from (Asistir or Solo grabar). */
+    /** Ver's conversation: the `/voice` session with the sight persona, spoken through Ver's voice. */
+    private suspend fun startSightVoice(intro: Boolean) {
+        val c = client ?: return
+        voiceClient?.shutdown()
+        voice.value = VoiceView()
+        val token = account.accessToken()
+        if (!sightOpen.value) return
+        voiceClient = VoiceClient(getApplication(), c.base, prefs.cookie, token, ::onVoiceEvent, start = VoiceEvents.start(Sight.PERSONA, intro), voice = speaker()) { why ->
+            voice.value = voice.value.copy(phase = VoicePhase.Ended, error = why ?: voice.value.error)
+        }.also { it.handsFree = true }
+    }
+
+    /** Salir: the conversation ends, and the hub goes back to the mode Ver started from (Asistir or Solo grabar). */
     fun closeSight() {
+        // Recording in the quiet belongs to Ver: it ends with it.
+        if (sight.value.quiet) post("/listen/off")
         sightOpen.value = false
         lookTimeout?.cancel()
+        voiceClient?.shutdown()
+        voiceClient = null
+        voice.value = VoiceView()
+        sightSpeaker?.stop()
         speech.stop()
         post("/assist-mode/$modeBeforeSight") { failed(it, "salir de Ver") }
     }
@@ -380,25 +439,86 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         post("/look") { if (!it.ok) { lookTimeout?.cancel(); sight.value = Sight.lookEnded(sight.value); failed(it, "mirar") } }
     }
 
+    /** Long press: pause or resume the listening; after the conversation dropped, start it again. */
+    fun sightListen() {
+        val phase = voice.value.phase
+        if (voiceClient == null || phase == VoicePhase.Ended) {
+            viewModelScope.launch { startSightVoice(intro = false) }
+            return
+        }
+        voicePause()
+    }
+
     /** Two-finger tap: pause or resume the live reads' narration (a look is still answered out loud). */
-    fun sightNarration() {
-        val on = !sight.value.narrating
+    fun sightNarration() = setSightNarration(!sight.value.narrating)
+
+    private fun setSightNarration(on: Boolean, byAgent: Boolean = false) {
+        // In the quiet the agent's switch waits for the way back; the wearer's own tap counts at once.
+        if (byAgent && sight.value.quiet) { sight.value = sight.value.copy(narratingBeforeQuiet = on); return }
         sight.value = Sight.narration(sight.value, on)
-        if (!on) speech.stop()
+        if (!on) sightSpeaker?.stopNarration()
+        // The welcome turned the live reads off; the agent turns them on itself, the wearer through here.
+        if (on && liveOffForIntro) { liveOffForIntro = false; if (!byAgent) post("/live/on") }
+    }
+
+    /**
+     * «Grabar en silencio»: once Lente has finished what it is saying, the conversation closes and the
+     * hub records (audio and Recuerdos; its live reads go on, unspoken). A long press talks again.
+     */
+    fun sightQuiet() {
+        if (!sightOpen.value) return
+        sight.value = Sight.quiet(sight.value)
+        sightSpeaker?.stopNarration()
+        val session = voiceClient
+        viewModelScope.launch {
+            delay(QUIET_SETTLE_MS)
+            val until = System.currentTimeMillis() + QUIET_MAX_WAIT_MS
+            while (sightSpeaker?.conversing == true && System.currentTimeMillis() < until) delay(QUIET_SETTLE_MS)
+            if (!sightOpen.value || !sight.value.quiet) return@launch
+            if (session != null && voiceClient === session) {
+                session.shutdown()
+                voiceClient = null
+                voice.value = VoiceView(phase = VoicePhase.Ended)
+            }
+            post("/listen/on") { failed(it, "grabar en silencio") }
+        }
+    }
+
+    /** «Volver a conversar»: out of the quiet, narration as it was; from the wearer, recording stops and the conversation opens again. */
+    fun sightTalkAgain(byAgent: Boolean = false) {
+        if (!sight.value.quiet) return
+        sight.value = Sight.talkAgain(sight.value)
+        if (byAgent) return
+        post("/listen/off")
+        if (voiceClient == null || voice.value.phase == VoicePhase.Ended) viewModelScope.launch { startSightVoice(intro = false) }
+    }
+
+    /** «¿Dónde estoy?»: the phone's position and address, sent only in the answer to the session that asked. */
+    private fun answerLocate(id: String) {
+        val session = voiceClient ?: return
+        viewModelScope.launch {
+            val (fix, why) = withTimeoutOrNull(Place.REPLY_WITHIN_MS - LOCATE_MARGIN_MS) { Locator.locate(getApplication()) } ?: (null to Place.NO_FIX)
+            session.send(if (fix != null) Place.reply(id, fix) else Place.failure(id, why ?: Place.NO_FIX))
+        }
     }
 
     /** Says the latest description again, in full. */
     fun sightRepeat() {
         val text = sight.value.text
-        if (text.isNotBlank()) speech.sayAll(Sight.chunks(text), Voice.Priority.High)
+        if (text.isNotBlank()) Sight.chunks(text).forEach { speaker().say(it, LineKind.Look) }
+    }
+
+    /** «Volver a conocernos»: the next time Ver opens, Lente introduces itself again. */
+    fun meetAgain() {
+        prefs.sightMet = false
+        say("La próxima vez que abras Ver, Lente se presentará otra vez.")
     }
 
     private fun onSight(e: app.lente.core.Entry) {
         val (next, say) = Sight.reduce(sight.value, e)
         if (Sight.isLookAnswer(e)) lookTimeout?.cancel()
         sight.value = next
-        // Hablar con Lente, opened from Ver, has the floor: Ver shows what arrives and keeps quiet.
-        if (!voiceOpen.value) say?.let { speech.sayAll(it.parts, if (it.urgent) Voice.Priority.High else Voice.Priority.Low) }
+        say?.let { s -> s.parts.forEach { speaker().say(it, if (s.urgent) LineKind.Look else LineKind.Narration) } }
     }
 
     /** «Sesión de invitado» (add-sight-mode): the hub keeps no media, day entries or memory while on. */
@@ -840,13 +960,22 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         val (next, effects) = VoiceEvents.reduce(before, raw)
         if (next.source != before.source) voiceClient?.useMicrophone(next.source == "phone")
         voice.value = next
+        val inSight = sightOpen.value && !voiceOpen.value
+        if (inSight) sight.value = Sight.talk(sight.value, next)
         for (e in effects) when (e) {
-            is VoiceEffect.Speak -> voiceClient?.speak(e.turn, e.text)
+            is VoiceEffect.Speak -> {
+                voiceClient?.speak(e.turn, e.text)
+                // Ver's welcome counts as done once Lente has said something in it.
+                if (inSight && sightIntro && !prefs.sightMet) prefs.sightMet = true
+            }
             VoiceEffect.StopSpeaking -> voiceClient?.stopSpeaking()
-            is VoiceEffect.OpenRecordSheet -> {
+            is VoiceEffect.OpenRecordSheet -> if (!inSight) {
                 closeVoice()
                 recordRequest.value = e.request
             }
+            is VoiceEffect.Narration -> if (sightOpen.value) setSightNarration(e.on, byAgent = true)
+            is VoiceEffect.Quiet -> if (inSight) { if (e.on) sightQuiet() else sightTalkAgain(byAgent = true) }
+            is VoiceEffect.Locate -> answerLocate(e.id)
         }
     }
 
@@ -882,6 +1011,7 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         stopScene()
         voiceClient?.shutdown()
+        sightSpeaker?.shutdown()
         speech.shutdown()
         super.onCleared()
     }
@@ -894,5 +1024,12 @@ class LenteViewModel(app: Application) : AndroidViewModel(app) {
         const val VIBRATE_MS = 120L
         const val TOAST_MS = 4_000L
         const val SEARCH_DEBOUNCE_MS = 250L
+        /** Longest a `/tts` call may take at all; Ver stops waiting for it much sooner (`SpeechQueue.TTS_WAIT_MS`). */
+        const val TTS_CALL_MS = 8_000L
+        /** «Grabar en silencio» checks this often whether Lente finished speaking, for at most [QUIET_MAX_WAIT_MS]. */
+        const val QUIET_SETTLE_MS = 300L
+        const val QUIET_MAX_WAIT_MS = 20_000L
+        /** The location answer leaves before the hub's 8 s wait ends. */
+        const val LOCATE_MARGIN_MS = 500L
     }
 }

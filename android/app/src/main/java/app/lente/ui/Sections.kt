@@ -516,6 +516,8 @@ fun Ajustes(vm: LenteViewModel, hub: HubState, replayIntro: () -> Unit) {
         SectionTitle("Ayuda")
         Group {
             SetRow(Glyph.Play, "Ver la introducción", onClick = replayIntro)
+            // add-sight-mode: the next time Ver opens, Lente introduces itself and asks again.
+            Hairline(); SetRow(Glyph.Person, "Volver a conocernos", hint = "Lente se presenta otra vez en Ver", onClick = vm::meetAgain)
             Hairline(); SetRow(Glyph.Brain, "Modelos", value = "Muse · Meta")
             Hairline(); SetRow(Glyph.Doc, "Versión", value = BuildConfig.VERSION_NAME)
         }
