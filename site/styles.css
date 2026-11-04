@@ -110,7 +110,7 @@ code { font-family: var(--mono); font-size: .86em; }
 .theme svg { width: 20px; height: 20px; }
 .theme .sun, [data-theme="dark"] .theme .moon { display: none; }
 [data-theme="dark"] .theme .sun { display: block; }
-@media (max-width: 900px) { .capsule .links a.wide-only { display: none; } }
+@media (max-width: 1100px) { .capsule .links a.wide-only { display: none; } }
 @media (max-width: 600px) { .capsule .links { display: none; } .brand { padding-right: 16px; } }
 
 /* ── Pill buttons (the kit's .l-btn, larger) ─────────── */
@@ -254,6 +254,35 @@ main > section.film { padding-top: 0; }
 .stats .what { font-size: 17px; font-weight: 550; }
 .stats .run { font-size: 14px; color: var(--muted); }
 
+/* The app's real screens: a browser window with one card lifted off it */
+.shots { margin: 0 auto; max-width: 1120px; }
+.shots-stage { position: relative; padding: 0 0 clamp(56px, 9vw, 128px); }
+.window { border-radius: 18px; overflow: hidden; background: var(--surface); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-3); }
+.window-bar { position: relative; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; background: var(--raised); box-shadow: inset 0 -1px 0 var(--line); }
+.window-bar i { width: 11px; height: 11px; border-radius: 50%; background: color-mix(in srgb, var(--muted) 30%, transparent); }
+.window-bar span { position: absolute; left: 50%; translate: -50% 0; font-size: 13px; font-weight: 500; color: var(--muted); background: var(--surface); padding: 4px 16px; border-radius: 8px; white-space: nowrap; }
+.window img { width: 100%; }
+.float { position: absolute; right: -3%; bottom: 0; width: min(50%, 560px); border-radius: 20px; box-shadow: 0 0 0 .5px var(--glass-edge), var(--lift-3); }
+.shots--flip .float { right: auto; left: -3%; width: min(48%, 520px); }
+.shots figcaption { margin-top: var(--s3); text-align: center; font-size: 14px; color: var(--muted); }
+@media (max-width: 760px) {
+  .shots-stage { padding: 0; }
+  .float, .shots--flip .float { position: relative; right: auto; left: auto; width: 86%; margin: -14% 0 0 auto; }
+  .shots--flip .float { margin: -14% auto 0 0; }
+  .window-bar span { display: none; }
+  .pillars { grid-template-columns: 1fr 1fr; gap: var(--s4) var(--s2); }
+  .pillar-t { font-size: 17px; }
+  .pillars p { font-size: 15px; }
+}
+/* Four short points under a showcase */
+.pillars { display: grid; gap: var(--s5) var(--s4); grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); margin-top: clamp(48px, 6vw, 80px); }
+.pillars li { display: grid; gap: 12px; align-content: start; }
+.pillar-t { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 650 19px/1.25 var(--display); letter-spacing: -0.015em; }
+.pillars p { font-size: 16px; line-height: 1.5; color: var(--muted); max-width: 36ch; }
+.pillars strong { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.soon-tag { font: 600 12px/1 var(--body); letter-spacing: .02em; color: var(--muted); background: var(--raised); padding: 5px 9px; border-radius: 999px; }
+.pillars .soon .tile { background: var(--raised); color: var(--muted); }
+
 /* Try it and install */
 .try { display: grid; gap: var(--s3); align-items: start; }
 @media (min-width: 960px) { .try { grid-template-columns: 1.2fr 1fr; } }
@@ -351,6 +380,9 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
     .video-frame { animation: open linear both; animation-timeline: view(); animation-range: entry 0% cover 40%; }
     /* The clip photos drift inside their frames: a gentle parallax */
     .photo img { animation: drift linear both; animation-timeline: view(); animation-range: cover 0% cover 100%; }
+    /* The app's screens: the window settles flat, the card floats up past it */
+    .window { animation: land-soft linear both; animation-timeline: view(); animation-range: entry 0% cover 40%; }
+    .float { animation: float-up linear both; animation-timeline: view(); animation-range: entry 0% exit 60%; }
     /* The privacy checks draw themselves */
     .checks svg path { stroke-dasharray: 21; animation: draw linear both; animation-timeline: view(); animation-range: entry 30% cover 35%; }
   }
@@ -374,5 +406,7 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
 @keyframes land { from { opacity: .3; transform: perspective(1400px) translateY(72px) rotateX(16deg) scale(.94); } }
 @keyframes open { from { opacity: .5; transform: scale(.9); border-radius: 64px; } }
 @keyframes drift { from { transform: translateY(-5%) scale(1.12); } to { transform: translateY(5%) scale(1.12); } }
+@keyframes land-soft { from { opacity: .4; transform: perspective(1800px) translateY(56px) rotateX(10deg) scale(.96); } }
+@keyframes float-up { from { opacity: 0; transform: translateY(96px); } 30% { opacity: 1; } to { transform: translateY(-48px); } }
 @keyframes draw { from { stroke-dashoffset: 21; } }
 @keyframes nav-lift { from { box-shadow: inset 0 0 0 .5px var(--nav-edge); } }
