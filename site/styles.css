@@ -408,3 +408,24 @@ footer ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24
 @keyframes float-up { from { opacity: 0; transform: translateY(96px); } 30% { opacity: 1; } to { transform: translateY(-48px); } }
 @keyframes draw { from { stroke-dashoffset: 21; } }
 @keyframes nav-lift { from { box-shadow: inset 0 0 0 .5px var(--nav-edge); } }
+
+/* The story and the real screens (ship-hackathon 5.1, from the README): the problem as three
+   short paragraphs, four real Android screens, a real screen on the Dilo stage, and the build
+   filmed while it happened. Static; the reveal motion above applies through .reveal. */
+.story { max-width: var(--text); margin: 0 auto var(--s4, 32px); display: grid; gap: 18px; }
+.story p { font-size: clamp(18px, 1.55vw, 21px); line-height: 1.55; color: var(--muted); margin: 0; }
+.story strong { color: var(--ink); }
+.screens { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(14px, 2vw, 28px); margin: 0; padding: 0; }
+.screens figure { margin: 0; display: grid; gap: 12px; align-content: start; }
+.screens img, .stage .shot { width: 100%; height: auto; border-radius: 28px; background: var(--surface); box-shadow: var(--device-shadow), var(--lift-2); }
+.screens figcaption { font-size: 15px; line-height: 1.45; color: var(--muted); }
+.screens figcaption b { color: var(--ink); font-weight: 600; }
+.stage .shot { display: block; width: min(300px, 72%); margin: 0 auto; }
+.build { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(10px, 1.6vw, 20px); margin: var(--s4, 32px) 0; padding: 0; list-style: none; }
+.build li { display: grid; gap: 8px; align-content: start; }
+.build img { width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 20px; box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift-1); }
+.build span { font-size: 14px; line-height: 1.4; color: var(--muted); }
+.build b { color: var(--ink); font-weight: 600; }
+@media (max-width: 760px) {
+  .screens, .build { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -118,6 +118,28 @@
     </div>
   </section>
 
+  <!-- The story, as the README tells it, and four real screens of the Android app -->
+  <section id="historia" aria-labelledby="historia-t">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <p class="eyebrow">Why it exists</p>
+        <h2 id="historia-t" class="title">Think of someone you love. Who no longer sees well.</h2>
+      </div>
+      <div class="story reveal">
+        <p>A grandchild's card, the medicine box, the letter from the bank: it is all right in front of them, and none of it reaches them unless someone reads it. AI glasses for blind people already exist, but they are expensive and mean buying new glasses. In Colombia alone, the last census counted almost two million people with difficulty seeing.</p>
+        <p>And at work, the meeting moves faster than your second language. «Rulo, can we ship the beta on Friday?» You know the answer, but while you build the sentence in English someone else answers, and the decision is made without you.</p>
+        <p><strong>You don't need new glasses.</strong> With Meta's models, a camera, a microphone and your phone are enough. No clip? The phone does its job.</p>
+      </div>
+      <div class="screens reveal">
+        <figure><img src="../assets/app-sheet.webp" width="400" height="889" loading="lazy" alt="The app's Grabar sheet: Asistir, Recuerdo, Solo grabar, Ver, Practicar and Idiomas, and a choice of clip or phone."><figcaption><b>Choose how it helps.</b> Assist, Memory, See, Record only, Practice or a language tutor.</figcaption></figure>
+        <figure><img src="../assets/app-live.webp" width="400" height="889" loading="lazy" alt="The app while listening: a DILO card says «Yes, Friday works if QA signs off Thursday.» above the transcript «Rulo, can we ship the beta on Friday?»."><figcaption><b>Assist.</b> The question was for you: the Dilo card brings the line to answer.</figcaption></figure>
+        <figure><img src="../assets/app-recuerdos.webp" width="400" height="889" loading="lazy" alt="Recuerdos in the app: yesterday's moment with the Revivir button and a time wheel with cards."><figcaption><b>Memories.</b> The moments of your day: turn the wheel, tap one, relive it.</figcaption></figure>
+        <figure><img src="../assets/app-dispositivos.webp" width="400" height="889" loading="lazy" alt="Dispositivos in the app: the clip connected, with what it recorded today and its approximate cost."><figcaption><b>The clip.</b> Connected, with what it recorded today and what it cost.</figcaption></figure>
+      </div>
+      <p class="fine center">Real screens of the Android app, with synthetic sample data (PROBE) and the stubbed Meta API.</p>
+    </div>
+  </section>
+
   <!-- 2. Three uses, one per screen -->
   <section class="alt" id="uses" aria-labelledby="uses-t">
     <div class="wrap">
@@ -137,23 +159,9 @@
       <!-- L5:SHOT inicio → after 14:30, add below the illustration: <img src="../assets/shot-inicio.webp" width="…" height="…" loading="lazy" alt="Inicio in the app with a DILO card (test account, PROBE data)"> -->
       <figure class="stage">
         <div class="stage-floor">
-          <div class="device"><div class="screen">
-          <div class="ui">
-            <p class="listen" lang="es"><span class="dot" aria-hidden="true"></span>Escuchando · 12:48</p>
-            <div class="card">
-              <p class="tag">DILO</p>
-              <p class="say" lang="en">I can share an estimate by tomorrow morning.</p>
-              <p class="means" lang="es">Puedo dar la estimación mañana por la mañana.</p>
-              <p class="asked" lang="es">Te preguntó PROBE-Ana · 10:24</p>
-              <div class="card-actions" aria-hidden="true" lang="es">
-                <span class="chip chip--accent"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 9h11v11H9zM5 15V4h11"/></svg>Copiar</span>
-                <span class="chip"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 0 1 14-5.3M20 4v5h-5M20 12a8 8 0 0 1-14 5.3M4 20v-5h5"/></svg>Otra</span>
-              </div>
-            </div>
-          </div>
-          </div></div>
+          <img class="shot" src="../assets/app-live.webp" width="400" height="889" loading="lazy" alt="A real screen of the app with a DILO card: «Yes, Friday works if QA signs off Thursday.»">
         </div>
-        <figcaption>An illustration of the interface · test data</figcaption>
+        <figcaption>Real screen of the app · test data</figcaption>
       </figure>
     </article>
   </section>
@@ -352,9 +360,19 @@
     <div class="wrap">
       <div class="section-head reveal">
         <p class="eyebrow">The clip</p>
-        <h2 id="clip-t" class="title">Build it yourself. It straps to any pair of glasses.</h2>
-        <p class="lead">A small board with a camera and a microphone, a battery, and a 3D-printed case.</p>
+        <h2 id="clip-t" class="title">Built by hand, in ten days. Build yours.</h2>
+        <p class="lead">Built solo in Bogotá during the hackathon: the board arrived on October 27, on the 29th it was soldered at an electronics shop, and that night it was in its printed case. It straps to any pair of glasses.</p>
       </div>
+      <ol class="build reveal">
+        <li><img src="../assets/build-01-unbox.webp" width="400" height="400" loading="lazy" alt="A hand holds the open case with the Seeed XIAO ESP32-S3 Sense board."><span><b>Oct 27.</b> The board arrives: camera, mic and Wi-Fi.</span></li>
+        <li><img src="../assets/build-02-board.webp" width="400" height="400" loading="lazy" alt="The board from above, its OV3660 camera on a flex cable."><span><b>Oct 27.</b> The camera, before any soldering.</span></li>
+        <li><img src="../assets/build-03-first-power.webp" width="400" height="400" loading="lazy" alt="The board with a USB-C cable plugged in for its first power-on."><span><b>Oct 27.</b> First power-on.</span></li>
+        <li><img src="../assets/build-04-solder-charger.webp" width="400" height="400" loading="lazy" alt="A soldering iron over a blue USB-C battery charger."><span><b>Oct 29.</b> Soldering the charger.</span></li>
+        <li><img src="../assets/build-05-solder-board.webp" width="400" height="400" loading="lazy" alt="Hands soldering wires to the clip's board."><span><b>Oct 29.</b> Wires to the board.</span></li>
+        <li><img src="../assets/build-06-assembled.webp" width="400" height="400" loading="lazy" alt="In a hand, the assembled electronics: board, charger, switch and a yellow battery."><span><b>Oct 29.</b> It runs on its battery.</span></li>
+        <li><img src="../assets/build-07-printed-case.webp" width="400" height="400" loading="lazy" alt="Hands unwrap a black 3D-printed case with a hole for the camera."><span><b>Oct 29.</b> The printed case.</span></li>
+        <li><img src="../assets/build-08-in-the-case.webp" width="400" height="400" loading="lazy" alt="The finished clip in its case, in a hand."><span><b>Oct 29, night.</b> Everything inside.</span></li>
+      </ol>
       <div class="pair reveal">
         <figure class="photo">
           <img src="../assets/clip-rig.webp" width="529" height="589" loading="lazy" alt="A hand holds the clip's first rig: the Seeed XIAO ESP32-S3 Sense board with its camera, a USB-C charger and a switch.">
@@ -392,9 +410,9 @@
     <div class="wrap center stack reveal">
       <p class="eyebrow">Built during the hackathon</p>
       <h2 id="hackathon-t" class="title">Every line of code, written since 2026-10-26.</h2>
-      <p class="lead">Each day of work has its row in the README. Every feature started as an OpenSpec change, with a proposal, a design, specs and tasks.</p>
+      <p class="lead">Each day of work has its row in the build log. Every feature started as an OpenSpec change, with a proposal, a design, specs and tasks.</p>
       <div class="links-row">
-        <a class="pill pill--quiet" href="https://github.com/ruloCode/lente#what-was-built-during-the-hackathon">What was built each day</a>
+        <a class="pill pill--quiet" href="https://github.com/ruloCode/lente/blob/main/docs/build-log.md">What was built each day</a>
         <a class="pill pill--quiet" href="https://github.com/ruloCode/lente">The repository</a>
         <a class="pill pill--quiet" href="https://github.com/ruloCode/lente/tree/main/openspec">The specs</a>
       </div>
