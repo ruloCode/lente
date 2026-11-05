@@ -103,17 +103,14 @@
 
   <section class="film">
     <div class="wrap">
-      <!-- L5:VIDEO — when the link exists, replace the .placeholder div below with:
-           <iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID" title="Lente: el video de la demo" loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
-           and add the link to the caption. -->
       <figure class="video" aria-labelledby="video-cap">
         <div class="video-frame">
-          <div class="placeholder" data-placeholder="video">
-            <span class="play" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12.5-7.5z"/></svg></span>
-            <span>El video de la demo llega aquí el 4 de noviembre.</span>
-          </div>
+          <video controls playsinline preload="metadata" poster="assets/demo-poster.webp" title="Lente: el video de la demo, doblado al inglés">
+            <source src="https://rulocode.github.io/lente-demo/lente-demo-en.mp4" type="video/mp4">
+            Tu navegador no reproduce el video. <a href="https://rulocode.github.io/lente-demo/lente-demo-en.mp4">Descárgalo</a>.
+          </video>
         </div>
-        <figcaption id="video-cap">La demo: Dilo en una reunión, Ver con la cámara y Practicar al piano.</figcaption>
+        <figcaption id="video-cap">La demo, doblada al inglés: Ver lee y describe lo que tienes delante, Dilo acompaña una llamada y la memoria encuentra las llaves. Las cajas sobre las tomas en primera persona son una capa visual, no lo que dibuja Lente. <a href="https://rulocode.github.io/lente-demo/lente-demo-en.mp4">Descargar el video</a></figcaption>
       </figure>
     </div>
   </section>

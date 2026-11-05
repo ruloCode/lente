@@ -103,17 +103,14 @@
 
   <section class="film">
     <div class="wrap">
-      <!-- L5:VIDEO — when the link exists, replace the .placeholder div below with:
-           <iframe src="https://www.youtube-nocookie.com/embed/VIDEO_ID" title="Lente: the demo video" loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
-           and add the link to the caption. -->
       <figure class="video" aria-labelledby="video-cap">
         <div class="video-frame">
-          <div class="placeholder" data-placeholder="video">
-            <span class="play" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12.5-7.5z"/></svg></span>
-            <span>The demo video arrives here on November 4.</span>
-          </div>
+          <video controls playsinline preload="metadata" poster="../assets/demo-poster.webp" title="Lente: the demo video">
+            <source src="https://rulocode.github.io/lente-demo/lente-demo-en.mp4" type="video/mp4">
+            Your browser can't play this video. <a href="https://rulocode.github.io/lente-demo/lente-demo-en.mp4">Download it</a>.
+          </video>
         </div>
-        <figcaption id="video-cap">The demo: Dilo in a meeting, Ver with the camera, and Practicar at the piano.</figcaption>
+        <figcaption id="video-cap">The demo: Ver reads and describes what's in front of you, Dilo sits in on a call, and the memory finds the keys. The boxes on the first-person shots are a visual overlay, not something Lente draws. <a href="https://rulocode.github.io/lente-demo/lente-demo-en.mp4">Download the video</a></figcaption>
       </figure>
     </div>
   </section>
