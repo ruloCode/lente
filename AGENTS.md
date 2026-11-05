@@ -14,8 +14,8 @@ Lente: a clip on any glasses (XIAO ESP32-S3 Sense) streams to a Node hub that us
 
 ## Hard rules
 
-1. **Only new work.** Never copy code, prompts or assets from other repositories, including the author's own (hermes-os). Write it fresh. Prior art in README "Related work" is cited, never copied.
-2. **Log what you build.** Every day with work adds a row to "What was built during the hackathon" in `README.md`. Judges disqualify what they can't attribute.
+1. **Only new work.** Never copy code, prompts or assets from other repositories, including the author's own (hermes-os). Write it fresh. Prior art in `docs/technical.md` "Related work" is cited, never copied.
+2. **Log what you build.** Every day with work adds a row to `docs/build-log.md` ("What was built during the hackathon"; the README links it). Judges disqualify what they can't attribute.
 3. **No secrets, no meeting data.** Keys live in `.env`, Wi-Fi in `firmware/**/secrets.h`, the day record in `data/` (all git-ignored). Never print, copy or commit them. Never commit audio, transcripts or photos of real meetings or people.
 4. **Standard mode only.** Never call `*-contributor` models. Run Muse Code with `--contributor-mode off`.
 5. **Every number is measured.** Latencies in docs and the video come from `scripts/` runs, not estimates.

@@ -51,7 +51,7 @@ All from scripts in the repository, on synthetic speech and synthetic memories, 
 
 ## What was built during the hackathon
 
-Everything in the repository was written during the event, from **2026-10-26** to **2026-11-04**, one row per day in the README's [What was built during the hackathon](../README.md#what-was-built-during-the-hackathon). In short:
+Everything in the repository was written during the event, from **2026-10-26** to **2026-11-04**, one row per day in [docs/build-log.md](build-log.md). In short:
 - the clip: firmware for the Seeed XIAO ESP32-S3 Sense and parametric cases for any glasses;
 - the hub in Node and TypeScript with no runtime dependencies, on Modal;
 - the Android app in Kotlin and Compose, and the web app;

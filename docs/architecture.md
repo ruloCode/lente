@@ -135,7 +135,7 @@ docs/           architecture, PROTOCOL, benchmarks, kb  firmware/, hardware/, op
 
 ## 7. Order of work (status 2026-11-02)
 
-The day-by-day plan for 28 Oct – 2 Nov is in git history; what landed each day is in README "What was built during the hackathon". From here the order is by phase. `docs/handoff.md` has the step-by-step for each.
+The day-by-day plan for 28 Oct – 2 Nov is in git history; what landed each day is in [docs/build-log.md](build-log.md). From here the order is by phase. `docs/handoff.md` has the step-by-step for each.
 
 | Phase | Changes | Exit condition |
 |---|---|---|
