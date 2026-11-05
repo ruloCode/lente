@@ -42,7 +42,7 @@ const PAIRS: [string, string, string][] = [
   ["topic-client", "topic-client-bg", "topic chip"],
   ["topic-team", "topic-team-bg", "topic chip, someone else's task"],
   ["warn-ink", "warn-bg", "Reconectando…, warnings"],
-  ["bg", "ink", "toasts"],
+  ["bg", "ink", "toasts, the selected section, primary buttons, your chat bubble"],
 ];
 
 for (const theme of ["light", "dark"] as Theme[]) {

@@ -5,6 +5,7 @@
 import { getJson, post } from "../api.js";
 import { button, confirm, dialog, h, icon, sectionTitle, toast } from "../dom.js";
 import { money } from "../lib/format.js";
+import { INTRO_PREF } from "../lib/intro.js";
 import { sampleDeleteResult } from "../lib/terms.js";
 import { namesLine } from "../lib/words.js";
 import { lifecycle, reactive } from "../reactive.js";
@@ -36,6 +37,7 @@ export function settingsView() {
         setPref("notify", on ? "on" : "off");
       }, !("Notification" in window))),
       row("Tema", "", segmented("theme", [["system", "Sistema"], ["light", "Claro"], ["dark", "Oscuro"]], pref("theme"), (v) => (setPref("theme", v), applyTheme(v)))),
+      row("Introducción", "Los primeros pasos con Lente, otra vez.", h("button", { type: "button", class: "btn", "data-key": "intro-replay", onclick: () => (setPref(INTRO_PREF, "no"), location.assign("/app")) }, "Ver otra vez")),
     );
   });
   life.track(general.off);

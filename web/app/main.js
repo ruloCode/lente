@@ -1,10 +1,12 @@
 // Lente on the desktop: asks the hub who this browser is, then shows sign-in, the preview terms
-// (until this account accepts them) or the app.
+// (until this account accepts them), the introduction (once per browser) or the app.
 
 import { getJson, onTermsNeeded } from "./api.js";
 import { mountApp } from "./layout.js";
+import { INTRO_PREF, needsIntro } from "./lib/intro.js";
 import { sessionNeedsTerms, termsGate } from "./lib/terms.js";
-import { applyTheme, connect, refreshProjects, store } from "./store.js";
+import { applyTheme, connect, pref, refreshProjects, setPref, store } from "./store.js";
+import { introScreen } from "./views/intro.js";
 import { signinScreen } from "./views/signin.js";
 import { termsScreen } from "./views/terms.js";
 
@@ -52,6 +54,7 @@ if (!store.session.signedIn) {
     onTermsNeeded(showTerms);
     connect();
     void refreshProjects();
-    mountApp(root);
+    if (needsIntro(pref(INTRO_PREF))) show(introScreen(() => (setPref(INTRO_PREF, "yes"), mountApp(root))));
+    else mountApp(root);
   }
 }
